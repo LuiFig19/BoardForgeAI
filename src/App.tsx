@@ -1,3 +1,5 @@
+'use client'
+
 import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type SetStateAction, type WheelEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, useScroll, useTransform } from 'framer-motion'
@@ -20,7 +22,6 @@ import {
   Upload,
   X,
 } from 'lucide-react'
-import './App.css'
 import { Layout, StatusBadge, WarningBanner } from './components/Layout'
 import { PcbScene } from './components/PcbScene'
 import { RealisticPcbViewer } from './components/RealisticPcbViewer'
@@ -37,9 +38,10 @@ const wizardSteps = ['Requirements', 'Board shape', 'Placement intent', 'Generat
 const markKinds: GenerationRequest['placementMarks'][number]['kind'][] = ['MCU', 'connector', 'power', 'sensor', 'mounting hole', 'keepout', 'antenna', 'hot zone']
 
 function useHashRoute() {
-  const [route, setRoute] = useState(window.location.hash.replace('#', '') || '/')
+  const getHashRoute = () => (typeof window === 'undefined' ? '/' : window.location.hash.replace('#', '') || '/')
+  const [route, setRoute] = useState(getHashRoute)
   useEffect(() => {
-    const onHash = () => setRoute(window.location.hash.replace('#', '') || '/')
+    const onHash = () => setRoute(getHashRoute())
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
