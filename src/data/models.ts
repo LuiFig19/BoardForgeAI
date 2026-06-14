@@ -9,6 +9,19 @@ export const boardTypes = [
   'custom',
 ] as const
 
+export const boardShapeTypes = [
+  'rectangle',
+  'rounded rectangle',
+  'circle',
+  'capsule',
+  'hexagon',
+  'octagon',
+  'drone frame',
+  'sensor board',
+  'custom drawn',
+  'image traced',
+] as const
+
 export const jobStatuses = [
   'queued',
   'running',
@@ -52,7 +65,7 @@ export const generationRequestSchema = z.object({
   mechanicalConstraints: z.string().optional(),
   keepouts: z.string().optional(),
   highSpeedConstraints: z.string().optional(),
-  boardShape: z.enum(['rectangle', 'rounded rectangle', 'circle', 'custom drawn', 'image traced']),
+  boardShape: z.enum(boardShapeTypes),
   boardWidthMm: z.coerce.number().min(5).max(600),
   boardHeightMm: z.coerce.number().min(5).max(600),
   mountingHoleCount: z.coerce.number().int().min(0).max(24),
@@ -72,8 +85,41 @@ export const generationRequestSchema = z.object({
 })
 
 export type GenerationRequest = z.infer<typeof generationRequestSchema>
+export type BoardShapeType = (typeof boardShapeTypes)[number]
 export type JobStatus = (typeof jobStatuses)[number]
 export type AgentStepName = (typeof agentStepNames)[number]
+
+export type BoardOutlinePoint = {
+  x: number
+  y: number
+}
+
+export type BoardMountingHole = {
+  id: string
+  x: number
+  y: number
+  diameterMm: number
+}
+
+export type Board = {
+  id: string
+  name: string
+  type: 'outline_only' | 'full_project'
+  shapeType: BoardShapeType
+  width: number
+  height: number
+  units: 'mm' | 'inch'
+  cornerRadiusMm: number
+  outline: BoardOutlinePoint[]
+  mountingHoles: BoardMountingHole[]
+  generatedFiles: string[]
+  createdAt: string
+  updatedAt: string
+  status: 'draft' | 'saved' | 'ready_to_export' | 'exported'
+  sourcePrompt: string
+  projectId?: string
+  editHistory: string[]
+}
 
 export type User = {
   id: string

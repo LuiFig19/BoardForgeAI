@@ -1,4 +1,4 @@
-import { Cpu, FileArchive, Gauge, Home, Lock, ScrollText, Settings, TerminalSquare, WandSparkles } from 'lucide-react'
+import { Cpu, FileArchive, FolderKanban, Gauge, Home, Lock, ScrollText, Settings, TerminalSquare, WandSparkles } from 'lucide-react'
 import clsx from 'clsx'
 
 const nav = [
@@ -6,6 +6,7 @@ const nav = [
   { hash: '#/generate', label: 'Generator', icon: WandSparkles },
   { hash: '#/dashboard', label: 'Dashboard', icon: Gauge },
   { hash: '#/project', label: 'Project', icon: Cpu },
+  { hash: '#/boards', label: 'Boards', icon: FolderKanban },
   { hash: '#/export', label: 'Export', icon: FileArchive },
   { hash: '#/logs', label: 'Run Log', icon: TerminalSquare },
   { hash: '#/pricing', label: 'Pricing', icon: Lock },

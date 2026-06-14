@@ -12,6 +12,7 @@ import {
   Download,
   Factory,
   FileArchive,
+  FolderKanban,
   GitBranch,
   Layers3,
   Play,
@@ -27,15 +28,102 @@ import { PcbScene } from './components/PcbScene'
 import { RealisticPcbViewer } from './components/RealisticPcbViewer'
 import { emptyRequest, templates } from './data/fixtures'
 import { demoBoardRoutes, demoBoardVias, demoPlacedFootprints, footprintPackages, packageById, resolvePlacedFootprints, type BoardRoute, type BoardVia, type PlacedFootprint } from './data/footprints'
-import { type GenerationJob, type GenerationRequest } from './data/models'
+import { boardShapeTypes, type Board, type BoardShapeType, type GenerationJob, type GenerationRequest } from './data/models'
 import { useJobs } from './store/useJobs'
+import { useBoards } from './store/useBoards'
 import { boardRuleEngine, promptModules } from './services/agents'
-import { KiCadExportService, KiCadProjectService, KiCadValidationService, ProjectPackageService } from './services/kicad'
+import { KiCadBoardOutlineService, KiCadExportService, KiCadProjectService, KiCadValidationService, ProjectPackageService } from './services/kicad'
 
 const interfaces = ['USB', 'Ethernet', 'CAN', 'UART', 'SPI', 'I2C', 'Wi-Fi', 'BLE', 'LoRa']
-const routes = ['/', '/generate', '/dashboard', '/project', '/export', '/logs', '/pricing', '/docs', '/admin']
+const routes = ['/', '/generate', '/dashboard', '/project', '/boards', '/export', '/logs', '/pricing', '/docs', '/admin']
 const wizardSteps = ['Requirements', 'Board shape', 'Placement intent', 'Generate']
 const markKinds: GenerationRequest['placementMarks'][number]['kind'][] = ['MCU', 'connector', 'power', 'sensor', 'mounting hole', 'keepout', 'antenna', 'hot zone']
+const outlineService = new KiCadBoardOutlineService()
+
+const makeShapePoints = (shape: BoardShapeType): Array<{ x: number; y: number }> => {
+  if (shape === 'circle') {
+    return Array.from({ length: 36 }, (_, index) => {
+      const angle = (index / 36) * Math.PI * 2
+      return { x: 0.5 + Math.cos(angle) * 0.42, y: 0.5 + Math.sin(angle) * 0.42 }
+    })
+  }
+  if (shape === 'hexagon' || shape === 'octagon') {
+    const sides = shape === 'hexagon' ? 6 : 8
+    return Array.from({ length: sides }, (_, index) => {
+      const angle = (index / sides) * Math.PI * 2 - Math.PI / 2
+      return { x: 0.5 + Math.cos(angle) * 0.42, y: 0.5 + Math.sin(angle) * 0.42 }
+    })
+  }
+  if (shape === 'capsule') {
+    return [
+      { x: 0.2, y: 0.12 }, { x: 0.8, y: 0.12 }, { x: 0.94, y: 0.28 }, { x: 0.94, y: 0.72 },
+      { x: 0.8, y: 0.88 }, { x: 0.2, y: 0.88 }, { x: 0.06, y: 0.72 }, { x: 0.06, y: 0.28 },
+    ]
+  }
+  if (shape === 'drone frame') {
+    return [
+      { x: 0.15, y: 0.2 }, { x: 0.32, y: 0.08 }, { x: 0.68, y: 0.08 }, { x: 0.85, y: 0.2 },
+      { x: 0.78, y: 0.5 }, { x: 0.85, y: 0.8 }, { x: 0.68, y: 0.92 }, { x: 0.32, y: 0.92 },
+      { x: 0.15, y: 0.8 }, { x: 0.22, y: 0.5 },
+    ]
+  }
+  if (shape === 'sensor board' || shape === 'image traced') {
+    return [
+      { x: 0.08, y: 0.18 }, { x: 0.74, y: 0.14 }, { x: 0.92, y: 0.32 },
+      { x: 0.88, y: 0.84 }, { x: 0.12, y: 0.88 }, { x: 0.04, y: 0.44 },
+    ]
+  }
+  return [
+    { x: 0.08, y: 0.12 },
+    { x: 0.92, y: 0.12 },
+    { x: 0.92, y: 0.88 },
+    { x: 0.08, y: 0.88 },
+  ]
+}
+
+const roundedRectanglePoints = (radiusPercent = 8) => {
+  const r = Math.min(18, Math.max(2, radiusPercent)) / 100
+  return [
+    { x: 0.08 + r, y: 0.1 }, { x: 0.92 - r, y: 0.1 }, { x: 0.92, y: 0.1 + r },
+    { x: 0.92, y: 0.9 - r }, { x: 0.92 - r, y: 0.9 }, { x: 0.08 + r, y: 0.9 },
+    { x: 0.08, y: 0.9 - r }, { x: 0.08, y: 0.1 + r },
+  ]
+}
+
+const mountingHolesForRequest = (request: GenerationRequest, diameterMm = 3) => {
+  const positions = [
+    [0.12, 0.16],
+    [0.88, 0.16],
+    [0.12, 0.84],
+    [0.88, 0.84],
+    [0.5, 0.16],
+    [0.5, 0.84],
+    [0.12, 0.5],
+    [0.88, 0.5],
+  ]
+  return Array.from({ length: request.mountingHoleCount }).map((_, index) => {
+    const [x, y] = positions[index % positions.length]
+    return { id: `hole_${index + 1}`, x, y, diameterMm }
+  })
+}
+
+const downloadTextFile = (filename: string, content: string, type = 'text/plain') => {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+const downloadBoardBundle = (board: Board) => {
+  const files = outlineService.createProjectBundle(board)
+  const bundle = files.map((file) => `--- ${file.path} ---\n${file.content}`).join('\n\n')
+  downloadTextFile(`${outlineService.getProjectFiles(board).safeName}-kicad-outline.txt`, bundle)
+}
 
 function useHashRoute() {
   const getHashRoute = () => (typeof window === 'undefined' ? '/' : window.location.hash.replace('#', '') || '/')
@@ -142,12 +230,18 @@ function LandingPage() {
 
 function GeneratorPage() {
   const createJob = useJobs((state) => state.createJob)
+  const saveBoard = useBoards((state) => state.saveBoard)
   const [form, setForm] = useState<GenerationRequest>(emptyRequest)
   const [created, setCreated] = useState<GenerationJob | null>(null)
   const [step, setStep] = useState(0)
   const [markKind, setMarkKind] = useState<GenerationRequest['placementMarks'][number]['kind']>('connector')
   const [customSketch, setCustomSketch] = useState<Array<{ x: number; y: number }>>([])
   const [aiShapePrompt, setAiShapePrompt] = useState('')
+  const [outlineMode, setOutlineMode] = useState(true)
+  const [roundedCorners, setRoundedCorners] = useState(false)
+  const [cornerRadiusMm, setCornerRadiusMm] = useState(3)
+  const [mountingHoleDiameterMm, setMountingHoleDiameterMm] = useState(3)
+  const [savedBoard, setSavedBoard] = useState<Board | null>(null)
 
   const setField = <K extends keyof GenerationRequest>(key: K, value: GenerationRequest[K]) => setForm((current) => ({ ...current, [key]: value }))
 
@@ -188,8 +282,114 @@ function GeneratorPage() {
 
   const removePlacementMark = (id: string) => setField('placementMarks', form.placementMarks.filter((mark) => mark.id !== id))
 
+  const buildOutlinePoints = () => {
+    if (customSketch.length >= 3) return customSketch
+    if (roundedCorners || form.boardShape === 'rounded rectangle') return roundedRectanglePoints((cornerRadiusMm / Math.max(form.boardWidthMm, form.boardHeightMm)) * 100)
+    return makeShapePoints(form.boardShape)
+  }
+
+  const makeBoardFromForm = (status: Board['status'] = 'saved'): Board => {
+    const now = new Date().toISOString()
+    const board: Board = {
+      id: savedBoard?.id || `board_${Date.now()}`,
+      name: form.projectName || 'Blank Board Outline',
+      type: 'outline_only',
+      shapeType: roundedCorners && form.boardShape === 'rectangle' ? 'rounded rectangle' : form.boardShape,
+      width: form.boardWidthMm,
+      height: form.boardHeightMm,
+      units: 'mm',
+      cornerRadiusMm: roundedCorners || form.boardShape === 'rounded rectangle' ? cornerRadiusMm : 0,
+      outline: buildOutlinePoints(),
+      mountingHoles: mountingHolesForRequest(form, mountingHoleDiameterMm),
+      generatedFiles: outlineService.getProjectFiles({
+        id: savedBoard?.id || `board_${Date.now()}`,
+        name: form.projectName || 'Blank Board Outline',
+        type: 'outline_only',
+        shapeType: form.boardShape,
+        width: form.boardWidthMm,
+        height: form.boardHeightMm,
+        units: 'mm',
+        cornerRadiusMm,
+        outline: buildOutlinePoints(),
+        mountingHoles: mountingHolesForRequest(form, mountingHoleDiameterMm),
+        generatedFiles: [],
+        createdAt: now,
+        updatedAt: now,
+        status,
+        sourcePrompt: form.outlineNotes || form.notes,
+        editHistory: [],
+      }).files,
+      createdAt: savedBoard?.createdAt || now,
+      updatedAt: now,
+      status,
+      sourcePrompt: form.outlineNotes || form.notes,
+      editHistory: [...(savedBoard?.editHistory || []), `Saved outline: ${new Date(now).toLocaleString()}`],
+    }
+    return board
+  }
+
+  const generateOutline = () => {
+    if (customSketch.length < 3) setCustomSketch(buildOutlinePoints())
+    const board = saveBoard(makeBoardFromForm('ready_to_export'))
+    setSavedBoard(board)
+  }
+
+  const saveCurrentBoard = () => {
+    const board = saveBoard(makeBoardFromForm('saved'))
+    setSavedBoard(board)
+  }
+
+  const applyShapeEdit = (prompt: string) => {
+    const lower = prompt.toLowerCase()
+    let nextPoints = customSketch.length >= 3 ? customSketch : buildOutlinePoints()
+    if (lower.includes('bigger') || lower.includes('larger') || lower.includes('wider')) {
+      setField('boardWidthMm', Math.min(600, Math.round(form.boardWidthMm * 1.15)))
+      if (!lower.includes('wider')) setField('boardHeightMm', Math.min(600, Math.round(form.boardHeightMm * 1.15)))
+    }
+    if (lower.includes('round')) {
+      setRoundedCorners(true)
+      setField('boardShape', 'rounded rectangle')
+      nextPoints = roundedRectanglePoints((cornerRadiusMm / Math.max(form.boardWidthMm, form.boardHeightMm)) * 100)
+    }
+    if (lower.includes('circle')) {
+      setRoundedCorners(false)
+      setField('boardShape', 'circle')
+      nextPoints = makeShapePoints('circle')
+    }
+    if (lower.includes('hex')) {
+      setField('boardShape', 'hexagon')
+      nextPoints = makeShapePoints('hexagon')
+    }
+    if (lower.includes('oct')) {
+      setField('boardShape', 'octagon')
+      nextPoints = makeShapePoints('octagon')
+    }
+    if (lower.includes('drone')) {
+      setField('boardShape', 'drone frame')
+      nextPoints = makeShapePoints('drone frame')
+    }
+    if (lower.includes('sensor')) {
+      setField('boardShape', 'sensor board')
+      nextPoints = makeShapePoints('sensor board')
+    }
+    if (lower.includes('usb')) setField('placementMarks', [...form.placementMarks, { id: `mark_usb_${Date.now()}`, x: 0.12, y: 0.5, kind: 'connector', note: 'AI edit: USB connector on left edge' }])
+    if (lower.includes('hole') || lower.includes('m3')) {
+      setField('mountingHoleCount', Math.max(form.mountingHoleCount, 4))
+      setMountingHoleDiameterMm(lower.includes('m3') ? 3 : mountingHoleDiameterMm)
+    }
+    setCustomSketch(nextPoints)
+    setField('outlineNotes', `${form.outlineNotes || ''}\nAI shape edit: ${prompt}`.trim())
+    setAiShapePrompt('')
+  }
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault()
+    if (outlineMode && form.boardType === 'custom') {
+      const board = saveBoard(makeBoardFromForm('ready_to_export'))
+      setSavedBoard(board)
+      window.location.hash = '#/boards'
+      return
+    }
     const job = createJob(form)
     setCreated(job)
     window.location.hash = '#/dashboard'
@@ -320,14 +520,21 @@ function GeneratorPage() {
         )}
         {step === 1 && (
           <>
+            <div className="outline-mode-card full-span">
+              <div>
+                <StatusBadge tone="cyan">AI Board Outline Only</StatusBadge>
+                <h2>Blank Board Outline</h2>
+                <p>Create a mechanical PCB outline first. Export it as a KiCad project with Edge.Cuts geometry, or convert it into a full PCB project later.</p>
+              </div>
+              <label className="toggle-row">
+                <input type="checkbox" checked={outlineMode} onChange={(event) => setOutlineMode(event.target.checked)} />
+                Outline-only KiCad project
+              </label>
+            </div>
             <label>
               Board shape
               <select value={form.boardShape} onChange={(event) => setField('boardShape', event.target.value as GenerationRequest['boardShape'])}>
-                <option>rectangle</option>
-                <option>rounded rectangle</option>
-                <option>circle</option>
-                <option>custom drawn</option>
-                <option>image traced</option>
+                {boardShapeTypes.map((shape) => <option key={shape}>{shape}</option>)}
               </select>
             </label>
             <label>
@@ -341,6 +548,24 @@ function GeneratorPage() {
             <label>
               Mounting hole count
               <input type="number" min="0" max="24" value={form.mountingHoleCount} onChange={(event) => setField('mountingHoleCount', Number(event.target.value))} />
+            </label>
+            <label>
+              Mounting hole diameter
+              <input type="number" min="0.5" max="12" step="0.1" value={mountingHoleDiameterMm} onChange={(event) => setMountingHoleDiameterMm(Number(event.target.value))} />
+            </label>
+            <label>
+              Corner radius
+              <input type="number" min="0" max="40" step="0.5" value={cornerRadiusMm} onChange={(event) => setCornerRadiusMm(Number(event.target.value))} />
+            </label>
+            <label className="toggle-row">
+              <input type="checkbox" checked={roundedCorners} onChange={(event) => {
+                setRoundedCorners(event.target.checked)
+                if (event.target.checked) {
+                  setField('boardShape', 'rounded rectangle')
+                  setCustomSketch(roundedRectanglePoints((cornerRadiusMm / Math.max(form.boardWidthMm, form.boardHeightMm)) * 100))
+                }
+              }} />
+              Rounded corners
             </label>
             <label>
               Board size constraints
@@ -366,19 +591,18 @@ function GeneratorPage() {
                   setPoints={setCustomSketch}
                   aiPrompt={aiShapePrompt}
                   setAiPrompt={setAiShapePrompt}
-                  applyAiEdit={(prompt) => {
-                    const lower = prompt.toLowerCase()
-                    if (lower.includes('bigger') || lower.includes('larger')) {
-                      setField('boardWidthMm', Math.min(600, Math.round(form.boardWidthMm * 1.15)))
-                      setField('boardHeightMm', Math.min(600, Math.round(form.boardHeightMm * 1.15)))
-                    }
-                    if (lower.includes('round')) setField('boardShape', 'rounded rectangle')
-                    if (lower.includes('circle')) setField('boardShape', 'circle')
-                    if (lower.includes('usb')) setField('placementMarks', [...form.placementMarks, { id: `mark_usb_${Date.now()}`, x: 0.12, y: 0.5, kind: 'connector', note: 'AI edit: USB connector on left edge' }])
-                    setField('outlineNotes', `${form.outlineNotes || ''}\nAI shape edit: ${prompt}`.trim())
-                    setAiShapePrompt('')
-                  }}
+                  applyAiEdit={applyShapeEdit}
                 />
+                <div className="outline-actions">
+                  <button className="primary-action" type="button" onClick={generateOutline}><Sparkles size={16} /> Generate Outline</button>
+                  <button className="secondary-action" type="button" onClick={saveCurrentBoard}><FolderKanban size={16} /> Save Board</button>
+                  <button className="secondary-action" type="button" onClick={() => {
+                    const board = saveBoard(makeBoardFromForm('exported'))
+                    setSavedBoard(board)
+                    downloadBoardBundle(board)
+                  }}><Download size={16} /> Export KiCad Outline</button>
+                  {savedBoard && <a className="secondary-action" href="#/boards">Open in Boards</a>}
+                </div>
               </div>
             )}
           </>
@@ -420,7 +644,7 @@ function GeneratorPage() {
           {step < wizardSteps.length - 1 && <button className="primary-action" type="button" onClick={() => setStep((value) => Math.min(wizardSteps.length - 1, value + 1))}>Continue</button>}
           {step === wizardSteps.length - 1 && (
             <button className="primary-action" type="submit">
-              <Sparkles size={18} /> Create generation job
+              <Sparkles size={18} /> {outlineMode && form.boardType === 'custom' ? 'Save outline board' : 'Create generation job'}
             </button>
           )}
         </div>
@@ -1054,6 +1278,150 @@ function FootprintIntentMap({
   )
 }
 
+function BoardPreview({ board }: { board: Board }) {
+  const points = board.outline.length >= 3 ? board.outline : makeShapePoints(board.shapeType)
+  return (
+    <div className="board-preview">
+      <svg viewBox="0 0 100 100" role="img" aria-label={`${board.name} outline preview`} preserveAspectRatio="xMidYMid meet">
+        <polygon points={points.map((point) => `${point.x * 100},${point.y * 100}`).join(' ')} />
+        {board.mountingHoles.map((hole) => (
+          <circle key={hole.id} cx={hole.x * 100} cy={hole.y * 100} r="2.2" />
+        ))}
+      </svg>
+    </div>
+  )
+}
+
+function BoardsPage() {
+  const boards = useBoards((state) => state.boards)
+  const activeBoard = useBoards((state) => state.getActiveBoard())
+  const setActiveBoard = useBoards((state) => state.setActiveBoard)
+  const deleteBoard = useBoards((state) => state.deleteBoard)
+  const duplicateBoard = useBoards((state) => state.duplicateBoard)
+  const saveBoard = useBoards((state) => state.saveBoard)
+  const jobs = useJobs((state) => state.jobs)
+  const setActiveJob = useJobs((state) => state.setActiveJob)
+  const [filter, setFilter] = useState<'all' | 'outline' | 'full' | 'recent' | 'ready'>('all')
+  const [recentCutoff] = useState(() => Date.now() - 1000 * 60 * 60 * 24 * 14)
+
+  const filteredBoards = boards.filter((board) => {
+    if (filter === 'outline') return board.type === 'outline_only'
+    if (filter === 'ready') return board.status === 'ready_to_export' || board.status === 'exported'
+    if (filter === 'recent') return new Date(board.createdAt).getTime() >= recentCutoff
+    return filter === 'all'
+  })
+  const showJobs = filter === 'all' || filter === 'full' || filter === 'recent'
+
+  return (
+    <main className="page-grid">
+      <section className="page-head">
+        <StatusBadge tone="green">Board library</StatusBadge>
+        <h1>Boards</h1>
+        <p>Saved board outlines and finished PCB projects live here. Outline-only boards can export a KiCad project with Edge.Cuts geometry before any schematic exists.</p>
+      </section>
+      <div className="filter-row" role="toolbar" aria-label="Board filters">
+        {[
+          ['all', 'All'],
+          ['outline', 'Outline Only'],
+          ['full', 'Full Projects'],
+          ['recent', 'Recently Created'],
+          ['ready', 'Ready to Export'],
+        ].map(([key, label]) => (
+          <button className={filter === key ? 'active' : ''} key={key} type="button" onClick={() => setFilter(key as typeof filter)}>{label}</button>
+        ))}
+      </div>
+      <section className="boards-layout">
+        <div className="board-card-grid">
+          {filteredBoards.map((board) => (
+            <article className="board-card" key={board.id}>
+              <BoardPreview board={board} />
+              <div>
+                <StatusBadge tone={board.type === 'outline_only' ? 'cyan' : 'green'}>{board.type === 'outline_only' ? 'outline only' : 'full project'}</StatusBadge>
+                <h2>{board.name}</h2>
+                <p>{board.width} {board.units} x {board.height} {board.units} · {board.shapeType}</p>
+                <small>{new Date(board.createdAt).toLocaleString()} · {board.status.replaceAll('_', ' ')}</small>
+              </div>
+              <div className="board-card-actions">
+                <button type="button" onClick={() => setActiveBoard(board.id)}>Open</button>
+                <a href="#/generate" onClick={() => setActiveBoard(board.id)}>Edit Outline</a>
+                <button type="button" onClick={() => downloadBoardBundle(board)}>Export KiCad</button>
+                <button type="button" onClick={() => downloadBoardBundle(board)}>Download</button>
+                <button type="button" onClick={() => duplicateBoard(board.id)}>Duplicate</button>
+                <button type="button" onClick={() => deleteBoard(board.id)}>Delete</button>
+              </div>
+            </article>
+          ))}
+          {showJobs && jobs.map((job) => (
+            <article className="board-card" key={job.id}>
+              <BoardPreview board={{
+                id: job.id,
+                name: job.request.projectName,
+                type: 'full_project',
+                shapeType: job.request.boardShape,
+                width: job.request.boardWidthMm,
+                height: job.request.boardHeightMm,
+                units: 'mm',
+                cornerRadiusMm: 0,
+                outline: makeShapePoints(job.request.boardShape),
+                mountingHoles: mountingHolesForRequest(job.request),
+                generatedFiles: job.exportPackage.files.map((file) => file.path),
+                createdAt: job.createdAt,
+                updatedAt: job.completedAt || job.createdAt,
+                status: 'ready_to_export',
+                sourcePrompt: job.request.notes,
+                projectId: job.projectId,
+                editHistory: [],
+              }} />
+              <div>
+                <StatusBadge tone="green">full project</StatusBadge>
+                <h2>{job.request.projectName}</h2>
+                <p>{job.request.boardWidthMm} mm x {job.request.boardHeightMm} mm · {job.request.boardShape}</p>
+                <small>{job.status.replaceAll('_', ' ')}</small>
+              </div>
+              <div className="board-card-actions">
+                <a href="#/project" onClick={() => setActiveJob(job.id)}>Open</a>
+                <a href="#/generate">Edit Outline</a>
+                <a href="#/export" onClick={() => setActiveJob(job.id)}>Export KiCad</a>
+                <a href="#/export" onClick={() => setActiveJob(job.id)}>Download</a>
+                <button type="button">Duplicate</button>
+                <button type="button">Delete</button>
+              </div>
+            </article>
+          ))}
+          {filteredBoards.length === 0 && !showJobs && <p className="inline-note">No boards match this filter yet.</p>}
+        </div>
+        <Panel title="Board detail">
+          {activeBoard ? (
+            <div className="board-detail">
+              <BoardPreview board={activeBoard} />
+              <dl className="spec-list">
+                <dt>Name</dt><dd>{activeBoard.name}</dd>
+                <dt>Type</dt><dd>{activeBoard.type.replaceAll('_', ' ')}</dd>
+                <dt>Shape</dt><dd>{activeBoard.shapeType}</dd>
+                <dt>Dimensions</dt><dd>{activeBoard.width} {activeBoard.units} x {activeBoard.height} {activeBoard.units}</dd>
+                <dt>Outline points</dt><dd>{activeBoard.outline.length}</dd>
+                <dt>Mounting holes</dt><dd>{activeBoard.mountingHoles.length}</dd>
+                <dt>Source prompt</dt><dd>{activeBoard.sourcePrompt || 'none'}</dd>
+              </dl>
+              <div className="outline-actions">
+                <button className="secondary-action" type="button" onClick={() => {
+                  const updated = { ...activeBoard, shapeType: 'rounded rectangle' as const, cornerRadiusMm: Math.max(3, activeBoard.cornerRadiusMm), outline: roundedRectanglePoints(), editHistory: [...activeBoard.editHistory, 'Rounded corners from Boards detail'] }
+                  saveBoard(updated)
+                }}>Add Rounded Corners</button>
+                <button className="primary-action" type="button" onClick={() => downloadBoardBundle(activeBoard)}>Download KiCad Outline</button>
+                <a className="secondary-action" href="#/generate">Convert to PCB Project</a>
+              </div>
+              <pre className="file-tree">{outlineService.getProjectFiles(activeBoard).files.join('\n')}</pre>
+            </div>
+          ) : (
+            <p>No saved outline selected yet. Create one from the Blank Board generator.</p>
+          )}
+        </Panel>
+      </section>
+    </main>
+  )
+}
+
 function ExportPage() {
   const job = useJobs((state) => state.getActiveJob())
   const jobs = useJobs((state) => state.jobs)
@@ -1289,6 +1657,7 @@ function App() {
     '/generate': <GeneratorPage />,
     '/dashboard': <DashboardPage />,
     '/project': <ProjectPage />,
+    '/boards': <BoardsPage />,
     '/export': <ExportPage />,
     '/logs': <LogsPage />,
     '/pricing': <PricingPage />,
