@@ -10,6 +10,7 @@
     "start": "next start",
     "test:plugin": "node --test ./plugins/boardforge-plugin/tests/*.test.mjs",
     "smoke:plugin": "node ./plugins/boardforge-plugin/bin/boardforge-plugin.mjs --job ./plugins/boardforge-plugin/examples/outline-job.json --workspace ./plugins/boardforge-plugin/tmp",
+    "mcp:plugin": "node ./plugins/boardforge-plugin/bin/boardforge-mcp.mjs --workspace ./boardforge-workspace",
     "sync:libraries": "node ./plugins/boardforge-plugin/bin/boardforge-plugin.mjs --job ./plugins/boardforge-plugin/examples/library-sync-job.json --workspace ./boardforge-workspace",
     "resolve:components": "node ./plugins/boardforge-plugin/bin/boardforge-plugin.mjs --job ./plugins/boardforge-plugin/examples/resolve-components-job.json --workspace ./boardforge-workspace"
   },

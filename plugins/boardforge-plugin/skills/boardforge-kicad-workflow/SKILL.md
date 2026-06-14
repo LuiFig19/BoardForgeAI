@@ -171,3 +171,17 @@ Supported endpoints:
 - `POST /jobs/export-cpl`
 - `POST /jobs/export`
 - `POST /jobs/scan`
+
+## Codex MCP Server
+
+When the plugin is installed in Codex, Codex should call the BoardForge MCP tools directly instead of invoking shell commands by hand.
+
+Local test command:
+
+```bash
+node plugins/boardforge-plugin/bin/boardforge-mcp.mjs --workspace path/to/workspace
+```
+
+The MCP server exposes controlled tools for status, KiCad detection, outline/project creation, library sync/search/resolve, DRC/ERC, Gerbers, drill, BOM, CPL, JLCPCB packaging, and project summaries. Each tool accepts structured JSON and returns a review-required result object as text content.
+
+Use `status` first, then `kicad_status`, then the specific BoardForge job tool. Do not bypass these tools for direct KiCad file edits.

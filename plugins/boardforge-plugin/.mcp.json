@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "boardforge": {
+      "command": "node",
+      "args": [
+        "./bin/boardforge-mcp.mjs"
+      ],
+      "env": {
+        "BOARDFORGE_WORKSPACE": "./boardforge-workspace"
+      }
+    }
+  }
+}

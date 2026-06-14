@@ -1,0 +1,157 @@
+#!/usr/bin/env node
+import path from 'node:path'
+import readline from 'node:readline'
+import { executeJob } from '../lib/jobs.mjs'
+import { detectKiCadCli } from '../lib/kicad-cli.mjs'
+
+function argValue(name) {
+  const index = process.argv.indexOf(name)
+  return index === -1 ? null : process.argv[index + 1] || null
+}
+
+const workspace = path.resolve(argValue('--workspace') || process.env.BOARDFORGE_WORKSPACE || process.cwd())
+const protocolVersion = '2024-11-05'
+
+const toolToJobType = {
+  create_outline_board: 'create_outline_board',
+  create_kicad_project: 'create_kicad_project',
+  apply_edge_cuts: 'apply_edge_cuts',
+  validate_board_outline: 'validate_board_outline',
+  sync_kicad_libraries: 'sync_kicad_libraries',
+  search_library_assets: 'search_library_assets',
+  resolve_component_assets: 'resolve_component_assets',
+  find_missing_footprints: 'find_missing_footprints',
+  link_3d_models: 'link_3d_models',
+  scan_kicad_project: 'scan_kicad_project',
+  run_kicad_drc: 'run_kicad_drc',
+  run_kicad_erc: 'run_kicad_erc',
+  export_gerbers: 'export_gerbers',
+  export_drill_files: 'export_drill_files',
+  export_bom: 'export_bom',
+  export_cpl: 'export_cpl',
+  package_jlcpcb: 'package_jlcpcb',
+  summarize_project: 'summarize_project',
+}
+
+const commonInputSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    id: { type: 'string', description: 'Optional stable job id.' },
+    input: { type: 'object', description: 'BoardForge job input payload.', additionalProperties: true },
+    allowOverwrite: { type: 'boolean', description: 'Allow replacing an existing generated project folder.' },
+    dryRun: { type: 'boolean', description: 'Validate and plan without writing files.' },
+  },
+}
+
+const tools = [
+  {
+    name: 'status',
+    description: 'Return BoardForge MCP status, workspace, and available controlled workflows.',
+    inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+  },
+  {
+    name: 'kicad_status',
+    description: 'Detect the local KiCad CLI adapter without running edits or exports.',
+    inputSchema: { type: 'object', additionalProperties: true, properties: { kicadCliPath: { type: 'string' } } },
+  },
+  ...Object.keys(toolToJobType).map((name) => ({
+    name,
+    description: `Run BoardForge controlled workflow: ${toolToJobType[name]}.`,
+    inputSchema: commonInputSchema,
+  })),
+]
+
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
+
+rl.on('line', async (line) => {
+  if (!line.trim()) return
+  let request
+  try {
+    request = JSON.parse(line)
+  } catch (error) {
+    sendError(null, -32700, `Parse error: ${error.message}`)
+    return
+  }
+  if (!Object.prototype.hasOwnProperty.call(request, 'id')) {
+    return
+  }
+  try {
+    const result = await handleRequest(request)
+    sendResult(request.id, result)
+  } catch (error) {
+    sendError(request.id, -32603, error.message)
+  }
+})
+
+async function handleRequest(request) {
+  if (request.jsonrpc !== '2.0') throw new Error('BoardForge MCP expects JSON-RPC 2.0 messages.')
+  if (request.method === 'initialize') {
+    return {
+      protocolVersion,
+      serverInfo: { name: 'boardforge-plugin', version: '0.1.0' },
+      capabilities: { tools: {} },
+      instructions: [
+        'Use BoardForge tools with structured JSON only.',
+        'Do not run arbitrary KiCad shell commands.',
+        'Treat generated KiCad output as review-required until DRC/ERC/export results prove otherwise.',
+      ].join(' '),
+    }
+  }
+  if (request.method === 'tools/list') {
+    return { tools }
+  }
+  if (request.method === 'tools/call') {
+    const params = request.params || {}
+    return callTool(params.name, params.arguments || {})
+  }
+  throw new Error(`Unsupported MCP method: ${request.method}`)
+}
+
+async function callTool(name, args) {
+  if (name === 'status') {
+    return toToolResult({
+      status: 'ok',
+      service: 'boardforge-mcp',
+      workspace,
+      tools: tools.map((tool) => tool.name),
+      safety: 'BoardForge writes only through whitelisted structured jobs.',
+    })
+  }
+  if (name === 'kicad_status') {
+    return toToolResult(await detectKiCadCli({ kicadCliPath: args.kicadCliPath }))
+  }
+  const type = toolToJobType[name]
+  if (!type) throw new Error(`Unknown BoardForge tool: ${name}`)
+  const input = args.input && typeof args.input === 'object' ? { ...args.input } : { ...args }
+  delete input.id
+  delete input.allowOverwrite
+  delete input.dryRun
+  const job = {
+    id: args.id || `${name}_${Date.now()}`,
+    type,
+    input,
+    allowOverwrite: Boolean(args.allowOverwrite),
+    dryRun: Boolean(args.dryRun),
+  }
+  return toToolResult(await executeJob(job, workspace))
+}
+
+function toToolResult(payload) {
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(payload, null, 2),
+      },
+    ],
+  }
+}
+
+function sendResult(id, result) {
+  process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id, result })}\n`)
+}
+
+function sendError(id, code, message) {
+  process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } })}\n`)
+}

@@ -12,6 +12,7 @@
   "license": "UNLICENSED",
   "keywords": ["kicad", "pcb", "eda", "codex", "hardware"],
   "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "BoardForge Plugin",
     "shortDescription": "Safe local KiCad automation for Codex hardware workflows.",

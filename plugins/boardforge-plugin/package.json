@@ -5,10 +5,12 @@
   "type": "module",
   "bin": {
     "boardforge-plugin": "./bin/boardforge-plugin.mjs",
-    "boardforge-server": "./bin/boardforge-server.mjs"
+    "boardforge-server": "./bin/boardforge-server.mjs",
+    "boardforge-mcp": "./bin/boardforge-mcp.mjs"
   },
   "scripts": {
     "smoke": "node ./bin/boardforge-plugin.mjs --job ./examples/outline-job.json --workspace ./tmp",
+    "mcp": "node ./bin/boardforge-mcp.mjs",
     "test": "node --test ./tests/*.test.mjs"
   },
   "dependencies": {
