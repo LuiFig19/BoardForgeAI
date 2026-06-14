@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "bin": {
-    "boardforge-plugin": "./bin/boardforge-plugin.mjs"
+    "boardforge-plugin": "./bin/boardforge-plugin.mjs",
+    "boardforge-server": "./bin/boardforge-server.mjs"
   },
   "scripts": {
     "smoke": "node ./bin/boardforge-plugin.mjs --job ./examples/outline-job.json --workspace ./tmp",

@@ -89,12 +89,36 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - JLCPCB ZIP packaging only when required files already exist
 - JLCPCB ZIP blocking when the DRC report contains errors
 - honest blocked statuses when schematic/project/export files are missing
+- local HTTP tool server for Codex/web handoff
 
 ```bash
 node plugins/boardforge-plugin/bin/boardforge-plugin.mjs \
   --job plugins/boardforge-plugin/examples/outline-job.json \
   --workspace plugins/boardforge-plugin/tmp
 ```
+
+Run the local tool server:
+
+```bash
+node plugins/boardforge-plugin/bin/boardforge-server.mjs --workspace ./boardforge-workspace --port 47321
+```
+
+Endpoints:
+
+- `GET /status`
+- `GET /kicad/status`
+- `GET /jobs/:id`
+- `POST /jobs/create-outline`
+- `POST /jobs/create-project`
+- `POST /jobs/validate`
+- `POST /jobs/run-drc`
+- `POST /jobs/run-erc`
+- `POST /jobs/export-gerbers`
+- `POST /jobs/export-drill`
+- `POST /jobs/export-bom`
+- `POST /jobs/export-cpl`
+- `POST /jobs/export`
+- `POST /jobs/scan`
 
 This writes:
 

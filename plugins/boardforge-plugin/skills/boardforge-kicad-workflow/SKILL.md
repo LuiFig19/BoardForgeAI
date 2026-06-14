@@ -131,3 +131,28 @@ node plugins/boardforge-plugin/bin/boardforge-plugin.mjs --job path/to/job.json 
 ```
 
 Current MVP implements outline generation, outline validation, net classes, placement planning, real KiCad footprint placement for templates, routing planning, self-review, KiCad project scanning, KiCad CLI DRC/ERC, Gerber/drill/CPL/BOM export, and gated JLCPCB packaging.
+
+## Local Tool Server
+
+The same safe dispatcher can run as a local HTTP server:
+
+```bash
+node plugins/boardforge-plugin/bin/boardforge-server.mjs --workspace path/to/workspace --port 47321
+```
+
+Supported endpoints:
+
+- `GET /status`
+- `GET /kicad/status`
+- `GET /jobs/:id`
+- `POST /jobs/create-outline`
+- `POST /jobs/create-project`
+- `POST /jobs/validate`
+- `POST /jobs/run-drc`
+- `POST /jobs/run-erc`
+- `POST /jobs/export-gerbers`
+- `POST /jobs/export-drill`
+- `POST /jobs/export-bom`
+- `POST /jobs/export-cpl`
+- `POST /jobs/export`
+- `POST /jobs/scan`
