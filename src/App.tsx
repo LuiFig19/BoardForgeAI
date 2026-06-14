@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type SetStateAction, type WheelEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, useScroll, useTransform } from 'framer-motion'
+import JSZip from 'jszip'
 import {
   ArrowRight,
   CheckCircle2,
@@ -107,22 +108,19 @@ const mountingHolesForRequest = (request: GenerationRequest, diameterMm = 3) => 
   })
 }
 
-const downloadTextFile = (filename: string, content: string, type = 'text/plain') => {
-  const blob = new Blob([content], { type })
+const downloadBoardBundle = async (board: Board) => {
+  const files = outlineService.createProjectBundle(board)
+  const zip = new JSZip()
+  files.forEach((file) => zip.file(file.path, file.content))
+  const blob = await zip.generateAsync({ type: 'blob' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = filename
+  link.download = `${outlineService.getProjectFiles(board).safeName}-kicad-outline.zip`
   document.body.appendChild(link)
   link.click()
   link.remove()
   URL.revokeObjectURL(url)
-}
-
-const downloadBoardBundle = (board: Board) => {
-  const files = outlineService.createProjectBundle(board)
-  const bundle = files.map((file) => `--- ${file.path} ---\n${file.content}`).join('\n\n')
-  downloadTextFile(`${outlineService.getProjectFiles(board).safeName}-kicad-outline.txt`, bundle)
 }
 
 function useHashRoute() {
@@ -600,7 +598,7 @@ function GeneratorPage() {
                     const board = saveBoard(makeBoardFromForm('exported'))
                     setSavedBoard(board)
                     downloadBoardBundle(board)
-                  }}><Download size={16} /> Export KiCad Outline</button>
+                  }}><Download size={16} /> Download KiCad ZIP</button>
                   {savedBoard && <a className="secondary-action" href="#/boards">Open in Boards</a>}
                 </div>
               </div>
@@ -1408,7 +1406,7 @@ function BoardsPage() {
                   const updated = { ...activeBoard, shapeType: 'rounded rectangle' as const, cornerRadiusMm: Math.max(3, activeBoard.cornerRadiusMm), outline: roundedRectanglePoints(), editHistory: [...activeBoard.editHistory, 'Rounded corners from Boards detail'] }
                   saveBoard(updated)
                 }}>Add Rounded Corners</button>
-                <button className="primary-action" type="button" onClick={() => downloadBoardBundle(activeBoard)}>Download KiCad Outline</button>
+                <button className="primary-action" type="button" onClick={() => downloadBoardBundle(activeBoard)}>Download KiCad ZIP</button>
                 <a className="secondary-action" href="#/generate">Convert to PCB Project</a>
               </div>
               <pre className="file-tree">{outlineService.getProjectFiles(activeBoard).files.join('\n')}</pre>
