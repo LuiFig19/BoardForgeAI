@@ -46,7 +46,7 @@ const routes = ['/', '/generate', '/dashboard', '/project', '/boards', '/plugin'
 const wizardSteps = ['Requirements', 'Board shape', 'Placement intent', 'Generate']
 const markKinds: GenerationRequest['placementMarks'][number]['kind'][] = ['MCU', 'connector', 'power', 'sensor', 'mounting hole', 'keepout', 'antenna', 'hot zone']
 const outlineService = new KiCadBoardOutlineService()
-const pluginStatus = {
+const defaultPluginStatus = {
   installed: false,
   connected: false,
   kicadDetected: false,
@@ -56,6 +56,7 @@ const pluginStatus = {
   lastSync: 'Never',
   lastJob: 'No plugin jobs yet',
 }
+type PluginRuntimeStatus = typeof defaultPluginStatus
 const generationModes = ['Board Outline Only', 'Full PCB Project', 'Improve Existing KiCad Project', 'Export/Package Existing Project'] as const
 const pluginCommands = [
   'create_outline_board',
@@ -75,6 +76,7 @@ const pluginCommands = [
 ]
 
 function PluginConnectionBanner() {
+  const pluginStatus = usePluginRuntimeStatus()
   return (
     <section className="plugin-banner">
       <div>
@@ -89,6 +91,47 @@ function PluginConnectionBanner() {
       <a className="primary-action" href="#/plugin"><Plug size={16} /> Get BoardForge Plugin</a>
     </section>
   )
+}
+
+function usePluginRuntimeStatus(): PluginRuntimeStatus {
+  const [status, setStatus] = useState<PluginRuntimeStatus>(defaultPluginStatus)
+
+  useEffect(() => {
+    let cancelled = false
+    const probe = async () => {
+      try {
+        const [serverResponse, kicadResponse] = await Promise.all([
+          fetch('http://127.0.0.1:47321/status'),
+          fetch('http://127.0.0.1:47321/kicad/status'),
+        ])
+        if (!serverResponse.ok || !kicadResponse.ok) throw new Error('BoardForge local server unavailable')
+        const server = await serverResponse.json()
+        const kicad = await kicadResponse.json()
+        if (!cancelled) {
+          setStatus({
+            installed: true,
+            connected: true,
+            kicadDetected: Boolean(kicad.available),
+            kicadVersion: kicad.version || 'Not detected',
+            cliAvailable: Boolean(kicad.available),
+            workspace: server.workspace || 'Local workspace connected',
+            lastSync: new Date().toLocaleTimeString(),
+            lastJob: 'Local server online',
+          })
+        }
+      } catch {
+        if (!cancelled) setStatus(defaultPluginStatus)
+      }
+    }
+    void probe()
+    const timer = window.setInterval(probe, 10000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
+
+  return status
 }
 
 const makeShapePoints = (shape: BoardShapeType): Array<{ x: number; y: number }> => {
@@ -1357,6 +1400,7 @@ function BoardPreview({ board }: { board: Board }) {
 }
 
 function BoardsPage() {
+  const pluginStatus = usePluginRuntimeStatus()
   const boards = useBoards((state) => state.boards)
   const activeBoard = useBoards((state) => state.getActiveBoard())
   const setActiveBoard = useBoards((state) => state.setActiveBoard)
@@ -1488,6 +1532,7 @@ function BoardsPage() {
 }
 
 function PluginPage() {
+  const pluginStatus = usePluginRuntimeStatus()
   const statusItems = [
     ['Installed', pluginStatus.installed ? 'Installed' : 'Not installed'],
     ['Connected', pluginStatus.connected ? 'Connected' : 'Not connected'],
@@ -1596,6 +1641,7 @@ function PluginPage() {
 }
 
 function ExportPage() {
+  const pluginStatus = usePluginRuntimeStatus()
   const job = useJobs((state) => state.getActiveJob())
   const jobs = useJobs((state) => state.jobs)
   const setActiveJob = useJobs((state) => state.setActiveJob)
@@ -1785,6 +1831,7 @@ function DocsPage() {
 }
 
 function AdminPage() {
+  const pluginStatus = usePluginRuntimeStatus()
   const jobs = useJobs((state) => state.jobs)
   const boards = useBoards((state) => state.boards)
   const runtime = new KiCadValidationService().checkRuntime()
