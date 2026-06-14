@@ -88,6 +88,11 @@ function FootprintMesh({ placed, width, height }: { placed: PlacedFootprint; wid
       <Text position={[0, sy / 2 + 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.075} color="#f8fafc" anchorX="center">
         {placed.ref}
       </Text>
+      {pkg.kind !== 'resistor' && pkg.kind !== 'capacitor' && pkg.kind !== 'testpad' && (
+        <Text position={[0, sy / 2 + 0.014, sz / 2 + 0.12]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.055} color="#dce8d7" anchorX="center">
+          {pkg.label}
+        </Text>
+      )}
     </group>
   )
 }
@@ -103,17 +108,17 @@ function BoardScene({ request, footprints = demoPlacedFootprints, routes = demoB
       <mesh receiveShadow position={[0, 0, 0]}>
         {isRound ? <cylinderGeometry args={[Math.min(width, height) / 2, Math.min(width, height) / 2, 0.09, 96]} /> : <boxGeometry args={[width, 0.09, height]} />}
         <meshPhysicalMaterial
-          color="#115e59"
-          roughness={0.34}
-          metalness={0.04}
-          clearcoat={0.55}
-          clearcoatRoughness={0.18}
+          color="#123820"
+          roughness={0.68}
+          metalness={0.02}
+          clearcoat={0.24}
+          clearcoatRoughness={0.42}
           side={DoubleSide}
         />
       </mesh>
       <mesh position={[0, 0.052, 0]}>
         {isRound ? <cylinderGeometry args={[Math.min(width, height) / 2.02, Math.min(width, height) / 2.02, 0.006, 96]} /> : <boxGeometry args={[width * 0.97, 0.006, height * 0.94]} />}
-        <meshStandardMaterial color="#1fb6a6" transparent opacity={0.18} roughness={0.7} />
+        <meshStandardMaterial color="#19542f" transparent opacity={0.32} roughness={0.82} />
       </mesh>
       <CopperTraces width={width} height={height} routes={routes} />
       <ViaField width={width} height={height} vias={vias} />
@@ -137,10 +142,10 @@ export function RealisticPcbViewer({ request, footprints = demoPlacedFootprints,
   return (
     <div className="realistic-viewer">
       <Canvas shadows dpr={[1, 1.7]} camera={{ position: [0, 4.2, 6.6], fov: 38 }}>
-        <color attach="background" args={['#071110']} />
-        <ambientLight intensity={0.55} />
-        <directionalLight position={[3, 5, 4]} intensity={3.2} castShadow />
-        <pointLight position={[-4, 2, -3]} color="#67e8f9" intensity={10} />
+        <color attach="background" args={['#0d1114']} />
+        <ambientLight intensity={0.42} />
+        <directionalLight position={[3, 5, 4]} intensity={2.9} castShadow />
+        <pointLight position={[-4, 2, -3]} color="#d7f7e7" intensity={3.4} />
         <Suspense fallback={null}>
           <BoardScene request={request} footprints={footprints} routes={routes} vias={vias} />
           <ContactShadows position={[0, -0.16, 0]} opacity={0.4} scale={8} blur={2.6} />

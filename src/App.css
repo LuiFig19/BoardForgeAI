@@ -150,9 +150,19 @@ p {
   min-height: inherit;
 }
 
+.scene-shell > div {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
 .scene-shell canvas {
   position: absolute;
   inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
 }
 
 .css-pcb {
