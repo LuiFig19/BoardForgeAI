@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { polygonBounds } from './geometry.mjs'
+import { renderPlacedFootprintsFromLibraries } from './library-adapter.mjs'
 
 const kicadShare = 'C:\\Program Files\\KiCad\\10.0\\share\\kicad\\footprints'
 
@@ -65,7 +66,9 @@ function comp(ref, group, value, x, y, rotation) {
   return { ref, group, value, x, y, rotation, footprint: fp.footprint, footprintFile: fp.file }
 }
 
-export async function renderPlacedFootprints(components = []) {
+export async function renderPlacedFootprints(components = [], options = {}) {
+  const controlled = await renderPlacedFootprintsFromLibraries(components, options)
+  if (controlled.rendered.length) return controlled.rendered
   const rendered = []
   for (const component of components) {
     try {

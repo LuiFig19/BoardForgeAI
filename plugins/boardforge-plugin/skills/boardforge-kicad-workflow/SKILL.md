@@ -38,6 +38,9 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `create_kicad_project`
 - `apply_edge_cuts`
 - `scan_kicad_project`
+- `sync_kicad_libraries`
+- `search_library_assets`
+- `resolve_component_assets`
 - `find_missing_footprints`
 - `link_3d_models`
 - `create_net_classes`
@@ -78,6 +81,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Keep all writes inside the user-approved workspace.
 - Do not allow path traversal.
 - Do not run arbitrary shell commands.
+- Download KiCad libraries only through the BoardForge allowlist. Do not clone arbitrary repos or install untrusted footprint libraries.
+- Prefer installed KiCad libraries first. Use official KiCad GitLab library repos only when `downloadOfficial` and `allowNetwork` are explicitly true in the structured job.
 - Do not overwrite existing project folders unless the job explicitly allows it.
 - Prefer dry run before destructive edits.
 - Snapshot existing projects before edits when supported.
@@ -101,6 +106,11 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `create_outline_board` writes real `.kicad_pro`, `.kicad_pcb`, `README.md`, and `boardforge-review.json`.
 - `create_kicad_project` writes real `.kicad_pro`, `.kicad_sch`, `.kicad_pcb`, `README.md`, `boardforge-components.json`, and `boardforge-review.json`.
 - `create_kicad_project` places real KiCad footprints from installed footprint libraries for template components.
+- `sync_kicad_libraries` detects installed KiCad 10/9/8 library roots, optionally syncs allowlisted official KiCad symbol/footprint/3D repos, and writes `.boardforge/library-cache/boardforge-library-index.json`.
+- `search_library_assets` searches indexed symbols, footprints, and 3D models.
+- `resolve_component_assets` maps component refs/groups/values/MPNs to review-required symbol, footprint, and 3D model candidates.
+- `find_missing_footprints` reports which component footprints cannot be found in the indexed allowlisted libraries.
+- `link_3d_models` attaches available 3D model references from indexed KiCad footprints/packages.
 - `validate_board_outline` checks outline area, self-intersections, mounting hole containment, and edge clearance.
 - `create_net_classes`, `validate_net_classes`, and `report_unclassified_nets` use BoardForge net-class rules.
 - `generate_placement_plan` creates deterministic placement plans and fails on off-board/overlap issues.
@@ -147,6 +157,11 @@ Supported endpoints:
 - `GET /jobs/:id`
 - `POST /jobs/create-outline`
 - `POST /jobs/create-project`
+- `POST /jobs/sync-libraries`
+- `POST /jobs/search-library`
+- `POST /jobs/resolve-assets`
+- `POST /jobs/find-missing-footprints`
+- `POST /jobs/link-3d-models`
 - `POST /jobs/validate`
 - `POST /jobs/run-drc`
 - `POST /jobs/run-erc`

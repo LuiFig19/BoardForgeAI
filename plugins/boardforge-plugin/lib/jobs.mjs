@@ -10,8 +10,9 @@ import { kicadPcbFile, kicadProjectFile, kicadSchematicFile, projectReadmeFile, 
 import { runFullSelfReview, validateBoardOutline } from './validation.mjs'
 import { detectKiCadCli, exportBom, exportCpl, exportDrill, exportGerbers, findKiCadProjectFiles, packageJlcpcb, runDrc, runErc } from './kicad-cli.mjs'
 import { generateTemplateComponents, renderPlacedFootprints } from './components.mjs'
+import { findMissingFootprints, link3dModels, resolveComponentAssets, searchLibraryAssets, syncKiCadLibraries } from './library-adapter.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -42,6 +43,11 @@ export async function executeJob(job, workspace) {
   if (job.type === 'create_outline_board') return createOutlineBoard(job, workspace, profile)
   if (job.type === 'create_kicad_project') return createKiCadProject(job, workspace, profile)
   if (job.type === 'validate_board_outline') return validateOutlineJob(job, profile)
+  if (job.type === 'sync_kicad_libraries') return librarySyncJob(job, workspace)
+  if (job.type === 'search_library_assets') return librarySearchJob(job, workspace)
+  if (job.type === 'resolve_component_assets') return resolveAssetsJob(job, workspace)
+  if (job.type === 'find_missing_footprints') return missingFootprintsJob(job, workspace)
+  if (job.type === 'link_3d_models') return link3dModelsJob(job, workspace)
   if (job.type === 'create_net_classes') return result(job, 'NET_CLASSES_CREATED', [], [], { netClasses: createNetClasses(profile), humanReviewRequired: true })
   if (job.type === 'validate_net_classes' || job.type === 'report_unclassified_nets') return validateNetClassesJob(job)
   if (job.type === 'generate_placement_plan') return placementPlanJob(job, profile)
@@ -84,12 +90,15 @@ async function createKiCadProject(job, workspace, profile) {
   if (existsSync(projectDir) && !job.allowOverwrite) return result(job, 'NEEDS_FIX', [], [{ severity: 'ERROR', code: 'PROJECT_EXISTS', message: `Project already exists. Set allowOverwrite true to replace files: ${projectDir}` }], { projectPath: projectDir, generatedFiles: [] })
   const netClasses = createNetClasses(profile)
   const components = generateTemplateComponents(board, job.input?.templateId)
-  const footprints = await renderPlacedFootprints(components)
+  const library = await resolveComponentAssets({ workspace, input: { ...job.input, components } })
+  const footprintsResult = await renderPlacedFootprints(components, { workspace, ...job.input })
+  const footprints = Array.isArray(footprintsResult) ? footprintsResult : footprintsResult.rendered
   const files = [
     { path: `${safeName}.kicad_pro`, content: kicadProjectFile(board, netClasses) },
     { path: `${safeName}.kicad_sch`, content: kicadSchematicFile(board) },
     { path: `${safeName}.kicad_pcb`, content: kicadPcbFile(board, { netClasses, footprints }) },
     { path: 'boardforge-components.json', content: JSON.stringify(components, null, 2) },
+    { path: 'boardforge-library.json', content: JSON.stringify(library, null, 2) },
     { path: 'boardforge-review.json', content: JSON.stringify({ ...review, components }, null, 2) },
     { path: 'README.md', content: projectReadmeFile(job, board, review) },
   ]
@@ -98,6 +107,31 @@ async function createKiCadProject(job, workspace, profile) {
     for (const file of files) await writeFile(resolveInsideWorkspace(projectDir, file.path), file.content, 'utf8')
   }
   return result(job, 'KICAD_PROJECT_CREATED_NEEDS_REVIEW', review.issues.filter((item) => item.severity === 'WARNING'), review.issues.filter((item) => ['BLOCKER', 'ERROR'].includes(item.severity)), { projectPath: projectDir, generatedFiles: files.map((file) => path.join(projectDir, file.path)), qualityGates: review.qualityGates, summary: review.summary, humanReviewRequired: true })
+}
+
+async function librarySyncJob(job, workspace) {
+  const output = await syncKiCadLibraries({ workspace, input: job.input || {} })
+  return result(job, output.status, output.warnings || [], [], output)
+}
+
+async function librarySearchJob(job, workspace) {
+  const output = await searchLibraryAssets({ workspace, input: job.input || {} })
+  return result(job, output.status, [], [], output)
+}
+
+async function resolveAssetsJob(job, workspace) {
+  const output = await resolveComponentAssets({ workspace, input: job.input || {} })
+  return result(job, output.status, output.warnings || [], [], output)
+}
+
+async function missingFootprintsJob(job, workspace) {
+  const output = await findMissingFootprints({ workspace, input: job.input || {} })
+  return result(job, output.status, [], [], output)
+}
+
+async function link3dModelsJob(job, workspace) {
+  const output = await link3dModels({ workspace, input: job.input || {} })
+  return result(job, output.status, [], [], output)
 }
 
 function validateOutlineJob(job, profile) {

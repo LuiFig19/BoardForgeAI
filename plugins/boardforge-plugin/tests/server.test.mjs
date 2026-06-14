@@ -27,6 +27,11 @@ test('local server exposes status, KiCad status, and create project job', async 
     assert.equal(created.generatedFiles.some((file) => file.endsWith('.kicad_pcb')), true)
     const fetched = await getJson(`http://127.0.0.1:${port}/jobs/server_project`)
     assert.equal(fetched.status, 'KICAD_PROJECT_CREATED_NEEDS_REVIEW')
+    const search = await postJson(`http://127.0.0.1:${port}/jobs/search-library`, {
+      id: 'server_library_search',
+      input: { query: '0603 resistor', maxAssets: 2000, limit: 5 },
+    })
+    assert.equal(search.status, 'LIBRARY_SEARCH_COMPLETE_NEEDS_REVIEW')
   } finally {
     child.kill('SIGTERM')
     await rm(workspace, { recursive: true, force: true })

@@ -15,6 +15,11 @@ const workspace = path.resolve(argValue('--workspace') || process.env.BOARDFORGE
 const routes = {
   'POST /jobs/create-outline': 'create_outline_board',
   'POST /jobs/create-project': 'create_kicad_project',
+  'POST /jobs/sync-libraries': 'sync_kicad_libraries',
+  'POST /jobs/search-library': 'search_library_assets',
+  'POST /jobs/resolve-assets': 'resolve_component_assets',
+  'POST /jobs/find-missing-footprints': 'find_missing_footprints',
+  'POST /jobs/link-3d-models': 'link_3d_models',
   'POST /jobs/validate': 'run_full_self_review',
   'POST /jobs/export': 'package_jlcpcb',
   'POST /jobs/run-drc': 'run_kicad_drc',

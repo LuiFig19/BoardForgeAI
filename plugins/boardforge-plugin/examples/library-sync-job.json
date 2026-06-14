@@ -1,0 +1,12 @@
+{
+  "id": "job_library_sync",
+  "type": "sync_kicad_libraries",
+  "dryRun": false,
+  "input": {
+    "kicadMajorVersion": 10,
+    "downloadOfficial": false,
+    "allowNetwork": false,
+    "include3dModels": true,
+    "maxAssets": 25000
+  }
+}

@@ -10,6 +10,7 @@ import { validateBoardOutline, validatePlacement } from '../lib/validation.mjs'
 import { generateRoutingPlan } from '../lib/routing.mjs'
 import { executeJob } from '../lib/jobs.mjs'
 import { detectKiCadCli } from '../lib/kicad-cli.mjs'
+import { detectKiCadLibraryRoots } from '../lib/library-adapter.mjs'
 
 test('validates a simple rectangular board outline', () => {
   const board = { outline: rectanglePoints(40, 30), mountingHoles: [{ id: 'MH1', x: 5, y: 5, diameterMm: 3 }] }
@@ -79,6 +80,43 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     const scan = await executeJob({ id: 'scan', type: 'scan_kicad_project', input: { projectPath: 'sensor-project' } }, workspace)
     assert.equal(scan.status, 'SCAN_COMPLETE_NEEDS_REVIEW')
     assert.ok(scan.scan.footprints.length >= 4)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('library adapter indexes installed KiCad 10 footprints and resolves component assets', async (context) => {
+  const roots = detectKiCadLibraryRoots({ kicadMajorVersion: 10 })
+  if (!roots.footprints || !roots.symbols) {
+    context.skip('KiCad symbol/footprint libraries are not installed on this machine')
+    return
+  }
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-library-test-'))
+  try {
+    const sync = await executeJob({
+      id: 'library_sync',
+      type: 'sync_kicad_libraries',
+      input: { kicadMajorVersion: 10, include3dModels: true, maxAssets: 25000 },
+    }, workspace)
+    assert.equal(sync.status, 'LIBRARY_SYNCED_NEEDS_REVIEW')
+    assert.ok(sync.counts.footprints > 100)
+    assert.ok(sync.counts.symbols > 100)
+    const search = await executeJob({ id: 'library_search', type: 'search_library_assets', input: { query: 'USB C receptacle', limit: 8 } }, workspace)
+    assert.equal(search.status, 'LIBRARY_SEARCH_COMPLETE_NEEDS_REVIEW')
+    assert.ok(search.footprints.length > 0)
+    const resolved = await executeJob({
+      id: 'resolve_assets',
+      type: 'resolve_component_assets',
+      input: {
+        components: [
+          { ref: 'J1', group: 'USB', value: 'USB-C receptacle' },
+          { ref: 'R1', group: 'RES', value: '10k 0603 resistor' },
+        ],
+      },
+    }, workspace)
+    assert.ok(['COMPONENT_ASSETS_RESOLVED_NEEDS_REVIEW', 'COMPONENT_ASSETS_NEED_REVIEW'].includes(resolved.status))
+    assert.equal(resolved.components.length, 2)
+    assert.ok(resolved.components[0].footprint)
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

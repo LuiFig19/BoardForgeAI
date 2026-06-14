@@ -1,0 +1,29 @@
+{
+  "id": "job_resolve_components",
+  "type": "resolve_component_assets",
+  "input": {
+    "kicadMajorVersion": 10,
+    "components": [
+      {
+        "ref": "J1",
+        "group": "USB",
+        "value": "USB-C receptacle"
+      },
+      {
+        "ref": "U1",
+        "group": "ESP32_S3",
+        "value": "ESP32-S3 module"
+      },
+      {
+        "ref": "R1",
+        "group": "RES",
+        "value": "10k 0603 resistor"
+      },
+      {
+        "ref": "C1",
+        "group": "CAP",
+        "value": "100nF 0603 capacitor"
+      }
+    ]
+  }
+}
