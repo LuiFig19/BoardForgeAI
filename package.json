@@ -7,7 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "lint": "eslint .",
-    "start": "next start"
+    "start": "next start",
+    "test:plugin": "node --test ./plugins/boardforge-plugin/tests/*.test.mjs",
+    "smoke:plugin": "node ./plugins/boardforge-plugin/bin/boardforge-plugin.mjs --job ./plugins/boardforge-plugin/examples/outline-job.json --workspace ./plugins/boardforge-plugin/tmp"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

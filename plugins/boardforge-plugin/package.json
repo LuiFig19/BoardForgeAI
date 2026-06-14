@@ -7,6 +7,7 @@
     "boardforge-plugin": "./bin/boardforge-plugin.mjs"
   },
   "scripts": {
-    "smoke": "node ./bin/boardforge-plugin.mjs --job ./examples/outline-job.json --workspace ./tmp"
+    "smoke": "node ./bin/boardforge-plugin.mjs --job ./examples/outline-job.json --workspace ./tmp",
+    "test": "node --test ./tests/*.test.mjs"
   }
 }

@@ -115,7 +115,7 @@ export type Board = {
   generatedFiles: string[]
   createdAt: string
   updatedAt: string
-  status: 'draft' | 'saved' | 'ready_to_export' | 'exported'
+  status: 'draft' | 'saved' | 'plugin_handoff' | 'outline_generated' | 'exported'
   sourcePrompt: string
   projectId?: string
   editHistory: string[]

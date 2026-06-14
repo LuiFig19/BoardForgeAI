@@ -30,11 +30,38 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 ## Allowed Workflows
 
 - `create_outline_board`
+- `validate_board_outline`
+- `add_mounting_holes`
+- `round_board_corners`
+- `add_usb_c_edge_cutout`
+- `add_rj45_edge_clearance`
 - `create_kicad_project`
 - `apply_edge_cuts`
 - `scan_kicad_project`
 - `find_missing_footprints`
 - `link_3d_models`
+- `create_net_classes`
+- `assign_net_to_class`
+- `validate_net_classes`
+- `report_unclassified_nets`
+- `generate_placement_plan`
+- `apply_placement_plan`
+- `validate_placement`
+- `move_component`
+- `fix_component_off_board`
+- `fix_component_overlap`
+- `fix_mounting_hole_conflicts`
+- `generate_routing_plan`
+- `route_critical_nets`
+- `route_power_nets`
+- `route_diff_pair`
+- `route_signal_net`
+- `add_ground_zone`
+- `stitch_ground_vias`
+- `validate_routes`
+- `report_unrouted_nets`
+- `fix_route_clearance_violations`
+- `run_full_self_review`
 - `run_kicad_drc`
 - `run_kicad_erc`
 - `export_gerbers`
@@ -56,6 +83,38 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Snapshot existing projects before edits when supported.
 - Treat all AI plans as proposals until validated.
 - Require human review before manufacturing.
+- Never claim `DRC pass`, `ERC pass`, `routed`, `JLCPCB ready`, or `manufacturable` unless the local tool result proves it.
+- If KiCad CLI, footprints, 3D models, or export files are missing, report `BLOCKED_MISSING_ADAPTER`, `NEEDS_FIX`, or `NEEDS_HUMAN_REVIEW`.
+
+## Required Workflow Pattern
+
+1. Ask for missing required info such as board size, layer count, manufacturer, mounting pattern, MCU, power rails, interfaces, and constraints.
+2. Build a structured JSON job.
+3. Call the BoardForge local CLI or MCP server.
+4. Inspect generated files and returned validation issues.
+5. Run `run_full_self_review` after outline, placement, routing, or export operations.
+6. Attempt safe fixes only through BoardForge commands.
+7. Summarize what was created, what failed, what was auto-fixed, and what still needs human review.
+
+## Current Real Capabilities
+
+- `create_outline_board` writes real `.kicad_pro`, `.kicad_pcb`, `README.md`, and `boardforge-review.json`.
+- `validate_board_outline` checks outline area, self-intersections, mounting hole containment, and edge clearance.
+- `create_net_classes`, `validate_net_classes`, and `report_unclassified_nets` use BoardForge net-class rules.
+- `generate_placement_plan` creates deterministic placement plans and fails on off-board/overlap issues.
+- `generate_routing_plan` creates a partial routing plan and reports unrouted nets. It does not claim full autorouting.
+- `scan_kicad_project` parses existing `.kicad_pcb` projects for layers, nets, footprints, tracks, vias, zones, and mounting holes.
+
+## Explicitly Not Complete Yet
+
+- Full schematic generation.
+- Footprint assignment from live libraries.
+- Real trace autorouting.
+- Native KiCad API editing.
+- KiCad CLI DRC/ERC/export adapters.
+- Gerber, drill, BOM, CPL, or JLCPCB ZIP generation.
+
+These commands return blocked or not-implemented statuses until the safe adapters exist.
 
 ## CLI MVP
 
@@ -65,4 +124,4 @@ The local helper can be called as:
 node plugins/boardforge-plugin/bin/boardforge-plugin.mjs --job path/to/job.json --workspace path/to/workspace
 ```
 
-Current MVP implements `create_outline_board`. Other workflows return a structured `not_implemented` result until their safe adapters are added.
+Current MVP implements outline generation, outline validation, net classes, placement planning, routing planning, self-review, and KiCad project scanning. Export and KiCad CLI commands return honest blocked results until their adapters are added.

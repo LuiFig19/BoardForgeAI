@@ -214,7 +214,7 @@ function LandingPage() {
     },
     {
       title: 'package',
-      body: 'After local validation, BoardForge packages the real KiCad outputs: Gerbers, drill files, BOM, CPL, reports, README, and JLCPCB-ready ZIPs when available.',
+      body: 'After local validation, BoardForge packages real KiCad outputs only when the files exist: Gerbers, drill files, BOM, CPL, reports, README, and JLCPCB ZIPs.',
       details: ['Gerbers and drill', 'BOM/CPL', 'JLCPCB package'],
     },
     {
@@ -381,7 +381,7 @@ function GeneratorPage() {
 
   const generateOutline = () => {
     if (customSketch.length < 3) setCustomSketch(buildOutlinePoints())
-    const board = saveBoard(makeBoardFromForm('ready_to_export'))
+    const board = saveBoard(makeBoardFromForm('plugin_handoff'))
     setSavedBoard(board)
   }
 
@@ -436,7 +436,7 @@ function GeneratorPage() {
   const onSubmit = (event: FormEvent) => {
     event.preventDefault()
     if (outlineMode && form.boardType === 'custom') {
-      const board = saveBoard(makeBoardFromForm('ready_to_export'))
+      const board = saveBoard(makeBoardFromForm('plugin_handoff'))
       setSavedBoard(board)
       window.location.hash = '#/boards'
       return
@@ -660,7 +660,7 @@ function GeneratorPage() {
                   <button className="primary-action" type="button" onClick={generateOutline}><Sparkles size={16} /> Generate Outline</button>
                   <button className="secondary-action" type="button" onClick={saveCurrentBoard}><FolderKanban size={16} /> Save Board</button>
                   <button className="secondary-action" type="button" onClick={() => {
-                    const board = saveBoard(makeBoardFromForm('exported'))
+                    const board = saveBoard(makeBoardFromForm('plugin_handoff'))
                     setSavedBoard(board)
                     downloadBoardBundle(board)
                   }}><Download size={16} /> Download KiCad ZIP</button>
@@ -1365,12 +1365,12 @@ function BoardsPage() {
   const saveBoard = useBoards((state) => state.saveBoard)
   const jobs = useJobs((state) => state.jobs)
   const setActiveJob = useJobs((state) => state.setActiveJob)
-  const [filter, setFilter] = useState<'all' | 'outline' | 'full' | 'recent' | 'ready'>('all')
+  const [filter, setFilter] = useState<'all' | 'outline' | 'full' | 'recent' | 'plugin'>('all')
   const [recentCutoff] = useState(() => Date.now() - 1000 * 60 * 60 * 24 * 14)
 
   const filteredBoards = boards.filter((board) => {
     if (filter === 'outline') return board.type === 'outline_only'
-    if (filter === 'ready') return board.status === 'ready_to_export' || board.status === 'exported'
+    if (filter === 'plugin') return board.status === 'plugin_handoff' || board.status === 'outline_generated'
     if (filter === 'recent') return new Date(board.createdAt).getTime() >= recentCutoff
     return filter === 'all'
   })
@@ -1389,7 +1389,7 @@ function BoardsPage() {
           ['outline', 'Outline Only'],
           ['full', 'Full Projects'],
           ['recent', 'Recently Created'],
-          ['ready', 'Ready to Export'],
+          ['plugin', 'Plugin Handoff'],
         ].map(([key, label]) => (
           <button className={filter === key ? 'active' : ''} key={key} type="button" onClick={() => setFilter(key as typeof filter)}>{label}</button>
         ))}
@@ -1409,8 +1409,7 @@ function BoardsPage() {
                 <button type="button" onClick={() => setActiveBoard(board.id)}>Open</button>
                 <a href="#/generate" onClick={() => setActiveBoard(board.id)}>Edit Outline</a>
                 <a href="#/plugin" onClick={() => setActiveBoard(board.id)}>Send to Plugin</a>
-                <button type="button" onClick={() => downloadBoardBundle(board)}>Export KiCad Outline</button>
-                <button type="button" onClick={() => downloadBoardBundle(board)}>Download ZIP</button>
+                <button type="button" onClick={() => downloadBoardBundle(board)}>Download Spec ZIP</button>
                 <button type="button" onClick={() => duplicateBoard(board.id)}>Duplicate</button>
                 <button type="button" onClick={() => deleteBoard(board.id)}>Delete</button>
               </div>
@@ -1432,7 +1431,7 @@ function BoardsPage() {
                 generatedFiles: job.exportPackage.files.map((file) => file.path),
                 createdAt: job.createdAt,
                 updatedAt: job.completedAt || job.createdAt,
-                status: 'ready_to_export',
+                status: 'plugin_handoff',
                 sourcePrompt: job.request.notes,
                 projectId: job.projectId,
                 editHistory: [],
@@ -1447,8 +1446,8 @@ function BoardsPage() {
                 <a href="#/project" onClick={() => setActiveJob(job.id)}>Open</a>
                 <a href="#/generate">Edit Outline</a>
                 <a href="#/plugin" onClick={() => setActiveJob(job.id)}>Send to Plugin</a>
-                <a href="#/export" onClick={() => setActiveJob(job.id)}>Export KiCad</a>
-                <a href="#/export" onClick={() => setActiveJob(job.id)}>Download ZIP</a>
+                <a href="#/export" onClick={() => setActiveJob(job.id)}>Prepare Plugin Export</a>
+                <a href="#/export" onClick={() => setActiveJob(job.id)}>View Export Status</a>
                 <button type="button">Duplicate</button>
                 <button type="button">Delete</button>
               </div>
@@ -1623,7 +1622,7 @@ function ExportPage() {
             <div><span>Estimated cost</span><strong>${job.costEstimate.toFixed(2)}</strong></div>
             <div><span>Readiness</span><strong>Review required</strong></div>
             <div><span>Generated</span><strong>{new Date(job.createdAt).toLocaleDateString()}</strong></div>
-            <div><span>Package state</span><strong>{job.status}</strong></div>
+            <div><span>Export state</span><strong>{pluginStatus.connected ? job.status : 'blocked_missing_plugin'}</strong></div>
           </div>
         </div>
         <RealisticPcbViewer request={job.request} />
@@ -1639,10 +1638,10 @@ function ExportPage() {
       </section>
       <section className="two-column">
         <Panel title="Plugin-generated manufacturing files">
-          <p>Install and connect BoardForge Plugin to generate these from real local KiCad projects.</p>
+          <p>Not generated in-browser. Install and connect BoardForge Plugin to create these from real local KiCad projects.</p>
           <div className="package-contents muted-outputs">
             {['KiCad project', 'Gerber ZIP', 'drill files', 'BOM CSV', 'CPL CSV', 'ERC report', 'DRC report', 'JLCPCB package'].map((item) => (
-              <span key={item}><PackageCheck size={16} /> {item}</span>
+              <span key={item}><PackageCheck size={16} /> {item} unavailable</span>
             ))}
           </div>
         </Panel>
@@ -1666,7 +1665,7 @@ function ExportPage() {
         </Panel>
       </section>
       <section className="two-column">
-        <Panel title="JLCPCB export checklist">
+        <Panel title="JLCPCB export preflight checklist">
           <div className="check-grid">
             {job.exportPackage.checklist.map((item) => (
               <div className={`check-item ${item.status}`} key={item.label}>
@@ -1676,7 +1675,8 @@ function ExportPage() {
             ))}
           </div>
         </Panel>
-        <Panel title="Advanced file tree viewer">
+        <Panel title="Expected local package layout">
+          <p>This is the expected plugin output layout, not proof those files exist yet.</p>
           <pre className="file-tree">{packageService.getPackageLayout(job.request.projectName).join('\n')}</pre>
         </Panel>
       </section>
