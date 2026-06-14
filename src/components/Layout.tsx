@@ -3,7 +3,7 @@ import clsx from 'clsx'
 
 const nav = [
   { hash: '#/', label: 'Landing', icon: Home },
-  { hash: '#/generate', label: 'Generator', icon: WandSparkles },
+  { hash: '#/generate', label: 'Board Outlines', icon: WandSparkles },
   { hash: '#/boards', label: 'Boards', icon: FolderKanban },
   { hash: '#/project', label: 'Projects', icon: Cpu },
   { hash: '#/plugin', label: 'Plugin', icon: Plug },

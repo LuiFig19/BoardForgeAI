@@ -43,7 +43,7 @@ import { KiCadBoardOutlineService, KiCadExportService, KiCadProjectService, KiCa
 
 const interfaces = ['USB', 'Ethernet', 'CAN', 'UART', 'SPI', 'I2C', 'Wi-Fi', 'BLE', 'LoRa']
 const routes = ['/', '/generate', '/dashboard', '/project', '/boards', '/plugin', '/export', '/logs', '/pricing', '/docs', '/admin']
-const wizardSteps = ['Requirements', 'Board shape', 'Placement intent', 'Generate']
+const wizardSteps = ['Outline setup', 'Shape studio', 'Plugin handoff']
 const markKinds: GenerationRequest['placementMarks'][number]['kind'][] = ['MCU', 'connector', 'power', 'sensor', 'mounting hole', 'keepout', 'antenna', 'hot zone']
 const outlineService = new KiCadBoardOutlineService()
 const defaultPluginStatus = {
@@ -57,6 +57,32 @@ const defaultPluginStatus = {
   lastJob: 'No plugin jobs yet',
 }
 type PluginRuntimeStatus = typeof defaultPluginStatus
+const outlinePresets = [
+  {
+    name: 'Rounded controller outline',
+    shape: 'rounded rectangle' as BoardShapeType,
+    width: 70,
+    height: 45,
+    holes: 4,
+    notes: 'Compact controller board with four M3 mounting holes and softened corners.',
+  },
+  {
+    name: 'Sensor tab outline',
+    shape: 'sensor board' as BoardShapeType,
+    width: 58,
+    height: 32,
+    holes: 2,
+    notes: 'Small sensor board with a front connector tab and two mounting holes.',
+  },
+  {
+    name: 'Drone frame outline',
+    shape: 'drone frame' as BoardShapeType,
+    width: 92,
+    height: 70,
+    holes: 4,
+    notes: 'Symmetric drone-style outline with arm clearance and center electronics zone.',
+  },
+]
 const generationModes = ['Board Outline Only', 'Full PCB Project', 'Improve Existing KiCad Project', 'Export/Package Existing Project'] as const
 const pluginCommands = [
   'create_outline_board',
@@ -216,6 +242,56 @@ const downloadBoardBundle = async (board: Board) => {
   URL.revokeObjectURL(url)
 }
 
+const pointToMm = (point: { x: number; y: number }, board: Board) => ({
+  x: Number((point.x * board.width).toFixed(3)),
+  y: Number((point.y * board.height).toFixed(3)),
+})
+
+const buildCodexOutlinePrompt = (board: Board) => {
+  const outlinePointsMm = board.outline.map((point, index) => ({ id: `P${index + 1}`, ...pointToMm(point, board) }))
+  const mountingHolesMm = board.mountingHoles.map((hole, index) => ({ id: hole.id || `H${index + 1}`, ...pointToMm(hole, board), diameterMm: hole.diameterMm }))
+  const payload = {
+    tool: 'create_outline_board',
+    projectName: board.name,
+    units: board.units,
+    intent: 'Create an outline-only KiCad project. Do not place components, route traces, or generate manufacturing files until the outline is reviewed.',
+    board: {
+      widthMm: board.width,
+      heightMm: board.height,
+      shapeType: board.shapeType,
+      cornerRadiusMm: board.cornerRadiusMm,
+      outlinePointsMm,
+      outlinePointsNormalized: board.outline.map((point, index) => ({
+        id: `P${index + 1}`,
+        x: Number(point.x.toFixed(6)),
+        y: Number(point.y.toFixed(6)),
+      })),
+      edgeCutsSegmentsMm: outlinePointsMm.map((point, index) => ({
+        from: point.id,
+        to: outlinePointsMm[(index + 1) % outlinePointsMm.length].id,
+        start: { x: point.x, y: point.y },
+        end: { x: outlinePointsMm[(index + 1) % outlinePointsMm.length].x, y: outlinePointsMm[(index + 1) % outlinePointsMm.length].y },
+      })),
+      mountingHolesMm,
+    },
+    requiredOutputs: [
+      `${outlineService.getProjectFiles(board).safeName}.kicad_pro`,
+      `${outlineService.getProjectFiles(board).safeName}.kicad_sch`,
+      `${outlineService.getProjectFiles(board).safeName}.kicad_pcb with Edge.Cuts matching the exact points above`,
+      'README with outline dimensions, holes, and human review warning',
+    ],
+    validation: [
+      'Use the BoardForge Codex Plugin or local helper only.',
+      'Run KiCad DRC if kicad-cli is available.',
+      'Report any open outline, self-intersection, or invalid hole placement before export.',
+      'Do not freestyle shell commands or manually edit KiCad files outside BoardForge tools.',
+    ],
+    sourceNotes: board.sourcePrompt || '',
+  }
+
+  return `Use the BoardForge Codex Plugin to create an outline-only KiCad project from this exact board outline. The Edge.Cuts geometry must match the point list exactly in millimeters.\n\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\`\n\nAfter creation, summarize the generated files and any KiCad DRC/outline validation result.`
+}
+
 function useHashRoute() {
   const getHashRoute = () => (typeof window === 'undefined' ? '/' : window.location.hash.replace('#', '') || '/')
   const [route, setRoute] = useState(getHashRoute)
@@ -271,17 +347,17 @@ function LandingPage() {
     <main>
       <section className="hero-section">
         <div className="hero-copy">
-          <StatusBadge tone="cyan">Codex plugin-first KiCad workflow</StatusBadge>
-          <h1>AI PCB generation for KiCad, powered by a local manufacturing plugin.</h1>
+          <StatusBadge tone="cyan">BoardForge Codex Plugin</StatusBadge>
+          <h1>KiCad PCB automation that runs locally through Codex.</h1>
           <p>
-            Design your board in the browser, execute it locally with BoardForge Codex Plugin, validate it in KiCad, and export the files needed for PCB manufacturing.
+            BoardForge AI is the command center for specs, reports, outlines, onboarding, and dashboards. Real PCB engineering happens through the BoardForge Codex Plugin and local KiCad helper on your machine.
           </p>
           <div className="action-row">
-            <a className="primary-action" href="#/generate">
-              <Play size={18} /> Generate a board
-            </a>
             <a className="secondary-action" href="#/plugin">
               <Plug size={18} /> Get BoardForge Plugin
+            </a>
+            <a className="primary-action" href="#/generate">
+              <Play size={18} /> Create board outline
             </a>
             <a className="secondary-action" href="#/docs">
               View demo workflow <ArrowRight size={18} />
@@ -290,6 +366,23 @@ function LandingPage() {
         </div>
         <div className="hero-visual" aria-label="3D PCB assembly animation">
           <PcbScene progress={progress} />
+        </div>
+      </section>
+
+      <section className="render-gallery-section">
+        <div className="section-heading">
+          <StatusBadge tone="green">realistic KiCad-style previews</StatusBadge>
+          <h2>Website previews show the product quality; plugin jobs create the real files.</h2>
+          <p>These renders demonstrate the level of physical PCB preview BoardForge is aiming for while the plugin handles actual local KiCad project creation, validation, and export.</p>
+        </div>
+        <div className="render-gallery-grid">
+          {templates.slice(0, 4).map((template, index) => (
+            <article className="render-card" key={template.name}>
+              <RealisticPcbViewer request={{ ...emptyRequest, ...template.defaults, projectName: template.name, boardType: template.boardType }} />
+              <strong>{template.name}</strong>
+              <span>{index === 0 ? 'plugin-ready project intent' : index === 1 ? 'local KiCad execution model' : index === 2 ? 'saved spec and report preview' : 'manufacturing package review'}</span>
+            </article>
+          ))}
         </div>
       </section>
 
@@ -321,6 +414,304 @@ function LandingPage() {
   )
 }
 
+function OutlineGeneratorPage() {
+  const saveBoard = useBoards((state) => state.saveBoard)
+  const [form, setForm] = useState<GenerationRequest>({
+    ...emptyRequest,
+    projectName: 'Custom board outline',
+    boardType: 'custom',
+    notes: 'Outline-only website utility. Full PCB generation runs through the BoardForge Codex Plugin.',
+    outlineNotes: 'User will create a custom Edge.Cuts board outline.',
+  })
+  const [step, setStep] = useState(0)
+  const [customSketch, setCustomSketch] = useState<Array<{ x: number; y: number }>>([])
+  const [aiShapePrompt, setAiShapePrompt] = useState('')
+  const [roundedCorners, setRoundedCorners] = useState(false)
+  const [cornerRadiusMm, setCornerRadiusMm] = useState(3)
+  const [mountingHoleDiameterMm, setMountingHoleDiameterMm] = useState(3)
+  const [savedBoard, setSavedBoard] = useState<Board | null>(null)
+  const [copiedPrompt, setCopiedPrompt] = useState(false)
+  const [draftBoardId] = useState(() => `board_${crypto.randomUUID()}`)
+
+  const setField = <K extends keyof GenerationRequest>(key: K, value: GenerationRequest[K]) => setForm((current) => ({ ...current, [key]: value }))
+
+  const buildOutlinePoints = () => {
+    if (customSketch.length >= 3) return customSketch
+    if (roundedCorners || form.boardShape === 'rounded rectangle') return roundedRectanglePoints((cornerRadiusMm / Math.max(form.boardWidthMm, form.boardHeightMm)) * 100)
+    return makeShapePoints(form.boardShape)
+  }
+
+  const makeBoardFromForm = (status: Board['status'] = 'plugin_handoff', timestamp = new Date().toISOString()): Board => {
+    const outline = buildOutlinePoints()
+    const holes = mountingHolesForRequest(form, mountingHoleDiameterMm)
+    const baseBoard: Board = {
+      id: savedBoard?.id || draftBoardId,
+      name: form.projectName || 'Custom Board Outline',
+      type: 'outline_only',
+      shapeType: roundedCorners && form.boardShape === 'rectangle' ? 'rounded rectangle' : form.boardShape,
+      width: form.boardWidthMm,
+      height: form.boardHeightMm,
+      units: 'mm',
+      cornerRadiusMm: roundedCorners || form.boardShape === 'rounded rectangle' ? cornerRadiusMm : 0,
+      outline,
+      mountingHoles: holes,
+      generatedFiles: [],
+      createdAt: savedBoard?.createdAt || timestamp,
+      updatedAt: timestamp,
+      status,
+      sourcePrompt: [form.outlineNotes, form.mechanicalConstraints, form.referenceImageName ? `Reference image: ${form.referenceImageName}` : ''].filter(Boolean).join('\n'),
+      editHistory: [...(savedBoard?.editHistory || []), `Saved outline: ${new Date(timestamp).toLocaleString()}`],
+    }
+    return { ...baseBoard, generatedFiles: outlineService.getProjectFiles(baseBoard).files }
+  }
+
+  const saveCurrentBoard = (status: Board['status'] = 'plugin_handoff') => {
+    const board = saveBoard(makeBoardFromForm(status))
+    setSavedBoard(board)
+    return board
+  }
+
+  const applyPreset = (index: number) => {
+    const preset = outlinePresets[index]
+    setForm((current) => ({
+      ...current,
+      projectName: preset.name,
+      boardType: 'custom',
+      boardShape: preset.shape,
+      boardWidthMm: preset.width,
+      boardHeightMm: preset.height,
+      boardSize: `${preset.width} mm x ${preset.height} mm`,
+      mountingHoleCount: preset.holes,
+      outlineNotes: preset.notes,
+    }))
+    setRoundedCorners(preset.shape === 'rounded rectangle')
+    setCustomSketch(preset.shape === 'rounded rectangle' ? roundedRectanglePoints((cornerRadiusMm / Math.max(preset.width, preset.height)) * 100) : makeShapePoints(preset.shape))
+    setStep(1)
+  }
+
+  const applyShapeEdit = (prompt: string) => {
+    const lower = prompt.toLowerCase()
+    let nextPoints = customSketch.length >= 3 ? customSketch : buildOutlinePoints()
+    if (lower.includes('bigger') || lower.includes('larger') || lower.includes('wider')) {
+      setField('boardWidthMm', Math.min(600, Math.round(form.boardWidthMm * 1.15)))
+      if (!lower.includes('wider')) setField('boardHeightMm', Math.min(600, Math.round(form.boardHeightMm * 1.15)))
+    }
+    if (lower.includes('round')) {
+      setRoundedCorners(true)
+      setField('boardShape', 'rounded rectangle')
+      nextPoints = roundedRectanglePoints((cornerRadiusMm / Math.max(form.boardWidthMm, form.boardHeightMm)) * 100)
+    }
+    if (lower.includes('circle')) {
+      setRoundedCorners(false)
+      setField('boardShape', 'circle')
+      nextPoints = makeShapePoints('circle')
+    }
+    if (lower.includes('hex')) {
+      setField('boardShape', 'hexagon')
+      nextPoints = makeShapePoints('hexagon')
+    }
+    if (lower.includes('oct')) {
+      setField('boardShape', 'octagon')
+      nextPoints = makeShapePoints('octagon')
+    }
+    if (lower.includes('drone')) {
+      setField('boardShape', 'drone frame')
+      nextPoints = makeShapePoints('drone frame')
+    }
+    if (lower.includes('sensor')) {
+      setField('boardShape', 'sensor board')
+      nextPoints = makeShapePoints('sensor board')
+    }
+    if (lower.includes('hole') || lower.includes('m3')) {
+      setField('mountingHoleCount', Math.max(form.mountingHoleCount, 4))
+      setMountingHoleDiameterMm(lower.includes('m3') ? 3 : mountingHoleDiameterMm)
+    }
+    if (lower.includes('usb')) {
+      setField('outlineNotes', `${form.outlineNotes || ''}\nAI edit: reserve a USB edge/notch instruction for the plugin handoff.`.trim())
+    }
+    setCustomSketch(nextPoints)
+    setField('outlineNotes', `${form.outlineNotes || ''}\nAI shape edit: ${prompt}`.trim())
+    setAiShapePrompt('')
+  }
+
+  const generateOutline = () => {
+    if (customSketch.length < 3) setCustomSketch(buildOutlinePoints())
+    saveCurrentBoard('plugin_handoff')
+    setStep(2)
+  }
+
+  const currentBoard = savedBoard || makeBoardFromForm('plugin_handoff', '1970-01-01T00:00:00.000Z')
+  const codexPrompt = buildCodexOutlinePrompt(currentBoard)
+
+  const copyPrompt = async () => {
+    const board = saveCurrentBoard('plugin_handoff')
+    await navigator.clipboard.writeText(buildCodexOutlinePrompt(board))
+    setCopiedPrompt(true)
+    window.setTimeout(() => setCopiedPrompt(false), 1800)
+  }
+
+  const downloadPrompt = () => {
+    const board = saveCurrentBoard('plugin_handoff')
+    const blob = new Blob([buildCodexOutlinePrompt(board)], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${outlineService.getProjectFiles(board).safeName}-codex-plugin-prompt.txt`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const onSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    await downloadBoardBundle(saveCurrentBoard('plugin_handoff'))
+  }
+
+  return (
+    <main className="page-grid">
+      <section className="page-head">
+        <StatusBadge tone="green">Board outline only</StatusBadge>
+        <h1>Board Outline Studio</h1>
+        <p>The website creates saved board shapes, exact Codex plugin prompts, and outline-only KiCad ZIPs. Full PCB generation, placement, routing, validation, and exports belong to the BoardForge Codex Plugin.</p>
+      </section>
+      <PluginConnectionBanner />
+      <section className="mode-grid">
+        {outlinePresets.map((preset, index) => (
+          <button key={preset.name} type="button" onClick={() => applyPreset(index)}>
+            <strong>{preset.name}</strong>
+            <span>{preset.width} mm x {preset.height} mm, {preset.shape}, {preset.holes} mounting holes</span>
+          </button>
+        ))}
+      </section>
+      <nav className="wizard-tabs" aria-label="Board outline steps">
+        {wizardSteps.map((item, index) => (
+          <button className={step === index ? 'active' : ''} key={item} type="button" onClick={() => setStep(index)}>
+            <span>{index + 1}</span>
+            {item}
+          </button>
+        ))}
+      </nav>
+      <form className="generator-form" onSubmit={onSubmit}>
+        {step === 0 && (
+          <>
+            <label>
+              Board outline name
+              <input value={form.projectName} onChange={(event) => setField('projectName', event.target.value)} />
+            </label>
+            <label>
+              Board shape
+              <select value={form.boardShape} onChange={(event) => setField('boardShape', event.target.value as GenerationRequest['boardShape'])}>
+                {boardShapeTypes.map((shape) => <option key={shape}>{shape}</option>)}
+              </select>
+            </label>
+            <label>
+              Width in mm
+              <input type="number" min="5" max="600" value={form.boardWidthMm} onChange={(event) => setField('boardWidthMm', Number(event.target.value))} />
+            </label>
+            <label>
+              Height in mm
+              <input type="number" min="5" max="600" value={form.boardHeightMm} onChange={(event) => setField('boardHeightMm', Number(event.target.value))} />
+            </label>
+            <label>
+              Mounting hole count
+              <input type="number" min="0" max="24" value={form.mountingHoleCount} onChange={(event) => setField('mountingHoleCount', Number(event.target.value))} />
+            </label>
+            <label>
+              Mounting hole diameter
+              <input type="number" min="0.5" max="12" step="0.1" value={mountingHoleDiameterMm} onChange={(event) => setMountingHoleDiameterMm(Number(event.target.value))} />
+            </label>
+            <label>
+              Corner radius
+              <input type="number" min="0" max="40" step="0.5" value={cornerRadiusMm} onChange={(event) => setCornerRadiusMm(Number(event.target.value))} />
+            </label>
+            <label className="toggle-row">
+              <input type="checkbox" checked={roundedCorners} onChange={(event) => {
+                setRoundedCorners(event.target.checked)
+                if (event.target.checked) {
+                  setField('boardShape', 'rounded rectangle')
+                  setCustomSketch(roundedRectanglePoints((cornerRadiusMm / Math.max(form.boardWidthMm, form.boardHeightMm)) * 100))
+                }
+              }} />
+              Rounded corners
+            </label>
+            <label className="upload-field">
+              Reference image name for shape intent
+              <span><Upload size={16} /> {form.referenceImageName || 'No image selected'}</span>
+              <input type="file" accept="image/*" onChange={(event) => setField('referenceImageName', event.target.files?.[0]?.name || '')} />
+            </label>
+            <label className="full-span">
+              Outline notes
+              <textarea value={form.outlineNotes || ''} onChange={(event) => setField('outlineNotes', event.target.value)} />
+            </label>
+            <label className="full-span">
+              Mechanical constraints
+              <textarea value={form.mechanicalConstraints || ''} onChange={(event) => setField('mechanicalConstraints', event.target.value)} />
+            </label>
+          </>
+        )}
+        {step === 1 && (
+          <div className="full-span">
+            <CustomShapeStudio
+              points={customSketch}
+              setPoints={setCustomSketch}
+              aiPrompt={aiShapePrompt}
+              setAiPrompt={setAiShapePrompt}
+              applyAiEdit={applyShapeEdit}
+            />
+            <div className="outline-actions">
+              <button className="primary-action" type="button" onClick={generateOutline}><Sparkles size={16} /> Save outline and continue</button>
+              <button className="secondary-action" type="button" onClick={() => saveCurrentBoard('saved')}><FolderKanban size={16} /> Save to Boards</button>
+              <button className="secondary-action" type="button" onClick={() => setCustomSketch([])}>Clear outline</button>
+            </div>
+          </div>
+        )}
+        {step === 2 && (
+          <div className="full-span generation-review outline-handoff">
+            <Panel title="Exact outline handoff">
+              <div className="prompt-grid">
+                <div><strong>Shape</strong><span>{currentBoard.shapeType}</span></div>
+                <div><strong>Dimensions</strong><span>{currentBoard.width} mm x {currentBoard.height} mm</span></div>
+                <div><strong>Mounting holes</strong><span>{currentBoard.mountingHoles.length}</span></div>
+                <div><strong>Outline points</strong><span>{currentBoard.outline.length}</span></div>
+                <div><strong>Output</strong><span>empty schematic + Edge.Cuts only</span></div>
+                <div><strong>Plugin path</strong><span>create_outline_board</span></div>
+              </div>
+            </Panel>
+            <Panel title="Codex plugin prompt">
+              <textarea className="prompt-output" readOnly value={codexPrompt} />
+              <div className="outline-actions">
+                <button className="primary-action" type="button" onClick={copyPrompt}><Copy size={16} /> {copiedPrompt ? 'Copied exact prompt' : 'Copy prompt for Codex'}</button>
+                <button className="secondary-action" type="button" onClick={downloadPrompt}><Download size={16} /> Download prompt</button>
+                <a className="secondary-action" href="#/plugin"><Plug size={16} /> Plugin setup</a>
+              </div>
+            </Panel>
+            <Panel title="Outline-only KiCad package">
+              <p>Download a browser-created KiCad package containing a project file, empty schematic, README, and PCB file with only Edge.Cuts plus mounting holes.</p>
+              <div className="outline-actions">
+                <button className="primary-action" type="submit"><Download size={16} /> Download KiCad outline ZIP</button>
+                <button className="secondary-action" type="button" onClick={() => {
+                  saveCurrentBoard('saved')
+                  window.location.hash = '#/boards'
+                }}><FolderKanban size={16} /> Save and view Boards</button>
+              </div>
+            </Panel>
+          </div>
+        )}
+        <div className="wizard-actions full-span">
+          <button className="secondary-action" type="button" disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))}>Back</button>
+          {step < wizardSteps.length - 1 && <button className="primary-action" type="button" onClick={() => {
+            if (step === 1) generateOutline()
+            else setStep((value) => Math.min(wizardSteps.length - 1, value + 1))
+          }}>Continue</button>}
+        </div>
+      </form>
+    </main>
+  )
+}
+
+// Legacy web PCB generator is intentionally no longer routed; full PCB work moved to the Codex plugin.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function GeneratorPage() {
   const createJob = useJobs((state) => state.createJob)
   const saveBoard = useBoards((state) => state.saveBoard)
@@ -1903,7 +2294,7 @@ function App() {
   const route = useHashRoute()
   const page = {
     '/': <LandingPage />,
-    '/generate': <GeneratorPage />,
+    '/generate': <OutlineGeneratorPage />,
     '/dashboard': <DashboardPage />,
     '/project': <ProjectPage />,
     '/boards': <BoardsPage />,

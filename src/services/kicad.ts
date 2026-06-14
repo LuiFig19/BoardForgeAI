@@ -68,6 +68,7 @@ export class KiCadBoardOutlineService {
       relativeRoot,
       files: [
         `${relativeRoot}/${safeName}.kicad_pro`,
+        `${relativeRoot}/${safeName}.kicad_sch`,
         `${relativeRoot}/${safeName}.kicad_pcb`,
         `${relativeRoot}/README.md`,
       ],
@@ -78,9 +79,15 @@ export class KiCadBoardOutlineService {
     const { safeName } = this.getProjectFiles(board)
     return [
       { path: `${safeName}.kicad_pro`, content: this.createProjectFile(board) },
+      { path: `${safeName}.kicad_sch`, content: this.createSchematicFile(board) },
       { path: `${safeName}.kicad_pcb`, content: this.createPcbFile(board) },
       { path: 'README.md', content: this.createReadme(board) },
     ]
+  }
+
+  createSchematicFile(board: Board) {
+    const escapedName = board.name.replace(/"/g, "'")
+    return `(kicad_sch (version 20250114) (generator "BoardForge AI") (generator_version "outline-only")\n  (uuid "${crypto.randomUUID()}")\n  (paper "A4")\n  (title_block\n    (title "${escapedName}")\n    (comment 1 "Outline-only BoardForge project")\n    (comment 2 "No symbols, nets, footprints, BOM, or CPL generated in browser")\n  )\n  (lib_symbols)\n  (sheet_instances\n    (path "/" (page "1"))\n  )\n)\n`
   }
 
   createProjectFile(board: Board) {
@@ -154,7 +161,7 @@ export class KiCadBoardOutlineService {
   }
 
   createReadme(board: Board) {
-    return `# ${board.name}\n\nBoardForge AI outline-only KiCad project.\n\n- Type: ${board.type}\n- Shape: ${board.shapeType}\n- Size: ${board.width} ${board.units} x ${board.height} ${board.units}\n- Corner radius: ${board.cornerRadiusMm} mm\n- Mounting holes: ${board.mountingHoles.length}\n- Source prompt: ${board.sourcePrompt || 'none'}\n\nThis package contains only mechanical Edge.Cuts geometry and notes. No schematic, footprints, BOM, CPL, or routed copper has been generated.\n`
+    return `# ${board.name}\n\nBoardForge AI outline-only KiCad project.\n\n- Type: ${board.type}\n- Shape: ${board.shapeType}\n- Size: ${board.width} ${board.units} x ${board.height} ${board.units}\n- Corner radius: ${board.cornerRadiusMm} mm\n- Mounting holes: ${board.mountingHoles.length}\n- Source prompt: ${board.sourcePrompt || 'none'}\n\nThis package contains a KiCad project file, an empty schematic scaffold, and PCB mechanical Edge.Cuts geometry. No symbols, footprints, BOM, CPL, copper routing, or manufacturing package has been generated in the browser.\n`
   }
 }
 
