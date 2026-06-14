@@ -122,8 +122,8 @@ function BoardAssembly({ progress = 0.4, compact = false }: PcbSceneProps) {
 
   useFrame(({ clock }) => {
     if (!group.current || reduced) return
-    group.current.rotation.y = Math.sin(clock.elapsedTime * 0.34) * 0.18 + clamped * 0.36
-    group.current.rotation.x = -0.34 + Math.sin(clock.elapsedTime * 0.28) * 0.035
+    group.current.rotation.y = Math.sin(clock.elapsedTime * 0.28) * 0.11 + clamped * 0.16
+    group.current.rotation.x = -0.1 + Math.sin(clock.elapsedTime * 0.24) * 0.02
   })
 
   const vias = useMemo(
@@ -137,7 +137,7 @@ function BoardAssembly({ progress = 0.4, compact = false }: PcbSceneProps) {
 
   return (
     <Float speed={reduced ? 0 : 1.4} rotationIntensity={0.1} floatIntensity={compact ? 0.25 : 0.6}>
-      <group ref={group} scale={compact ? 0.86 : 1}>
+      <group ref={group} scale={compact ? 0.72 : 0.9}>
         <mesh position={[0, 0, 0]} receiveShadow>
           <boxGeometry args={[3.4, 0.11, 1.82]} />
           <meshPhysicalMaterial color="#1f8f3a" roughness={0.34} metalness={0.03} clearcoat={0.45} clearcoatRoughness={0.22} />
@@ -198,12 +198,12 @@ export function PcbScene(props: PcbSceneProps) {
   return (
     <div className="scene-shell">
       <Canvas shadows dpr={[1, 1.6]}>
-        <PerspectiveCamera makeDefault position={[0, 1.65, 4.7]} rotation={[-0.32, 0, 0]} fov={34} />
+        <PerspectiveCamera makeDefault position={[0, 4.8, 4.85]} rotation={[-0.78, 0, 0]} fov={31} />
         <color attach="background" args={['#2f3437']} />
         <ambientLight intensity={0.68} />
         <directionalLight position={[2.8, 4.4, 3.2]} intensity={3.8} castShadow />
         <pointLight position={[-3, 2, -2]} intensity={6} color="#d9f99d" />
-        <Grid position={[0, -0.28, 0]} args={[6, 4]} cellSize={0.28} cellThickness={0.25} cellColor="#565f64" sectionColor="#7b858c" fadeDistance={6} fadeStrength={1.2} />
+        <Grid position={[0, -0.28, 0]} args={[6, 4]} cellSize={0.28} cellThickness={0.25} cellColor="#565f64" sectionColor="#7b858c" fadeDistance={7} fadeStrength={1.2} />
         <Suspense fallback={null}>
           <BoardAssembly {...props} />
           <ContactShadows position={[0, -0.18, 0]} opacity={0.38} scale={6} blur={2.2} />
