@@ -24,6 +24,7 @@ const traces = [
     [-1.02, 0.09, 0.28],
     [-0.72, 0.09, 0.04],
     [-0.16, 0.09, 0.04],
+    [0.44, 0.09, -0.08],
   ],
   [
     [1.42, 0.092, 0.24],
@@ -42,6 +43,7 @@ const traces = [
     [-0.58, 0.096, -0.3],
     [-0.42, 0.096, -0.08],
     [-0.16, 0.096, -0.08],
+    [0.18, 0.096, -0.16],
   ],
 ] as const
 
@@ -50,8 +52,8 @@ const passiveParts: PassivePart[] = [
   { id: 'C2', x: -0.32, z: -0.24, rotation: 0, color: '#b98c62' },
   { id: 'R1', x: -0.66, z: -0.04, rotation: 90 },
   { id: 'R2', x: 0.22, z: -0.22, rotation: 0, color: '#b98c62' },
-  { id: 'C3', x: 0.5, z: -0.44, rotation: 90 },
-  { id: 'R3', x: 0.78, z: -0.42, rotation: 90 },
+  { id: 'C3', x: 0.5, z: -0.28, rotation: 90 },
+  { id: 'R3', x: 0.78, z: -0.26, rotation: 90 },
   { id: 'C4', x: 0.92, z: 0.02, rotation: 0 },
   { id: 'R4', x: 1.12, z: 0.02, rotation: 90, color: '#b98c62' },
   { id: 'C5', x: -1.16, z: 0.46, rotation: 0 },
@@ -83,34 +85,25 @@ function Silkscreen({ label, x, z, size = 0.06, rotation = 0 }: { label: string;
 function makeLandingBoardShape() {
   const board = new Shape()
   board.moveTo(-1.78, -0.76)
-  board.lineTo(-0.88, -0.76)
-  board.quadraticCurveTo(-0.78, -0.76, -0.73, -0.67)
-  board.lineTo(-0.62, -0.49)
-  board.quadraticCurveTo(-0.57, -0.4, -0.45, -0.4)
-  board.lineTo(0.78, -0.4)
-  board.quadraticCurveTo(0.9, -0.4, 0.95, -0.49)
-  board.lineTo(1.06, -0.67)
-  board.quadraticCurveTo(1.11, -0.76, 1.22, -0.76)
-  board.lineTo(1.74, -0.76)
-  board.quadraticCurveTo(1.88, -0.76, 1.88, -0.62)
+  board.lineTo(-0.9, -0.76)
+  board.quadraticCurveTo(-0.78, -0.76, -0.7, -0.66)
+  board.lineTo(-0.58, -0.5)
+  board.quadraticCurveTo(-0.5, -0.4, -0.36, -0.4)
+  board.lineTo(1.72, -0.4)
+  board.quadraticCurveTo(1.88, -0.4, 1.88, -0.24)
   board.lineTo(1.88, 0.62)
   board.quadraticCurveTo(1.88, 0.76, 1.74, 0.76)
-  board.lineTo(1.12, 0.76)
-  board.quadraticCurveTo(1.02, 0.76, 0.96, 0.67)
-  board.lineTo(0.86, 0.52)
-  board.quadraticCurveTo(0.8, 0.43, 0.68, 0.43)
-  board.lineTo(-0.62, 0.43)
-  board.quadraticCurveTo(-0.74, 0.43, -0.8, 0.52)
-  board.lineTo(-0.9, 0.67)
-  board.quadraticCurveTo(-0.96, 0.76, -1.08, 0.76)
   board.lineTo(-1.78, 0.76)
   board.quadraticCurveTo(-1.92, 0.76, -1.92, 0.62)
+  board.lineTo(-1.92, 0.22)
+  board.quadraticCurveTo(-1.74, 0.14, -1.74, 0)
+  board.quadraticCurveTo(-1.74, -0.14, -1.92, -0.22)
   board.lineTo(-1.92, -0.62)
   board.quadraticCurveTo(-1.92, -0.76, -1.78, -0.76)
 
   const holes = [
     [-1.62, -0.56],
-    [1.56, -0.56],
+    [1.58, -0.22],
     [-1.62, 0.56],
     [1.56, 0.56],
   ]
@@ -338,9 +331,9 @@ function BoardAssembly({ progress = 0.4, compact = false }: PcbSceneProps) {
         <CopperDetails routeGlow={routeGlow} padProgress={padProgress} />
         <UsbC x={-1.5} z={0.28} label="USB-C" visible={components > 0.08} />
         <Rj45 x={1.46} z={0.26} visible={components > 0.2} />
-        <UsbC x={1.34} z={-0.42} label="USB-C" visible={components > 0.34} />
+        <UsbC x={1.34} z={-0.2} label="USB-C" visible={components > 0.34} />
         <Chip x={-0.14} z={-0.02} label="ESP32-S3" visible={components > 0.06} size={[0.56, 0.13, 0.5]} pins={16} />
-        <Chip x={0.5} z={-0.28} label="QFN MCU" visible={components > 0.42} size={[0.4, 0.12, 0.36]} pins={14} />
+        <Chip x={0.5} z={-0.16} label="QFN MCU" visible={components > 0.42} size={[0.4, 0.12, 0.36]} pins={14} />
         <Chip x={-0.82} z={-0.16} label="LDO" visible={components > 0.52} size={[0.3, 0.1, 0.24]} pins={8} />
         <Crystal x={0.28} z={0.34} visible={components > 0.5} />
         <PinHeader x={0.62} z={0.58} visible={components > 0.62} />
@@ -359,7 +352,7 @@ function BoardAssembly({ progress = 0.4, compact = false }: PcbSceneProps) {
           </mesh>
         )}
         {packageStep && (
-          <group position={[1.8, 0.38, -0.05]} rotation={[0.18, -0.38, 0.04]}>
+          <group position={[1.34, 0.38, 0.02]} rotation={[0.18, -0.38, 0.04]}>
             <mesh>
               <boxGeometry args={[0.48, 0.38, 0.18]} />
               <meshStandardMaterial color="#22313d" roughness={0.42} metalness={0.08} />
