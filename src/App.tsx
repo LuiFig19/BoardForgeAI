@@ -15,13 +15,19 @@ import {
   FileArchive,
   FolderKanban,
   GitBranch,
+  HardDrive,
   Layers3,
+  PackageCheck,
   Play,
+  Plug,
   RefreshCw,
+  Server,
+  ShieldCheck,
   ShieldAlert,
   Sparkles,
   TerminalSquare,
   Upload,
+  Workflow,
   X,
 } from 'lucide-react'
 import { Layout, StatusBadge, WarningBanner } from './components/Layout'
@@ -36,10 +42,54 @@ import { boardRuleEngine, promptModules } from './services/agents'
 import { KiCadBoardOutlineService, KiCadExportService, KiCadProjectService, KiCadValidationService, ProjectPackageService } from './services/kicad'
 
 const interfaces = ['USB', 'Ethernet', 'CAN', 'UART', 'SPI', 'I2C', 'Wi-Fi', 'BLE', 'LoRa']
-const routes = ['/', '/generate', '/dashboard', '/project', '/boards', '/export', '/logs', '/pricing', '/docs', '/admin']
+const routes = ['/', '/generate', '/dashboard', '/project', '/boards', '/plugin', '/export', '/logs', '/pricing', '/docs', '/admin']
 const wizardSteps = ['Requirements', 'Board shape', 'Placement intent', 'Generate']
 const markKinds: GenerationRequest['placementMarks'][number]['kind'][] = ['MCU', 'connector', 'power', 'sensor', 'mounting hole', 'keepout', 'antenna', 'hot zone']
 const outlineService = new KiCadBoardOutlineService()
+const pluginStatus = {
+  installed: false,
+  connected: false,
+  kicadDetected: false,
+  kicadVersion: 'Not detected',
+  cliAvailable: false,
+  workspace: 'No local workspace approved',
+  lastSync: 'Never',
+  lastJob: 'No plugin jobs yet',
+}
+const generationModes = ['Board Outline Only', 'Full PCB Project', 'Improve Existing KiCad Project', 'Export/Package Existing Project'] as const
+const pluginCommands = [
+  'create_outline_board',
+  'create_kicad_project',
+  'apply_edge_cuts',
+  'scan_kicad_project',
+  'find_missing_footprints',
+  'link_3d_models',
+  'run_kicad_drc',
+  'run_kicad_erc',
+  'export_gerbers',
+  'export_drill_files',
+  'export_bom',
+  'export_cpl',
+  'package_jlcpcb',
+  'summarize_project',
+]
+
+function PluginConnectionBanner() {
+  return (
+    <section className="plugin-banner">
+      <div>
+        <StatusBadge tone={pluginStatus.connected ? 'green' : 'amber'}>
+          BoardForge Plugin: {pluginStatus.connected ? 'Connected' : 'Not Connected'}
+        </StatusBadge>
+        <h2>{pluginStatus.connected ? 'KiCad local execution is ready' : 'Install the Codex plugin to generate real KiCad files locally'}</h2>
+        <p>
+          The web app creates specs, board outlines, project plans, dashboards, and reports. BoardForge Codex Plugin plus the local helper is the execution engine that touches KiCad files, runs whitelisted KiCad CLI commands, and packages manufacturing outputs.
+        </p>
+      </div>
+      <a className="primary-action" href="#/plugin"><Plug size={16} /> Get BoardForge Plugin</a>
+    </section>
+  )
+}
 
 const makeShapePoints = (shape: BoardShapeType): Array<{ x: number; y: number }> => {
   if (shape === 'circle') {
@@ -143,34 +193,34 @@ function LandingPage() {
 
   const workflow = [
     {
-      title: 'outline',
-      body: 'The mechanical outline is the first constraint, not decoration. BoardForge keeps connector edges, mounting holes, notches, and keepout regions visible before any electronics are placed.',
-      details: ['custom shape or uploaded image', 'board size and hole count', 'edge and keepout intent'],
+      title: 'web spec',
+      body: 'Describe the board in BoardForge AI. The web app captures requirements, saved specs, board outlines, templates, and project intent without pretending it can access your local KiCad libraries.',
+      details: ['requirements builder', 'board outline library', 'structured JSON plan'],
     },
     {
-      title: 'layers',
-      body: 'The viewer separates the physical stack so the design can be reviewed like a real KiCad board: solder mask, copper, reference planes, and silkscreen intent.',
-      details: ['top copper and mask', 'inner ground and power planes', 'bottom copper planning'],
+      title: 'Codex plugin',
+      body: 'BoardForge Codex Plugin turns Codex into the hardware engineering agent. Codex calls controlled BoardForge tools with structured JSON instead of freestyling edits to KiCad files.',
+      details: ['safe tool calls', 'schema-validated jobs', 'local workspace approval'],
     },
     {
-      title: 'placement',
-      body: 'Components are placed with manufacturing space around them. Edge connectors stay on edges, MCUs get room for fanout, and passives sit near the pins they support.',
-      details: ['MCU and regulator regions', 'USB/RJ45 edge placement', 'passive part clustering'],
-    },
-    {
-      title: 'routing',
-      body: 'Critical nets are routed first using sane paths: power width, USB/Ethernet constraints, sensor buses, vias, and short fanout routes around real package bodies.',
-      details: ['power before signal', '45/90 degree route intent', 'via and test point planning'],
+      title: 'local KiCad helper',
+      body: 'The local helper is the only layer that writes KiCad files and runs KiCad commands. It creates projects, applies Edge.Cuts, scans libraries, and records every action.',
+      details: ['create KiCad projects', 'apply Edge.Cuts outlines', 'read local footprints'],
     },
     {
       title: 'validation',
-      body: 'The design is treated as review-required until checks pass. ERC, DRC, spacing, part overlap, board-edge clearance, and assembly flags are tracked before export.',
-      details: ['overlap prevention', 'clearance and edge checks', 'human review report'],
+      body: 'The plugin runs ERC, DRC, and export checks through whitelisted KiCad automation. No arbitrary shell commands, no hidden file writes, and no fake browser-only manufacturing claims.',
+      details: ['kicad-cli erc/drc', 'safe command whitelist', 'human review required'],
     },
     {
       title: 'package',
-      body: 'Once reviewed, the project is packaged into the file set a fabricator expects: KiCad project files, Gerbers, drills, BOM, CPL, validation logs, and README.',
-      details: ['KiCad source files', 'JLCPCB-ready BOM/CPL', 'manufacturing checklist'],
+      body: 'After local validation, BoardForge packages the real KiCad outputs: Gerbers, drill files, BOM, CPL, reports, README, and JLCPCB-ready ZIPs when available.',
+      details: ['Gerbers and drill', 'BOM/CPL', 'JLCPCB package'],
+    },
+    {
+      title: 'dashboard',
+      body: 'Results return to BoardForge AI for dashboards, reports, saved boards, export history, team review, and pricing/account workflows.',
+      details: ['run logs', 'project library', 'generated reports'],
     },
   ]
 
@@ -178,15 +228,17 @@ function LandingPage() {
     <main>
       <section className="hero-section">
         <div className="hero-copy">
-          <StatusBadge tone="cyan">KiCad-first AI hardware generation</StatusBadge>
-          <h1>AI PCB generation for KiCad, from idea to fab files.</h1>
+          <StatusBadge tone="cyan">Codex plugin-first KiCad workflow</StatusBadge>
+          <h1>AI PCB generation for KiCad, powered by a local manufacturing plugin.</h1>
           <p>
-            Describe your embedded system, drone controller, sensor board, or robotics PCB. BoardForge AI plans the schematic, places
-            components, prepares layout files, validates the design, and packages everything for manufacturing.
+            Design your board in the browser, execute it locally with BoardForge Codex Plugin, validate it in KiCad, and export the files needed for PCB manufacturing.
           </p>
           <div className="action-row">
             <a className="primary-action" href="#/generate">
               <Play size={18} /> Generate a board
+            </a>
+            <a className="secondary-action" href="#/plugin">
+              <Plug size={18} /> Get BoardForge Plugin
             </a>
             <a className="secondary-action" href="#/docs">
               View demo workflow <ArrowRight size={18} />
@@ -240,6 +292,7 @@ function GeneratorPage() {
   const [cornerRadiusMm, setCornerRadiusMm] = useState(3)
   const [mountingHoleDiameterMm, setMountingHoleDiameterMm] = useState(3)
   const [savedBoard, setSavedBoard] = useState<Board | null>(null)
+  const [generationMode, setGenerationMode] = useState<(typeof generationModes)[number]>('Board Outline Only')
 
   const setField = <K extends keyof GenerationRequest>(key: K, value: GenerationRequest[K]) => setForm((current) => ({ ...current, [key]: value }))
 
@@ -398,7 +451,19 @@ function GeneratorPage() {
       <section className="page-head">
         <StatusBadge tone="green">Step-by-step PCB intake</StatusBadge>
         <h1>AI PCB Generator</h1>
-        <p>Capture requirements, board outline, holes, image references, and placement guidance before starting the KiCad generation job.</p>
+        <p>Capture requirements, board outlines, image references, and placement guidance. The browser prepares specs; BoardForge Codex Plugin executes real KiCad work locally.</p>
+      </section>
+      <PluginConnectionBanner />
+      <section className="mode-grid">
+        {generationModes.map((mode) => (
+          <button className={generationMode === mode ? 'active' : ''} key={mode} type="button" onClick={() => {
+            setGenerationMode(mode)
+            setOutlineMode(mode === 'Board Outline Only')
+          }}>
+            <strong>{mode}</strong>
+            <span>{mode === 'Board Outline Only' ? 'Create Edge.Cuts-ready outline data in browser.' : mode === 'Full PCB Project' ? 'Create a structured job for the local plugin.' : mode === 'Improve Existing KiCad Project' ? 'Scan and patch a local KiCad project with plugin approval.' : 'Use the plugin to validate and package local project files.'}</span>
+          </button>
+        ))}
       </section>
       <nav className="wizard-tabs" aria-label="PCB generation steps">
         {wizardSteps.map((item, index) => (
@@ -521,8 +586,8 @@ function GeneratorPage() {
             <div className="outline-mode-card full-span">
               <div>
                 <StatusBadge tone="cyan">AI Board Outline Only</StatusBadge>
-                <h2>Blank Board Outline</h2>
-                <p>Create a mechanical PCB outline first. Export it as a KiCad project with Edge.Cuts geometry, or convert it into a full PCB project later.</p>
+              <h2>Blank Board Outline</h2>
+              <p>Create a mechanical PCB outline first. Save it in Boards, export an outline ZIP, or send it to BoardForge Plugin to create real local Edge.Cuts in KiCad.</p>
               </div>
               <label className="toggle-row">
                 <input type="checkbox" checked={outlineMode} onChange={(event) => setOutlineMode(event.target.checked)} />
@@ -599,6 +664,7 @@ function GeneratorPage() {
                     setSavedBoard(board)
                     downloadBoardBundle(board)
                   }}><Download size={16} /> Download KiCad ZIP</button>
+                  <a className="secondary-action" href="#/plugin"><Server size={16} /> Send to Plugin</a>
                   {savedBoard && <a className="secondary-action" href="#/boards">Open in Boards</a>}
                 </div>
               </div>
@@ -1315,7 +1381,7 @@ function BoardsPage() {
       <section className="page-head">
         <StatusBadge tone="green">Board library</StatusBadge>
         <h1>Boards</h1>
-        <p>Saved board outlines and finished PCB projects live here. Outline-only boards can export a KiCad project with Edge.Cuts geometry before any schematic exists.</p>
+        <p>Saved board outlines, finished PCB projects, imported boards, and plugin-ready jobs live here. Outline-only boards can become local KiCad Edge.Cuts jobs through BoardForge Plugin.</p>
       </section>
       <div className="filter-row" role="toolbar" aria-label="Board filters">
         {[
@@ -1337,13 +1403,14 @@ function BoardsPage() {
                 <StatusBadge tone={board.type === 'outline_only' ? 'cyan' : 'green'}>{board.type === 'outline_only' ? 'outline only' : 'full project'}</StatusBadge>
                 <h2>{board.name}</h2>
                 <p>{board.width} {board.units} x {board.height} {board.units} · {board.shapeType}</p>
-                <small>{new Date(board.createdAt).toLocaleString()} · {board.status.replaceAll('_', ' ')}</small>
+                <small>{new Date(board.createdAt).toLocaleString()} · Plugin {pluginStatus.connected ? 'ready' : 'not connected'} · {board.status.replaceAll('_', ' ')}</small>
               </div>
               <div className="board-card-actions">
                 <button type="button" onClick={() => setActiveBoard(board.id)}>Open</button>
                 <a href="#/generate" onClick={() => setActiveBoard(board.id)}>Edit Outline</a>
-                <button type="button" onClick={() => downloadBoardBundle(board)}>Export KiCad</button>
-                <button type="button" onClick={() => downloadBoardBundle(board)}>Download</button>
+                <a href="#/plugin" onClick={() => setActiveBoard(board.id)}>Send to Plugin</a>
+                <button type="button" onClick={() => downloadBoardBundle(board)}>Export KiCad Outline</button>
+                <button type="button" onClick={() => downloadBoardBundle(board)}>Download ZIP</button>
                 <button type="button" onClick={() => duplicateBoard(board.id)}>Duplicate</button>
                 <button type="button" onClick={() => deleteBoard(board.id)}>Delete</button>
               </div>
@@ -1379,8 +1446,9 @@ function BoardsPage() {
               <div className="board-card-actions">
                 <a href="#/project" onClick={() => setActiveJob(job.id)}>Open</a>
                 <a href="#/generate">Edit Outline</a>
+                <a href="#/plugin" onClick={() => setActiveJob(job.id)}>Send to Plugin</a>
                 <a href="#/export" onClick={() => setActiveJob(job.id)}>Export KiCad</a>
-                <a href="#/export" onClick={() => setActiveJob(job.id)}>Download</a>
+                <a href="#/export" onClick={() => setActiveJob(job.id)}>Download ZIP</a>
                 <button type="button">Duplicate</button>
                 <button type="button">Delete</button>
               </div>
@@ -1420,6 +1488,114 @@ function BoardsPage() {
   )
 }
 
+function PluginPage() {
+  const statusItems = [
+    ['Installed', pluginStatus.installed ? 'Installed' : 'Not installed'],
+    ['Connected', pluginStatus.connected ? 'Connected' : 'Not connected'],
+    ['KiCad detected', pluginStatus.kicadDetected ? 'Detected' : 'Not detected'],
+    ['KiCad version', pluginStatus.kicadVersion],
+    ['kicad-cli', pluginStatus.cliAvailable ? 'Available' : 'Missing'],
+    ['Workspace', pluginStatus.workspace],
+    ['Last sync', pluginStatus.lastSync],
+    ['Last job', pluginStatus.lastJob],
+  ]
+  const pluginCapabilities = [
+    'Create KiCad projects',
+    'Generate Edge.Cuts board outlines',
+    'Assign footprints',
+    'Link 3D models',
+    'Place components',
+    'Assist critical routing',
+    'Run ERC/DRC',
+    'Export Gerbers',
+    'Export drill files',
+    'Export BOM',
+    'Export CPL / pick-and-place',
+    'Package JLCPCB exports',
+  ]
+  return (
+    <main className="page-grid">
+      <section className="plugin-hero">
+        <div>
+          <StatusBadge tone="cyan">Codex execution engine</StatusBadge>
+          <h1>BoardForge Plugin</h1>
+          <p>
+            Local KiCad automation for AI-generated PCB projects. Install the BoardForge Codex Plugin to let Codex safely create, edit, validate, and export KiCad projects on your own machine.
+          </p>
+          <div className="action-row">
+            <button className="primary-action" type="button"><Plug size={16} /> Join Plugin Beta</button>
+            <a className="secondary-action" href="#/docs">View Install Guide</a>
+            <button className="secondary-action" type="button">Connect Web App</button>
+          </div>
+        </div>
+        <Panel title="Correct execution path">
+          <pre className="terminal">User in Codex{'\n'}↓{'\n'}BoardForge Codex Plugin{'\n'}↓{'\n'}BoardForge local MCP/tool server or CLI helper{'\n'}↓{'\n'}Whitelisted KiCad automation tools{'\n'}↓{'\n'}Real local KiCad project files{'\n'}↓{'\n'}DRC/ERC/export reports{'\n'}↓{'\n'}Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package</pre>
+        </Panel>
+      </section>
+      <PluginConnectionBanner />
+      <section className="two-column">
+        <Panel title="Why local?">
+          <div className="icon-list">
+            {[
+              ['KiCad files live on your machine', HardDrive],
+              ['Footprints, symbols, and 3D models are local', CircuitBoard],
+              ['DRC/ERC should run through real KiCad tools', ShieldCheck],
+              ['Manufacturing exports use whitelisted commands', TerminalSquare],
+              ['Codex sends structured jobs, not raw shell commands', Workflow],
+            ].map(([label, Icon]) => {
+              const SafeIcon = Icon as typeof HardDrive
+              return <span key={label as string}><SafeIcon size={17} /> {label as string}</span>
+            })}
+          </div>
+        </Panel>
+        <Panel title="Plugin status">
+          <div className="status-grid">
+            {statusItems.map(([label, value]) => (
+              <div key={label}>
+                <span>{label}</span>
+                <strong>{value}</strong>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </section>
+      <Panel title="What the plugin does">
+        <div className="capability-grid">
+          {pluginCapabilities.map((item) => <span key={item}><CheckCircle2 size={16} /> {item}</span>)}
+        </div>
+      </Panel>
+      <section className="two-column">
+        <Panel title="Codex tool commands">
+          <div className="command-grid">
+            {pluginCommands.map((command) => <code key={command}>{command}</code>)}
+          </div>
+        </Panel>
+        <Panel title="Local security model">
+          <div className="icon-list">
+            {['No arbitrary shell execution', 'Whitelisted KiCad commands only', 'Workspace path sanitization', 'Dry-run before destructive edits', 'Snapshots before overwrite', 'Schema validation for every AI output', 'Full action logs and reports'].map((item) => (
+              <span key={item}><ShieldCheck size={17} /> {item}</span>
+            ))}
+          </div>
+        </Panel>
+      </section>
+      <Panel title="Supported outputs">
+        <div className="package-contents">
+          {['.kicad_pro', '.kicad_sch', '.kicad_pcb', 'Gerber ZIP', 'drill files', 'BOM CSV', 'CPL CSV', 'STEP/3D exports', 'ERC report', 'DRC report', 'README/manufacturing notes'].map((item) => (
+            <span key={item}><PackageCheck size={16} /> {item}</span>
+          ))}
+        </div>
+      </Panel>
+      <Panel title="MVP phases">
+        <div className="doc-steps">
+          {['Codex Plugin + CLI', 'Local MCP tool server', 'KiCad CLI validation/export', 'localhost bridge', 'optional native KiCad plugin'].map((step, index) => (
+            <div key={step}><span>{index + 1}</span>{step}</div>
+          ))}
+        </div>
+      </Panel>
+    </main>
+  )
+}
+
 function ExportPage() {
   const job = useJobs((state) => state.getActiveJob())
   const jobs = useJobs((state) => state.jobs)
@@ -1430,7 +1606,7 @@ function ExportPage() {
     <main className="page-grid">
       <section className="export-hero">
         <div className="export-summary">
-          <StatusBadge tone="amber">Manufacturing package</StatusBadge>
+          <StatusBadge tone="amber">Export handoff</StatusBadge>
           <label>
             Current Project
             <select value={job.id} onChange={(event) => setActiveJob(event.target.value)}>
@@ -1438,7 +1614,7 @@ function ExportPage() {
             </select>
           </label>
           <h1>{job.request.projectName}</h1>
-          <p>This export contains the KiCad project, schematic, PCB, BOM, CPL, Gerbers, drill files, validation reports, and human-review README.</p>
+          <p>The web app can export specs, JSON plans, board outline data, and summaries. Manufacturing files require BoardForge Plugin connected to local KiCad.</p>
           <div className="export-meta-grid">
             <div><span>Board type</span><strong>{job.request.boardType}</strong></div>
             <div><span>Layers</span><strong>{job.request.layerCount}</strong></div>
@@ -1453,28 +1629,37 @@ function ExportPage() {
         <RealisticPcbViewer request={job.request} />
       </section>
       <WarningBanner />
+      <PluginConnectionBanner />
       <section className="download-dock">
-        {['Download Full KiCad Project', 'Download Manufacturing Package', 'Download Gerbers Only', 'Download BOM', 'Download Pick And Place', 'Download Validation Report'].map((label, index) => (
-          <button className={index < 2 ? 'primary-action' : 'secondary-action'} key={label} type="button">
+        {['Download Spec JSON', 'Download Board Outline ZIP', 'Download Project Summary'].map((label) => (
+          <button className="primary-action" key={label} type="button">
             <Download size={16} /> {label}
           </button>
         ))}
       </section>
       <section className="two-column">
+        <Panel title="Plugin-generated manufacturing files">
+          <p>Install and connect BoardForge Plugin to generate these from real local KiCad projects.</p>
+          <div className="package-contents muted-outputs">
+            {['KiCad project', 'Gerber ZIP', 'drill files', 'BOM CSV', 'CPL CSV', 'ERC report', 'DRC report', 'JLCPCB package'].map((item) => (
+              <span key={item}><PackageCheck size={16} /> {item}</span>
+            ))}
+          </div>
+        </Panel>
         <Panel title="Export workflow">
           <div className="export-flow">
-            {['Generate', 'Validate', 'Export', 'Manufacture'].map((stage, index) => (
+            {['Web plan', 'Send to plugin', 'KiCad validate', 'Package'].map((stage, index) => (
               <div className={index < 2 ? 'complete' : index === 2 ? 'blocked' : ''} key={stage}>
                 <span>{index + 1}</span>
                 <strong>{stage}</strong>
-                <small>{index === 3 ? 'Human review before order' : index === 2 ? 'Blocked until KiCad CLI runner' : 'Staged'}</small>
+                <small>{index > 1 ? 'Blocked until plugin connects' : 'Staged'}</small>
               </div>
             ))}
           </div>
         </Panel>
-        <Panel title="This project contains">
+        <Panel title="Web-generated files">
           <div className="package-contents">
-            {['KiCad project', 'Schematic', 'PCB', 'BOM', 'CPL', 'Gerbers', 'Drill files', 'Validation reports'].map((item) => (
+            {['Project spec JSON', 'Board outline data', 'Placement intent', 'Architecture summary', 'Human-review notes', 'Plugin job payload'].map((item) => (
               <span key={item}><CheckCircle2 size={16} /> {item}</span>
             ))}
           </div>
@@ -1528,17 +1713,17 @@ function LogsPage() {
 
 function PricingPage() {
   const plans = [
-    ['Starter', '$29/month', 'simple boards, limited generations, KiCad project export, community templates'],
-    ['Pro', '$99/month', 'advanced boards, more generations, manufacturing export, validation reports, project history'],
-    ['Lab', '$299/month', 'team projects, custom rules, private component libraries, higher generation limits, priority queue'],
-    ['Enterprise / Defense', 'custom', 'on-prem option, private models, NDAA supply-chain workflows, audit logs, engineering review integration'],
+    ['Starter', '$29/month', 'makers and small boards: board outline generation, project specs, limited AI generations, basic plugin export'],
+    ['Pro', '$99/month', 'serious hardware builders: full KiCad project workflows, plugin job history, validation reports, manufacturing package export'],
+    ['Lab', '$299/month', 'teams: shared board library, custom templates, private component libraries, advanced plugin workflows, audit logs'],
+    ['Enterprise / Defense', 'custom', 'private deployment, on-prem plugin control, NDAA workflows, manufacturer rules, team permissions, review integration'],
   ]
   return (
     <main className="page-grid">
       <section className="page-head">
         <StatusBadge tone="green">Pricing</StatusBadge>
         <h1>Plans for hardware teams</h1>
-        <p>Internal generation cost estimates are tracked for planning; they are not shown as guaranteed manufacturing cost.</p>
+        <p>Plans combine the BoardForge AI web command center with BoardForge Plugin workflows. Manufacturing export still requires human review and local KiCad validation.</p>
       </section>
       <section className="pricing-grid">
         {plans.map(([name, price, details]) => (
@@ -1550,7 +1735,7 @@ function PricingPage() {
         ))}
       </section>
       <Panel title="Internal pay-per-generation estimates">
-        <p>Simple board: estimated $5-$25 AI/internal cost. Complex board: estimated $25-$150 AI/internal cost.</p>
+        <p>Simple board: estimated $5-$25 AI/internal cost. Complex board: estimated $25-$150 AI/internal cost. Plugin local execution cost depends on user machine time, not hosted model tokens.</p>
       </Panel>
     </main>
   )
@@ -1559,24 +1744,32 @@ function PricingPage() {
 function DocsPage() {
   const faq = [
     ['Is this safe for production?', 'No design should be manufactured or used in safety-critical contexts without qualified human review.'],
-    ['Does it replace electrical engineers?', 'No. It is engineering acceleration for KiCad starting points, validation assistance, and package preparation.'],
-    ['Does it support JLCPCB?', 'The export flow is JLCPCB-focused, including BOM/CPL and checklist structure.'],
-    ['Does it support Altium?', 'Coming soon. The current target CAD tool is KiCad.'],
-    ['Can it route boards?', 'The MVP stages placement and partial routing strategy, starting with critical nets.'],
-    ['Can it use my component library?', 'The architecture includes a ComponentLibraryService; uploaded executable scripts are not allowed.'],
-    ['What files do I get?', 'KiCad project files, Gerbers, drill files, BOM, CPL, reports, PDFs when available, and human-review README.'],
+    ['Why does BoardForge need a local plugin?', 'KiCad files, libraries, footprints, 3D models, kicad-cli, ERC/DRC, and manufacturing exports live locally. The plugin gives Codex safe local access.'],
+    ['Can the web app generate PCBs without the plugin?', 'It can create specs, board outlines, JSON plans, previews, and outline ZIPs. Full local KiCad execution requires BoardForge Plugin.'],
+    ['Does the plugin control KiCad?', 'The plugin calls BoardForge-controlled local tools and whitelisted KiCad CLI commands. It does not give AI arbitrary shell access.'],
+    ['Is it safe?', 'The model is AI proposes, validators check, plugin executes, KiCad validates, human reviews. Paths and commands are constrained.'],
+    ['Can it run arbitrary commands?', 'No. MVP commands are schema-validated and limited to BoardForge/KiCad operations.'],
+    ['Does it support KiCad libraries?', 'That is the reason for the plugin: it can scan and use local symbols, footprints, and 3D model paths.'],
+    ['Can it create Edge.Cuts outlines?', 'Yes. Outline-only boards are a first-class workflow and can become local plugin jobs.'],
+    ['Can it generate Gerbers?', 'Yes, through the local plugin and kicad-cli when KiCad is installed and detected.'],
+    ['Can it generate BOM/CPL files?', 'Yes, through the plugin export flow for projects with valid schematic/footprint data.'],
+    ['Does it upload directly to JLCPCB?', 'Not in the MVP. BoardForge packages JLCPCB-ready files; direct upload should stay human-approved.'],
+    ['Does it guarantee manufacturable designs?', 'No. It is manufacturing-assisted and review-required.'],
+    ['Can it improve existing KiCad projects?', 'That is an MVP mode: scan an approved local workspace, summarize problems, and apply controlled plugin edits.'],
+    ['What data stays local?', 'KiCad project files, libraries, footprints, 3D models, and local export artifacts stay on the user machine unless explicitly synced.'],
   ]
   return (
     <main className="page-grid">
       <section className="page-head">
-        <StatusBadge tone="cyan">Workflow docs</StatusBadge>
-        <h1>Validation-assisted KiCad generation</h1>
+        <StatusBadge tone="cyan">Codex plugin workflow docs</StatusBadge>
+        <h1>BoardForge AI + BoardForge Plugin</h1>
       </section>
       <section className="doc-steps">
-        {['Describe hardware', 'Select constraints', 'Generate architecture', 'Review components', 'Generate KiCad files', 'Validate ERC/DRC', 'Export fab package', 'Human review', 'Upload to JLCPCB'].map((step, index) => (
+        {['Describe hardware in web app', 'Create structured JSON plan', 'Send job to Codex plugin', 'Plugin opens local workspace', 'Helper writes KiCad files', 'Run ERC/DRC', 'Export package', 'Human review', 'Upload to manufacturer'].map((step, index) => (
           <div key={step}><span>{index + 1}</span>{step}</div>
         ))}
       </section>
+      <PluginConnectionBanner />
       <Panel title="FAQ">
         <div className="faq-list">
           {faq.map(([question, answer]) => (
@@ -1593,6 +1786,7 @@ function DocsPage() {
 
 function AdminPage() {
   const jobs = useJobs((state) => state.jobs)
+  const boards = useBoards((state) => state.boards)
   const runtime = new KiCadValidationService().checkRuntime()
   const projectService = new KiCadProjectService()
   return (
@@ -1600,13 +1794,15 @@ function AdminPage() {
       <section className="page-head">
         <StatusBadge tone={runtime.available ? 'green' : 'red'}>KiCad CLI {runtime.available ? 'available' : 'not connected'}</StatusBadge>
         <h1>Admin monitor</h1>
-        <p>{runtime.reason}</p>
+        <p>Admin tracks web projects, board outlines, plugin jobs, connected plugin versions, validation errors, export attempts, AI model costs, and user activity. Empty states are shown until the local plugin bridge is connected.</p>
       </section>
       <section className="metric-grid">
         <Metric icon={<TerminalSquare />} label="Generation jobs" value={String(jobs.length)} />
-        <Metric icon={<ShieldAlert />} label="Failed jobs" value={String(jobs.filter((job) => job.status === 'failed').length)} />
-        <Metric icon={<Database />} label="Queue status" value={jobs.length ? 'local persisted jobs' : 'empty'} />
-        <Metric icon={<FileArchive />} label="Storage usage" value="server storage not connected" />
+        <Metric icon={<FolderKanban />} label="Saved board outlines" value={String(boards.length)} />
+        <Metric icon={<Plug />} label="Plugin jobs" value="0" />
+        <Metric icon={<ShieldAlert />} label="Validation errors" value={String(jobs.reduce((sum, job) => sum + job.errorsCount, 0))} />
+        <Metric icon={<Database />} label="Plugin bridge" value={pluginStatus.connected ? 'connected' : 'not connected'} />
+        <Metric icon={<FileArchive />} label="Export attempts" value="0 plugin exports" />
       </section>
       <Panel title="Recent generations">
         <div className="table">
@@ -1623,6 +1819,14 @@ function AdminPage() {
       <Panel title="Rule engine">
         <div className="chip-list">
           {[...boardRuleEngine.global, ...boardRuleEngine['PoE device']].map((rule) => <span key={rule}>{rule}</span>)}
+        </div>
+      </Panel>
+      <Panel title="Plugin monitor">
+        <div className="status-grid">
+          <div><span>Connected versions</span><strong>0</strong></div>
+          <div><span>Average job duration</span><strong>No plugin data</strong></div>
+          <div><span>Failed plugin jobs</span><strong>0</strong></div>
+          <div><span>Download attempts</span><strong>Not tracked yet</strong></div>
         </div>
       </Panel>
     </main>
@@ -1656,6 +1860,7 @@ function App() {
     '/dashboard': <DashboardPage />,
     '/project': <ProjectPage />,
     '/boards': <BoardsPage />,
+    '/plugin': <PluginPage />,
     '/export': <ExportPage />,
     '/logs': <LogsPage />,
     '/pricing': <PricingPage />,

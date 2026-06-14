@@ -1,6 +1,24 @@
 # BoardForge AI
 
-BoardForge AI is a Next.js hardware generation cockpit for AI-assisted KiCad PCB planning, board shape capture, realistic PCB previews, validation tracking, and fab package review.
+BoardForge AI is the web command center for AI-assisted KiCad hardware design. The product is now explicitly plugin-first:
+
+```text
+User in Codex
+↓
+BoardForge Codex Plugin
+↓
+BoardForge local MCP/tool server or CLI helper
+↓
+Whitelisted KiCad automation tools
+↓
+Real local KiCad project files
+↓
+DRC/ERC/export reports
+↓
+Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
+```
+
+The website handles marketing, accounts, project libraries, board templates, saved specs, plugin onboarding, dashboards, reports, pricing, docs, and board/outline libraries. The BoardForge Codex Plugin and local helper are the execution engine for real KiCad file edits and manufacturing exports.
 
 ## Local Development
 
@@ -42,6 +60,38 @@ Default provider/model:
 
 - OpenRouter: `deepseek/deepseek-chat-v3.1`
 - Gemini fallback/intake: `gemini-2.5-flash-lite`
+
+## BoardForge Plugin MVP
+
+The Codex plugin source lives in:
+
+```text
+plugins/boardforge-plugin
+```
+
+The CLI MVP accepts structured JSON jobs and currently implements outline-only KiCad project generation:
+
+```bash
+node plugins/boardforge-plugin/bin/boardforge-plugin.mjs \
+  --job plugins/boardforge-plugin/examples/outline-job.json \
+  --workspace plugins/boardforge-plugin/tmp
+```
+
+This writes:
+
+- `.kicad_pro`
+- `.kicad_pcb`
+- `README.md`
+
+Safety rules:
+
+- no arbitrary shell commands from AI
+- writes stay inside the approved workspace
+- job input is structured JSON
+- MVP only supports line-based Edge.Cuts outline generation
+- human review is required before manufacturing
+
+Future phases add the local MCP/tool server, KiCad CLI detection, DRC/ERC, Gerbers, drill, BOM, CPL, and JLCPCB packaging.
 
 ## Vercel
 

@@ -1,0 +1,32 @@
+{
+  "id": "job_demo_outline",
+  "type": "create_outline_board",
+  "workspace": "./tmp",
+  "dryRun": false,
+  "allowOverwrite": true,
+  "input": {
+    "projectName": "Demo Outline Board",
+    "board": {
+      "id": "board_demo_outline",
+      "name": "Demo Outline Board",
+      "units": "mm",
+      "shapeType": "polygon",
+      "widthMm": 65,
+      "heightMm": 40,
+      "segments": [
+        { "type": "line", "start": { "x": 4, "y": 4 }, "end": { "x": 61, "y": 4 } },
+        { "type": "line", "start": { "x": 61, "y": 4 }, "end": { "x": 61, "y": 36 } },
+        { "type": "line", "start": { "x": 61, "y": 36 }, "end": { "x": 4, "y": 36 } },
+        { "type": "line", "start": { "x": 4, "y": 36 }, "end": { "x": 4, "y": 4 } }
+      ],
+      "mountingHoles": [
+        { "id": "H1", "x": 8, "y": 8, "diameterMm": 3 },
+        { "id": "H2", "x": 57, "y": 8, "diameterMm": 3 },
+        { "id": "H3", "x": 8, "y": 32, "diameterMm": 3 },
+        { "id": "H4", "x": 57, "y": 32, "diameterMm": 3 }
+      ],
+      "cutouts": [],
+      "notes": "Outline-only KiCad Edge.Cuts demo."
+    }
+  }
+}

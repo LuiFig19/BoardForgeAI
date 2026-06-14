@@ -1,12 +1,13 @@
-import { Cpu, FileArchive, FolderKanban, Gauge, Home, Lock, ScrollText, Settings, TerminalSquare, WandSparkles } from 'lucide-react'
+import { Cpu, FileArchive, FolderKanban, Gauge, Home, Lock, Plug, ScrollText, Settings, TerminalSquare, WandSparkles } from 'lucide-react'
 import clsx from 'clsx'
 
 const nav = [
   { hash: '#/', label: 'Landing', icon: Home },
   { hash: '#/generate', label: 'Generator', icon: WandSparkles },
-  { hash: '#/dashboard', label: 'Dashboard', icon: Gauge },
-  { hash: '#/project', label: 'Project', icon: Cpu },
   { hash: '#/boards', label: 'Boards', icon: FolderKanban },
+  { hash: '#/project', label: 'Projects', icon: Cpu },
+  { hash: '#/plugin', label: 'Plugin', icon: Plug },
+  { hash: '#/dashboard', label: 'Dashboard', icon: Gauge },
   { hash: '#/export', label: 'Export', icon: FileArchive },
   { hash: '#/logs', label: 'Run Log', icon: TerminalSquare },
   { hash: '#/pricing', label: 'Pricing', icon: Lock },
@@ -22,7 +23,7 @@ export function Layout({ route, children }: { route: string; children: React.Rea
           <span className="brand-mark">BF</span>
           <span>
             <strong>BoardForge AI</strong>
-            <small>KiCad generation cockpit</small>
+            <small>Codex + KiCad command center</small>
           </span>
         </a>
         <nav className="nav-rail" aria-label="Primary navigation">

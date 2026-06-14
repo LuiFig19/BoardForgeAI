@@ -1,0 +1,32 @@
+{
+  "name": "boardforge-plugin",
+  "version": "0.1.0",
+  "description": "Codex plugin workflow for safe local KiCad automation through BoardForge-controlled tools.",
+  "author": {
+    "name": "BoardForge AI",
+    "email": "support@boardforge-ai.com",
+    "url": "https://boardforge-ai.com"
+  },
+  "homepage": "https://boardforge-ai.com/#/plugin",
+  "repository": "https://github.com/LuiFig19/BoardForgeAI",
+  "license": "UNLICENSED",
+  "keywords": ["kicad", "pcb", "eda", "codex", "hardware"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "BoardForge Plugin",
+    "shortDescription": "Safe local KiCad automation for Codex hardware workflows.",
+    "longDescription": "BoardForge Plugin lets Codex act as an AI hardware engineering agent by calling structured BoardForge tools instead of directly editing KiCad files or running arbitrary shell commands.",
+    "developerName": "BoardForge AI",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write", "Local"],
+    "websiteURL": "https://boardforge-ai.com",
+    "privacyPolicyURL": "https://boardforge-ai.com/privacy",
+    "termsOfServiceURL": "https://boardforge-ai.com/terms",
+    "defaultPrompt": [
+      "Create an outline-only KiCad board from this spec.",
+      "Scan this KiCad project and summarize missing footprints.",
+      "Package this KiCad project for JLCPCB review."
+    ],
+    "brandColor": "#0D9488"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@boardforge/boardforge-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "boardforge-plugin": "./bin/boardforge-plugin.mjs"
+  },
+  "scripts": {
+    "smoke": "node ./bin/boardforge-plugin.mjs --job ./examples/outline-job.json --workspace ./tmp"
+  }
+}
