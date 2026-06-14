@@ -1,5 +1,5 @@
 import { Canvas, useFrame } from '@react-three/fiber'
-import { ContactShadows, Environment, Float, Grid, Line, PerspectiveCamera, RoundedBox, Text } from '@react-three/drei'
+import { ContactShadows, Environment, Float, Line, PerspectiveCamera, RoundedBox, Text } from '@react-three/drei'
 import { Suspense, useMemo, useRef } from 'react'
 import { DoubleSide, Path, Shape } from 'three'
 import type { Group, Mesh } from 'three'
@@ -27,8 +27,8 @@ const traces = [
     [0.44, 0.09, -0.08],
   ],
   [
-    [1.42, 0.092, 0.24],
-    [0.96, 0.092, 0.24],
+    [1.26, 0.092, 0.2],
+    [0.92, 0.092, 0.2],
     [0.7, 0.092, 0.02],
     [0.14, 0.092, 0.02],
   ],
@@ -54,8 +54,8 @@ const passiveParts: PassivePart[] = [
   { id: 'R2', x: 0.22, z: -0.22, rotation: 0, color: '#b98c62' },
   { id: 'C3', x: 0.5, z: -0.28, rotation: 90 },
   { id: 'R3', x: 0.78, z: -0.26, rotation: 90 },
-  { id: 'C4', x: 0.92, z: 0.02, rotation: 0 },
-  { id: 'R4', x: 1.12, z: 0.02, rotation: 90, color: '#b98c62' },
+  { id: 'C4', x: 0.88, z: 0.02, rotation: 0 },
+  { id: 'R4', x: 1.04, z: 0.02, rotation: 90, color: '#b98c62' },
   { id: 'C5', x: -1.16, z: 0.46, rotation: 0 },
   { id: 'R5', x: -0.94, z: 0.46, rotation: 0, color: '#b98c62' },
   { id: 'C6', x: 0.16, z: 0.46, rotation: 0 },
@@ -103,7 +103,7 @@ function makeLandingBoardShape() {
 
   const holes = [
     [-1.62, -0.56],
-    [1.58, -0.22],
+    [1.6, -0.28],
     [-1.62, 0.56],
     [1.56, 0.56],
   ]
@@ -307,8 +307,6 @@ function BoardAssembly({ progress = 0.4, compact = false }: PcbSceneProps) {
   const padProgress = Math.min(1, Math.max(0, (clamped - 0.18) / 0.18))
   const components = Math.min(1, Math.max(0, (clamped - 0.38) / 0.22))
   const routeGlow = Math.min(1, Math.max(0, (clamped - 0.58) / 0.2))
-  const scanner = Math.min(1, Math.max(0, (clamped - 0.62) / 0.18))
-  const packageStep = clamped > 0.82
 
   useFrame(({ clock }) => {
     if (!group.current || reduced) return
@@ -330,13 +328,13 @@ function BoardAssembly({ progress = 0.4, compact = false }: PcbSceneProps) {
         </group>
         <CopperDetails routeGlow={routeGlow} padProgress={padProgress} />
         <UsbC x={-1.5} z={0.28} label="USB-C" visible={components > 0.08} />
-        <Rj45 x={1.46} z={0.26} visible={components > 0.2} />
-        <UsbC x={1.34} z={-0.2} label="USB-C" visible={components > 0.34} />
+        <Rj45 x={1.32} z={0.22} visible={components > 0.2} />
+        <UsbC x={0.98} z={-0.18} label="USB-C" visible={components > 0.34} />
         <Chip x={-0.14} z={-0.02} label="ESP32-S3" visible={components > 0.06} size={[0.56, 0.13, 0.5]} pins={16} />
         <Chip x={0.5} z={-0.16} label="QFN MCU" visible={components > 0.42} size={[0.4, 0.12, 0.36]} pins={14} />
         <Chip x={-0.82} z={-0.16} label="LDO" visible={components > 0.52} size={[0.3, 0.1, 0.24]} pins={8} />
         <Crystal x={0.28} z={0.34} visible={components > 0.5} />
-        <PinHeader x={0.62} z={0.58} visible={components > 0.62} />
+        <PinHeader x={0.32} z={0.54} visible={components > 0.62} />
         {passiveParts.map((part, index) => (
           <Passive key={part.id} part={part} visible={components > 0.25 + index * 0.025} />
         ))}
@@ -345,23 +343,6 @@ function BoardAssembly({ progress = 0.4, compact = false }: PcbSceneProps) {
         <Silkscreen label="MCU" x={-0.18} z={-0.43} size={0.05} />
         <Silkscreen label="POWER" x={-0.72} z={0.07} size={0.045} />
         <Silkscreen label="SENSOR BUS" x={0.5} z={0.05} size={0.045} />
-        {scanner > 0 && (
-          <mesh position={[-1.78 + scanner * 3.56, 0.48, 0]} rotation={[0, 0, Math.PI / 2]}>
-            <boxGeometry args={[1.68, 0.014, 0.026]} />
-            <meshStandardMaterial color="#f2f7d0" emissive="#f9ff8b" emissiveIntensity={0.45} transparent opacity={0.28} />
-          </mesh>
-        )}
-        {packageStep && (
-          <group position={[1.34, 0.38, 0.02]} rotation={[0.18, -0.38, 0.04]}>
-            <mesh>
-              <boxGeometry args={[0.48, 0.38, 0.18]} />
-              <meshStandardMaterial color="#22313d" roughness={0.42} metalness={0.08} />
-            </mesh>
-            <Text position={[0, 0.21, 0.1]} fontSize={0.082} color="#ecfeff" anchorX="center">
-              FAB ZIP
-            </Text>
-          </group>
-        )}
       </group>
     </Float>
   )
@@ -376,7 +357,6 @@ export function PcbScene(props: PcbSceneProps) {
         <ambientLight intensity={0.34} />
         <directionalLight position={[2.6, 5, 3.4]} intensity={2.7} castShadow />
         <pointLight position={[-3.2, 2.2, -2.4]} intensity={2.2} color="#d7f7e7" />
-        <Grid position={[0, -0.3, 0]} args={[6, 4]} cellSize={0.28} cellThickness={0.18} cellColor="#394348" sectionColor="#667178" fadeDistance={7} fadeStrength={1.4} />
         <Suspense fallback={null}>
           <BoardAssembly {...props} />
           <ContactShadows position={[0, -0.18, 0]} opacity={0.45} scale={6} blur={2.4} />
