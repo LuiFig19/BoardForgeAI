@@ -20,51 +20,49 @@ type PassivePart = {
 
 const traces = [
   [
-    [-1.42, 0.09, 0.12],
-    [-0.82, 0.09, 0.12],
-    [-0.48, 0.09, -0.16],
-    [0.08, 0.09, -0.16],
-    [0.46, 0.09, -0.42],
+    [-1.45, 0.09, 0.28],
+    [-1.02, 0.09, 0.28],
+    [-0.72, 0.09, 0.04],
+    [-0.16, 0.09, 0.04],
   ],
   [
-    [-1.18, 0.092, -0.48],
-    [-0.52, 0.092, -0.48],
-    [-0.18, 0.092, -0.02],
-    [0.68, 0.092, -0.02],
-    [1.32, 0.092, 0.22],
+    [1.42, 0.092, 0.24],
+    [0.96, 0.092, 0.24],
+    [0.7, 0.092, 0.02],
+    [0.14, 0.092, 0.02],
   ],
   [
-    [0.2, 0.094, 0.56],
-    [0.2, 0.094, 0.2],
-    [0.58, 0.094, 0.2],
-    [0.98, 0.094, -0.28],
+    [0.44, 0.094, 0.56],
+    [0.44, 0.094, 0.26],
+    [0.2, 0.094, 0.08],
+    [-0.08, 0.094, 0.08],
   ],
   [
-    [-0.1, 0.096, 0.64],
-    [-0.1, 0.096, 0.25],
-    [-0.62, 0.096, 0.25],
-    [-0.92, 0.096, 0.52],
+    [-0.78, 0.096, -0.3],
+    [-0.58, 0.096, -0.3],
+    [-0.42, 0.096, -0.08],
+    [-0.16, 0.096, -0.08],
   ],
 ] as const
 
 const passiveParts: PassivePart[] = [
-  { id: 'C1', x: -0.78, z: -0.28, rotation: 0 },
-  { id: 'C2', x: -0.58, z: -0.34, rotation: 0, color: '#b98c62' },
-  { id: 'R1', x: -0.34, z: -0.46, rotation: 0 },
-  { id: 'R2', x: 0.08, z: -0.48, rotation: 0, color: '#b98c62' },
-  { id: 'C3', x: 0.38, z: -0.3, rotation: 90 },
-  { id: 'R3', x: 0.72, z: -0.36, rotation: 90 },
-  { id: 'C4', x: 1.12, z: -0.05, rotation: 0 },
-  { id: 'R4', x: 1.26, z: 0.16, rotation: 90, color: '#b98c62' },
-  { id: 'C5', x: -1.22, z: 0.46, rotation: 0 },
-  { id: 'R5', x: -0.96, z: 0.5, rotation: 0, color: '#b98c62' },
-  { id: 'C6', x: 0.52, z: 0.56, rotation: 0 },
-  { id: 'R6', x: 0.78, z: 0.58, rotation: 0, color: '#b98c62' },
+  { id: 'C1', x: -0.48, z: -0.24, rotation: 0 },
+  { id: 'C2', x: -0.32, z: -0.24, rotation: 0, color: '#b98c62' },
+  { id: 'R1', x: -0.66, z: -0.04, rotation: 90 },
+  { id: 'R2', x: 0.22, z: -0.22, rotation: 0, color: '#b98c62' },
+  { id: 'C3', x: 0.5, z: -0.44, rotation: 90 },
+  { id: 'R3', x: 0.78, z: -0.42, rotation: 90 },
+  { id: 'C4', x: 0.92, z: 0.02, rotation: 0 },
+  { id: 'R4', x: 1.12, z: 0.02, rotation: 90, color: '#b98c62' },
+  { id: 'C5', x: -1.16, z: 0.46, rotation: 0 },
+  { id: 'R5', x: -0.94, z: 0.46, rotation: 0, color: '#b98c62' },
+  { id: 'C6', x: 0.16, z: 0.46, rotation: 0 },
+  { id: 'R6', x: 0.72, z: 0.54, rotation: 0, color: '#b98c62' },
 ]
 
 const viaGrid = Array.from({ length: 42 }, (_, index) => ({
-  x: -1.45 + (index % 14) * 0.22,
-  z: -0.58 + Math.floor(index / 14) * 0.48,
+  x: -1.5 + (index % 14) * 0.23,
+  z: -0.56 + Math.floor(index / 14) * 0.46,
 }))
 
 function Silkscreen({ label, x, z, size = 0.06, rotation = 0 }: { label: string; x: number; z: number; size?: number; rotation?: number }) {
@@ -82,48 +80,51 @@ function Silkscreen({ label, x, z, size = 0.06, rotation = 0 }: { label: string;
   )
 }
 
+function makeLandingBoardShape() {
+  const board = new Shape()
+  board.moveTo(-1.78, -0.76)
+  board.lineTo(-0.88, -0.76)
+  board.quadraticCurveTo(-0.78, -0.76, -0.73, -0.67)
+  board.lineTo(-0.62, -0.49)
+  board.quadraticCurveTo(-0.57, -0.4, -0.45, -0.4)
+  board.lineTo(0.78, -0.4)
+  board.quadraticCurveTo(0.9, -0.4, 0.95, -0.49)
+  board.lineTo(1.06, -0.67)
+  board.quadraticCurveTo(1.11, -0.76, 1.22, -0.76)
+  board.lineTo(1.74, -0.76)
+  board.quadraticCurveTo(1.88, -0.76, 1.88, -0.62)
+  board.lineTo(1.88, 0.62)
+  board.quadraticCurveTo(1.88, 0.76, 1.74, 0.76)
+  board.lineTo(1.12, 0.76)
+  board.quadraticCurveTo(1.02, 0.76, 0.96, 0.67)
+  board.lineTo(0.86, 0.52)
+  board.quadraticCurveTo(0.8, 0.43, 0.68, 0.43)
+  board.lineTo(-0.62, 0.43)
+  board.quadraticCurveTo(-0.74, 0.43, -0.8, 0.52)
+  board.lineTo(-0.9, 0.67)
+  board.quadraticCurveTo(-0.96, 0.76, -1.08, 0.76)
+  board.lineTo(-1.78, 0.76)
+  board.quadraticCurveTo(-1.92, 0.76, -1.92, 0.62)
+  board.lineTo(-1.92, -0.62)
+  board.quadraticCurveTo(-1.92, -0.76, -1.78, -0.76)
+
+  const holes = [
+    [-1.62, -0.56],
+    [1.56, -0.56],
+    [-1.62, 0.56],
+    [1.56, 0.56],
+  ]
+  holes.forEach(([x, y]) => {
+    const hole = new Path()
+    hole.absarc(x, y, 0.08, 0, Math.PI * 2, false)
+    board.holes.push(hole)
+  })
+
+  return board
+}
+
 function CustomBoard() {
-  const shape = useMemo(() => {
-    const board = new Shape()
-    board.moveTo(-1.72, -0.78)
-    board.lineTo(-1.08, -0.78)
-    board.quadraticCurveTo(-0.98, -0.78, -0.92, -0.68)
-    board.lineTo(-0.78, -0.42)
-    board.quadraticCurveTo(-0.72, -0.31, -0.58, -0.31)
-    board.lineTo(0.9, -0.31)
-    board.quadraticCurveTo(1.05, -0.31, 1.08, -0.47)
-    board.lineTo(1.14, -0.78)
-    board.lineTo(1.64, -0.78)
-    board.quadraticCurveTo(1.76, -0.78, 1.78, -0.66)
-    board.lineTo(1.78, 0.62)
-    board.quadraticCurveTo(1.78, 0.78, 1.62, 0.78)
-    board.lineTo(1.05, 0.78)
-    board.quadraticCurveTo(0.92, 0.78, 0.88, 0.66)
-    board.lineTo(0.78, 0.38)
-    board.quadraticCurveTo(0.72, 0.24, 0.56, 0.24)
-    board.lineTo(-0.28, 0.24)
-    board.quadraticCurveTo(-0.46, 0.24, -0.55, 0.39)
-    board.lineTo(-0.72, 0.67)
-    board.quadraticCurveTo(-0.79, 0.78, -0.94, 0.78)
-    board.lineTo(-1.72, 0.78)
-    board.quadraticCurveTo(-1.86, 0.78, -1.86, 0.64)
-    board.lineTo(-1.86, -0.64)
-    board.quadraticCurveTo(-1.86, -0.78, -1.72, -0.78)
-
-    const holes = [
-      [-1.62, -0.58],
-      [1.48, -0.58],
-      [-1.6, 0.58],
-      [1.48, 0.58],
-    ]
-    holes.forEach(([x, y]) => {
-      const hole = new Path()
-      hole.absarc(x, y, 0.08, 0, Math.PI * 2, false)
-      board.holes.push(hole)
-    })
-
-    return board
-  }, [])
+  const shape = useMemo(() => makeLandingBoardShape(), [])
 
   return (
     <>
@@ -272,7 +273,7 @@ function Crystal({ x, z, visible }: { x: number; z: number; visible: boolean }) 
   )
 }
 
-function CopperDetails({ routeGlow }: { routeGlow: number }) {
+function CopperDetails({ routeGlow, padProgress }: { routeGlow: number; padProgress: number }) {
   return (
     <>
       {traces.map((points, index) => (
@@ -282,21 +283,21 @@ function CopperDetails({ routeGlow }: { routeGlow: number }) {
           color={index === 1 ? '#d8af55' : '#c77b38'}
           lineWidth={2 + routeGlow * 2.1}
           transparent
-          opacity={0.42 + routeGlow * 0.52}
+          opacity={routeGlow * 0.92}
         />
       ))}
       {viaGrid.map((via) => (
-        <mesh key={`${via.x}-${via.z}`} position={[via.x, 0.128, via.z]} rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh key={`${via.x}-${via.z}`} position={[via.x, 0.128, via.z]} rotation={[-Math.PI / 2, 0, 0]} visible={padProgress > 0.02}>
           <cylinderGeometry args={[0.024, 0.024, 0.012, 24]} />
-          <meshStandardMaterial color="#d2a443" metalness={0.86} roughness={0.18} />
+          <meshStandardMaterial color="#d2a443" metalness={0.86} roughness={0.18} transparent opacity={padProgress} />
         </mesh>
       ))}
       {[-1.62, 1.48].map((x) =>
         [-0.58, 0.58].map((z) => (
-          <group key={`${x}-${z}`} position={[x, 0.13, z]} rotation={[-Math.PI / 2, 0, 0]}>
+          <group key={`${x}-${z}`} position={[x, 0.13, z]} rotation={[-Math.PI / 2, 0, 0]} visible={padProgress > 0.02}>
             <mesh>
               <ringGeometry args={[0.09, 0.13, 36]} />
-              <meshStandardMaterial color="#d3a544" metalness={0.86} roughness={0.2} />
+              <meshStandardMaterial color="#d3a544" metalness={0.86} roughness={0.2} transparent opacity={padProgress} />
             </mesh>
           </group>
         )),
@@ -308,10 +309,11 @@ function CopperDetails({ routeGlow }: { routeGlow: number }) {
 function BoardAssembly({ progress = 0.4, compact = false }: PcbSceneProps) {
   const group = useRef<Group>(null)
   const reduced = useReducedMotion()
-  const clamped = Math.max(0, Math.min(1, compact ? progress : Math.max(progress, 0.58)))
+  const clamped = Math.max(0, Math.min(1, compact ? progress : Math.max(progress, 0.82)))
   const layers = Math.min(1, Math.max(0, clamped / 0.24))
-  const components = Math.min(1, Math.max(0, (clamped - 0.18) / 0.28))
-  const routeGlow = Math.min(1, Math.max(0, (clamped - 0.42) / 0.24))
+  const padProgress = Math.min(1, Math.max(0, (clamped - 0.18) / 0.18))
+  const components = Math.min(1, Math.max(0, (clamped - 0.38) / 0.22))
+  const routeGlow = Math.min(1, Math.max(0, (clamped - 0.58) / 0.2))
   const scanner = Math.min(1, Math.max(0, (clamped - 0.62) / 0.18))
   const packageStep = clamped > 0.82
 
@@ -326,37 +328,27 @@ function BoardAssembly({ progress = 0.4, compact = false }: PcbSceneProps) {
       <group ref={group} scale={compact ? 0.68 : 0.88}>
         <group position={[0, layers > 0.45 ? 0 : -0.1, 0]}>
           <CustomBoard />
-          <mesh position={[0, 0.09 + layers * 0.09, 0]} rotation={[Math.PI / 2, 0, 0]}>
-            <shapeGeometry
-              args={[
-                (() => {
-                  const layer = new Shape()
-                  layer.moveTo(-1.62, -0.66)
-                  layer.lineTo(1.55, -0.66)
-                  layer.lineTo(1.55, 0.66)
-                  layer.lineTo(-1.62, 0.66)
-                  layer.lineTo(-1.62, -0.66)
-                  return layer
-                })(),
-              ]}
-            />
-            <meshStandardMaterial color="#61d8ba" transparent opacity={0.035 * layers} roughness={0.8} />
-          </mesh>
+          {[0.07, 0.16, 0.25].map((offset, index) => (
+            <mesh key={offset} position={[0, 0.08 + layers * offset, 0]} rotation={[Math.PI / 2, 0, 0]} visible={layers > 0.12}>
+              <shapeGeometry args={[makeLandingBoardShape()]} />
+              <meshStandardMaterial color={index === 1 ? '#a8792d' : '#61d8ba'} transparent opacity={(0.035 + index * 0.012) * layers} roughness={0.8} />
+            </mesh>
+          ))}
         </group>
-        <CopperDetails routeGlow={routeGlow} />
-        <UsbC x={-1.42} z={0.06} label="USB-C" visible={components > 0.1} />
-        <Rj45 x={1.34} z={0.18} visible={components > 0.22} />
-        <UsbC x={1.28} z={-0.48} label="USB-C" visible={components > 0.34} />
-        <Chip x={-0.18} z={-0.02} label="ESP32-S3" visible={components > 0.06} size={[0.62, 0.15, 0.58]} pins={16} />
-        <Chip x={0.58} z={0.32} label="QFN MCU" visible={components > 0.42} size={[0.46, 0.13, 0.42]} pins={14} />
-        <Chip x={-0.72} z={0.38} label="LDO" visible={components > 0.52} size={[0.34, 0.11, 0.3]} pins={8} />
-        <Crystal x={0.26} z={0.56} visible={components > 0.5} />
-        <PinHeader x={0.76} z={-0.64} visible={components > 0.62} />
+        <CopperDetails routeGlow={routeGlow} padProgress={padProgress} />
+        <UsbC x={-1.5} z={0.28} label="USB-C" visible={components > 0.08} />
+        <Rj45 x={1.46} z={0.26} visible={components > 0.2} />
+        <UsbC x={1.34} z={-0.42} label="USB-C" visible={components > 0.34} />
+        <Chip x={-0.14} z={-0.02} label="ESP32-S3" visible={components > 0.06} size={[0.56, 0.13, 0.5]} pins={16} />
+        <Chip x={0.5} z={-0.28} label="QFN MCU" visible={components > 0.42} size={[0.4, 0.12, 0.36]} pins={14} />
+        <Chip x={-0.82} z={-0.16} label="LDO" visible={components > 0.52} size={[0.3, 0.1, 0.24]} pins={8} />
+        <Crystal x={0.28} z={0.34} visible={components > 0.5} />
+        <PinHeader x={0.62} z={0.58} visible={components > 0.62} />
         {passiveParts.map((part, index) => (
           <Passive key={part.id} part={part} visible={components > 0.25 + index * 0.025} />
         ))}
-        <Silkscreen label="BOARDFORGE AI" x={0.7} z={0.68} size={0.072} />
-        <Silkscreen label="BF-PROTO-01  54x46mm" x={1.56} z={0.02} size={0.055} rotation={Math.PI / 2} />
+        <Silkscreen label="BOARDFORGE AI" x={0.36} z={0.68} size={0.065} />
+        <Silkscreen label="BF-PROTO-01  54x46mm" x={1.72} z={0.0} size={0.045} rotation={Math.PI / 2} />
         <Silkscreen label="MCU" x={-0.18} z={-0.43} size={0.05} />
         <Silkscreen label="POWER" x={-0.72} z={0.07} size={0.045} />
         <Silkscreen label="SENSOR BUS" x={0.5} z={0.05} size={0.045} />

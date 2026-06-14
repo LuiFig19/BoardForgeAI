@@ -56,12 +56,36 @@ function LandingPage() {
   useEffect(() => sceneProgress.on('change', setProgress), [sceneProgress])
 
   const workflow = [
-    ['outline', 'Board outline and constraints staged from the prompt.'],
-    ['layers', 'Copper layers split into reviewable KiCad layer intent.'],
-    ['placement', 'MCU, USB-C, regulator, crystals, and caps drop into constrained regions.'],
-    ['routing', 'Critical nets glow first: power, USB, Ethernet, sensor buses.'],
-    ['validation', 'ERC/DRC scanner prepares reports before export.'],
-    ['package', 'Gerbers, drill, BOM, CPL, reports, and README become the fab package.'],
+    {
+      title: 'outline',
+      body: 'The mechanical outline is the first constraint, not decoration. BoardForge keeps connector edges, mounting holes, notches, and keepout regions visible before any electronics are placed.',
+      details: ['custom shape or uploaded image', 'board size and hole count', 'edge and keepout intent'],
+    },
+    {
+      title: 'layers',
+      body: 'The viewer separates the physical stack so the design can be reviewed like a real KiCad board: solder mask, copper, reference planes, and silkscreen intent.',
+      details: ['top copper and mask', 'inner ground and power planes', 'bottom copper planning'],
+    },
+    {
+      title: 'placement',
+      body: 'Components are placed with manufacturing space around them. Edge connectors stay on edges, MCUs get room for fanout, and passives sit near the pins they support.',
+      details: ['MCU and regulator regions', 'USB/RJ45 edge placement', 'passive part clustering'],
+    },
+    {
+      title: 'routing',
+      body: 'Critical nets are routed first using sane paths: power width, USB/Ethernet constraints, sensor buses, vias, and short fanout routes around real package bodies.',
+      details: ['power before signal', '45/90 degree route intent', 'via and test point planning'],
+    },
+    {
+      title: 'validation',
+      body: 'The design is treated as review-required until checks pass. ERC, DRC, spacing, part overlap, board-edge clearance, and assembly flags are tracked before export.',
+      details: ['overlap prevention', 'clearance and edge checks', 'human review report'],
+    },
+    {
+      title: 'package',
+      body: 'Once reviewed, the project is packaged into the file set a fabricator expects: KiCad project files, Gerbers, drills, BOM, CPL, validation logs, and README.',
+      details: ['KiCad source files', 'JLCPCB-ready BOM/CPL', 'manufacturing checklist'],
+    },
   ]
 
   return (
@@ -93,17 +117,20 @@ function LandingPage() {
           <PcbScene progress={progress} compact />
         </div>
         <div className="workflow-steps">
-          {workflow.map(([title, body], index) => (
+          {workflow.map((item, index) => (
             <motion.article
-              key={title}
+              key={item.title}
               className="workflow-card"
               initial={{ opacity: 0, y: 24 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ margin: '-20% 0px -20% 0px' }}
             >
               <span>0{index + 1}</span>
-              <h2>{title}</h2>
-              <p>{body}</p>
+              <h2>{item.title}</h2>
+              <p>{item.body}</p>
+              <ul>
+                {item.details.map((detail) => <li key={detail}>{detail}</li>)}
+              </ul>
             </motion.article>
           ))}
         </div>

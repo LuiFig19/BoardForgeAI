@@ -422,6 +422,31 @@ button.secondary-action {
   font-family: var(--mono);
 }
 
+.workflow-card p {
+  max-width: 680px;
+  color: #c5d8d4;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.workflow-card ul {
+  display: grid;
+  gap: 9px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-card li {
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid rgba(94, 234, 212, 0.14);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.38);
+  color: #dffef9;
+  font-size: 13px;
+}
+
 .warning-banner {
   margin: 0 min(5vw, 72px) 44px;
   padding: 14px 18px;
@@ -791,21 +816,27 @@ textarea {
 }
 
 .custom-studio {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(320px, 1fr) minmax(280px, 0.55fr);
   gap: 16px;
 }
 
 .shape-workbench {
+  position: relative;
+  z-index: 1;
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .shape-preview-card {
+  position: relative;
   display: grid;
   gap: 12px;
   min-height: 360px;
   padding: 16px;
+  overflow: hidden;
   border: 1px solid rgba(45, 212, 191, 0.22);
   border-radius: 8px;
   background:
@@ -1109,9 +1140,18 @@ textarea {
 }
 
 .ai-shape-chat {
+  position: relative;
+  z-index: 3;
   display: grid;
   align-content: start;
   gap: 10px;
+  pointer-events: auto;
+}
+
+.ai-shape-chat button,
+.ai-shape-chat textarea {
+  position: relative;
+  z-index: 4;
 }
 
 .ai-shape-chat h3 {
