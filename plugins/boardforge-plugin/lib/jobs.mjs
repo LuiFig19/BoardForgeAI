@@ -182,7 +182,15 @@ async function exportDrillJob(job, workspace) {
 async function exportBomJob(job, workspace) {
   const context = await getKiCadContext(job, workspace, 'sch')
   if (context.blocked) return context.blocked
-  const output = await exportBom({ schFile: context.files.schFile, outputFile: path.join(context.files.projectDir, 'fab', 'bom.csv'), kicadCliPath: context.detected.path })
+  const outputFile = path.join(context.files.projectDir, 'fab', 'bom.csv')
+  const output = await exportBom({ schFile: context.files.schFile, outputFile, kicadCliPath: context.detected.path })
+  const hasRows = await csvHasBomRows(outputFile)
+  if (output.status === 'BOM_EXPORTED' && !hasRows) {
+    const fallback = await writePlacementBom(context.files.projectDir, outputFile)
+    if (fallback.generated) {
+      return result(job, 'BOM_EXPORTED_FROM_PLACEMENT_NEEDS_REVIEW', [{ severity: 'WARNING', code: 'BOM_FROM_PLACEMENT', message: 'KiCad schematic BOM was empty, so BoardForge generated a review-required BOM from placed PCB components.' }], [], { kicad: context.detected, export: { ...output, placementFallback: fallback }, generatedFiles: [outputFile], humanReviewRequired: true })
+    }
+  }
   return result(job, output.status, output.status.endsWith('FAILED') ? [{ severity: 'WARNING', code: 'BOM_EXPORT_FAILED', message: output.stderr || 'BOM export failed.' }] : [], [], { kicad: context.detected, export: output, generatedFiles: output.files, humanReviewRequired: true })
 }
 
@@ -223,5 +231,38 @@ async function collectExistingFiles(directory) {
     return files
   } catch {
     return []
+  }
+}
+
+async function csvHasBomRows(file) {
+  try {
+    const csv = await readFile(file, 'utf8')
+    return csv.trim().split(/\r?\n/).length > 1
+  } catch {
+    return false
+  }
+}
+
+async function writePlacementBom(projectDir, outputFile) {
+  try {
+    const raw = await readFile(path.join(projectDir, 'boardforge-components.json'), 'utf8')
+    const components = JSON.parse(raw)
+    const groups = new Map()
+    for (const component of components) {
+      const key = `${component.value}|${component.footprint}`
+      const existing = groups.get(key) || { refs: [], value: component.value, footprint: component.footprint, qty: 0, dnp: '' }
+      existing.refs.push(component.ref)
+      existing.qty += 1
+      groups.set(key, existing)
+    }
+    const lines = ['"Refs","Value","Footprint","Qty","DNP","Source"']
+    for (const group of groups.values()) {
+      lines.push([group.refs.join(' '), group.value, group.footprint, String(group.qty), group.dnp, 'BoardForge placed components'].map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
+    }
+    await mkdir(path.dirname(outputFile), { recursive: true })
+    await writeFile(outputFile, `${lines.join('\n')}\n`, 'utf8')
+    return { generated: true, rows: groups.size }
+  } catch (error) {
+    return { generated: false, error: error.message }
   }
 }

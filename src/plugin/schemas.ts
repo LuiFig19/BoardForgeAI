@@ -129,6 +129,7 @@ export const pluginResultSchema = z.object({
     'DRILL_EXPORTED',
     'DRILL_FAILED',
     'BOM_EXPORTED',
+    'BOM_EXPORTED_FROM_PLACEMENT_NEEDS_REVIEW',
     'BOM_FAILED',
     'CPL_EXPORTED',
     'CPL_FAILED',

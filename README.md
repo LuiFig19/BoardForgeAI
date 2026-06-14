@@ -74,6 +74,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - outline-only KiCad project generation
 - KiCad project scaffolds with `.kicad_sch`, `.kicad_pcb`, and `.kicad_pro`
 - deterministic placement of real KiCad footprints from installed libraries
+- review-required BOM generation from the placed component manifest when the schematic BOM is empty
 - Edge.Cuts geometry validation
 - mounting-hole inside/edge-clearance checks
 - JLCPCB/PCBWay manufacturer profiles
@@ -131,7 +132,7 @@ Not complete yet:
 - footprint assignment from live KiCad/JLCPCB libraries
 - schematic-to-PCB net assignment
 - complete autorouting
-- populated BOM rows until schematic symbols exist
+- schematic-derived BOM rows until schematic symbols exist
 - clean DRC on component projects until nets/clearances/routing are solved
 - native KiCad plugin UI
 
@@ -162,7 +163,7 @@ Real KiCad-backed commands now include:
 - `export_bom`
 - `package_jlcpcb`
 
-For a scaffolded project, BoardForge can now create the schematic scaffold, place real KiCad footprints, run ERC/DRC, export an empty BOM, export board fabrication files, and block JLCPCB packaging when DRC errors remain. The output stays review-required because real schematic symbols, net assignment, and routed copper are not complete yet.
+For a scaffolded project, BoardForge can now create the schematic scaffold, place real KiCad footprints, run ERC/DRC, export fabrication files, generate a review-required BOM from placed components when the schematic BOM is empty, and block JLCPCB packaging when DRC errors remain. The output stays review-required because real schematic symbols, net assignment, and routed copper are not complete yet.
 
 ## Vercel
 

@@ -108,6 +108,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `scan_kicad_project` parses existing `.kicad_pcb` projects for layers, nets, footprints, tracks, vias, zones, and mounting holes.
 - `run_kicad_drc` and `run_kicad_erc` call local KiCad 10/9/8 `kicad-cli` when available and parse JSON reports.
 - `export_gerbers`, `export_drill_files`, `export_cpl`, and `export_bom` use whitelisted KiCad CLI commands.
+- If the schematic BOM is empty but placed components exist, `export_bom` writes a review-required BOM from `boardforge-components.json`.
 - `package_jlcpcb` creates a ZIP only when required Gerber, drill, BOM, CPL, and report files exist.
 
 ## Explicitly Not Complete Yet
@@ -116,7 +117,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Footprint assignment from live libraries.
 - Real trace autorouting.
 - Native KiCad API editing.
-- Populated BOM rows until the schematic contains real symbols.
+- Schematic-derived BOM rows until the schematic contains real symbols.
 - Clean DRC on component projects until net assignment, clearances, and routing are solved.
 
 These commands return blocked or not-implemented statuses until the safe adapters exist.
