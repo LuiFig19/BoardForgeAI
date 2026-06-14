@@ -9,6 +9,7 @@ import { assignNetsToClasses } from '../lib/net-classes.mjs'
 import { validateBoardOutline, validatePlacement } from '../lib/validation.mjs'
 import { generateRoutingPlan } from '../lib/routing.mjs'
 import { executeJob } from '../lib/jobs.mjs'
+import { detectKiCadCli } from '../lib/kicad-cli.mjs'
 
 test('validates a simple rectangular board outline', () => {
   const board = { outline: rectanglePoints(40, 30), mountingHoles: [{ id: 'MH1', x: 5, y: 5, diameterMm: 3 }] }
@@ -65,6 +66,29 @@ test('create_outline_board writes real KiCad files and review JSON only', async 
 
 test('package_jlcpcb is blocked until a real KiCad adapter exists', async () => {
   const result = await executeJob({ id: 'pkg', type: 'package_jlcpcb', input: {} }, process.cwd())
-  assert.equal(result.status, 'BLOCKED_MISSING_ADAPTER')
+  assert.ok(['BLOCKED_MISSING_ADAPTER', 'NEEDS_FIX', 'PACKAGE_BLOCKED_MISSING_FILES'].includes(result.status))
   assert.deepEqual(result.generatedFiles, [])
+})
+
+test('KiCad CLI adapter runs DRC and exports board files when KiCad is installed', async (context) => {
+  const detected = await detectKiCadCli()
+  if (!detected.available) {
+    context.skip('kicad-cli is not installed on this machine')
+    return
+  }
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-kicad-test-'))
+  try {
+    await executeJob({ id: 'outline', type: 'create_outline_board', input: { projectName: 'Adapter Outline', templateId: 'ESP32_S3_SENSOR' } }, workspace)
+    const input = { projectPath: 'adapter-outline' }
+    const drc = await executeJob({ id: 'drc', type: 'run_kicad_drc', input }, workspace)
+    assert.equal(drc.status, 'DRC_PASSED')
+    const gerbers = await executeJob({ id: 'gerbers', type: 'export_gerbers', input }, workspace)
+    assert.equal(gerbers.status, 'GERBERS_EXPORTED')
+    assert.ok(gerbers.generatedFiles.length > 0)
+    const erc = await executeJob({ id: 'erc', type: 'run_kicad_erc', input }, workspace)
+    assert.equal(erc.status, 'NEEDS_FIX')
+    assert.equal(erc.errors[0].code, 'SCHEMATIC_FILE_MISSING')
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
 })

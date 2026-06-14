@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { createNetClasses, assignNetsToClasses, validateNetClasses } from './net-classes.mjs'
@@ -8,6 +8,7 @@ import { generatePlacementPlan } from './placement.mjs'
 import { generateRoutingPlan } from './routing.mjs'
 import { kicadPcbFile, kicadProjectFile, readmeFile, scanKiCadProject } from './kicad.mjs'
 import { runFullSelfReview, validateBoardOutline } from './validation.mjs'
+import { detectKiCadCli, exportBom, exportCpl, exportDrill, exportGerbers, findKiCadProjectFiles, packageJlcpcb, runDrc, runErc } from './kicad-cli.mjs'
 
 export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
@@ -45,7 +46,13 @@ export async function executeJob(job, workspace) {
   if (job.type === 'generate_routing_plan' || job.type === 'report_unrouted_nets') return routingPlanJob(job)
   if (job.type === 'run_full_self_review') return selfReviewJob(job, profile)
   if (job.type === 'scan_kicad_project' || job.type === 'summarize_project') return scanProjectJob(job, workspace)
-  if (['run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb'].includes(job.type)) return result(job, 'BLOCKED_MISSING_ADAPTER', [`${job.type} requires the KiCad CLI adapter. No success or export package was generated.`], [], { generatedFiles: [], humanReviewRequired: true })
+  if (job.type === 'run_kicad_drc') return runDrcJob(job, workspace)
+  if (job.type === 'run_kicad_erc') return runErcJob(job, workspace)
+  if (job.type === 'export_gerbers') return exportGerbersJob(job, workspace)
+  if (job.type === 'export_drill_files') return exportDrillJob(job, workspace)
+  if (job.type === 'export_bom') return exportBomJob(job, workspace)
+  if (job.type === 'export_cpl') return exportCplJob(job, workspace)
+  if (job.type === 'package_jlcpcb') return packageJlcpcbJob(job, workspace)
   return result(job, 'NOT_IMPLEMENTED', [`${job.type} is declared in the workflow but not implemented in this CLI build.`], [], { humanReviewRequired: true })
 }
 
@@ -96,4 +103,95 @@ async function scanProjectJob(job, workspace) {
   const target = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : workspace
   const scan = await scanKiCadProject(target)
   return result(job, scan.errors.length ? 'SCAN_FAILED' : 'SCAN_COMPLETE_NEEDS_REVIEW', scan.warnings, scan.errors, { scan, humanReviewRequired: true })
+}
+
+async function getKiCadContext(job, workspace, requiredKind) {
+  const detected = await detectKiCadCli({ kicadCliPath: job.input?.kicadCliPath })
+  if (!detected.available) {
+    return { blocked: result(job, 'BLOCKED_MISSING_ADAPTER', [detected.reason], [], { generatedFiles: [], humanReviewRequired: true }) }
+  }
+  const target = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : workspace
+  const files = await findKiCadProjectFiles(target)
+  if (requiredKind === 'pcb' && !files.pcbFile) {
+    return { blocked: result(job, 'NEEDS_FIX', [], [{ severity: 'ERROR', code: 'PCB_FILE_MISSING', message: 'No .kicad_pcb file found for this command.' }], { generatedFiles: [], humanReviewRequired: true }) }
+  }
+  if (requiredKind === 'sch' && !files.schFile) {
+    return { blocked: result(job, 'NEEDS_FIX', [], [{ severity: 'ERROR', code: 'SCHEMATIC_FILE_MISSING', message: 'No .kicad_sch file found for this command.' }], { generatedFiles: [], humanReviewRequired: true }) }
+  }
+  return { detected, files }
+}
+
+async function runDrcJob(job, workspace) {
+  const context = await getKiCadContext(job, workspace, 'pcb')
+  if (context.blocked) return context.blocked
+  const reportFile = path.join(context.files.projectDir, 'reports', 'drc.json')
+  const output = await runDrc({ pcbFile: context.files.pcbFile, outputFile: reportFile, kicadCliPath: context.detected.path })
+  return result(job, output.status, output.issueCounts.warnings ? [{ severity: 'WARNING', code: 'DRC_WARNINGS', message: `${output.issueCounts.warnings} DRC warnings found.` }] : [], output.issueCounts.errors ? [{ severity: 'ERROR', code: 'DRC_ERRORS', message: `${output.issueCounts.errors} DRC errors found.` }] : [], { kicad: context.detected, report: output, generatedFiles: [reportFile].filter((file) => file), humanReviewRequired: true })
+}
+
+async function runErcJob(job, workspace) {
+  const context = await getKiCadContext(job, workspace, 'sch')
+  if (context.blocked) return context.blocked
+  const reportFile = path.join(context.files.projectDir, 'reports', 'erc.json')
+  const output = await runErc({ schFile: context.files.schFile, outputFile: reportFile, kicadCliPath: context.detected.path })
+  return result(job, output.status, output.issueCounts.warnings ? [{ severity: 'WARNING', code: 'ERC_WARNINGS', message: `${output.issueCounts.warnings} ERC warnings found.` }] : [], output.issueCounts.errors ? [{ severity: 'ERROR', code: 'ERC_ERRORS', message: `${output.issueCounts.errors} ERC errors found.` }] : [], { kicad: context.detected, report: output, generatedFiles: [reportFile], humanReviewRequired: true })
+}
+
+async function exportGerbersJob(job, workspace) {
+  const context = await getKiCadContext(job, workspace, 'pcb')
+  if (context.blocked) return context.blocked
+  const output = await exportGerbers({ pcbFile: context.files.pcbFile, outputDir: path.join(context.files.projectDir, 'fab', 'gerbers'), kicadCliPath: context.detected.path })
+  return result(job, output.status, output.status.endsWith('FAILED') ? [{ severity: 'WARNING', code: 'GERBER_EXPORT_FAILED', message: output.stderr || 'Gerber export failed.' }] : [], [], { kicad: context.detected, export: output, generatedFiles: output.files, humanReviewRequired: true })
+}
+
+async function exportDrillJob(job, workspace) {
+  const context = await getKiCadContext(job, workspace, 'pcb')
+  if (context.blocked) return context.blocked
+  const output = await exportDrill({ pcbFile: context.files.pcbFile, outputDir: path.join(context.files.projectDir, 'fab', 'drill'), kicadCliPath: context.detected.path })
+  return result(job, output.status, output.status.endsWith('FAILED') ? [{ severity: 'WARNING', code: 'DRILL_EXPORT_FAILED', message: output.stderr || 'Drill export failed.' }] : [], [], { kicad: context.detected, export: output, generatedFiles: output.files, humanReviewRequired: true })
+}
+
+async function exportBomJob(job, workspace) {
+  const context = await getKiCadContext(job, workspace, 'sch')
+  if (context.blocked) return context.blocked
+  const output = await exportBom({ schFile: context.files.schFile, outputFile: path.join(context.files.projectDir, 'fab', 'bom.csv'), kicadCliPath: context.detected.path })
+  return result(job, output.status, output.status.endsWith('FAILED') ? [{ severity: 'WARNING', code: 'BOM_EXPORT_FAILED', message: output.stderr || 'BOM export failed.' }] : [], [], { kicad: context.detected, export: output, generatedFiles: output.files, humanReviewRequired: true })
+}
+
+async function exportCplJob(job, workspace) {
+  const context = await getKiCadContext(job, workspace, 'pcb')
+  if (context.blocked) return context.blocked
+  const output = await exportCpl({ pcbFile: context.files.pcbFile, outputFile: path.join(context.files.projectDir, 'fab', 'cpl.csv'), kicadCliPath: context.detected.path })
+  return result(job, output.status, output.status.endsWith('FAILED') ? [{ severity: 'WARNING', code: 'CPL_EXPORT_FAILED', message: output.stderr || 'CPL export failed.' }] : [], [], { kicad: context.detected, export: output, generatedFiles: output.files, humanReviewRequired: true })
+}
+
+async function packageJlcpcbJob(job, workspace) {
+  const context = await getKiCadContext(job, workspace, 'pcb')
+  if (context.blocked) return context.blocked
+  const gerberDir = path.join(context.files.projectDir, 'fab', 'gerbers')
+  const drillDir = path.join(context.files.projectDir, 'fab', 'drill')
+  const requiredFiles = [
+    ...(await collectExistingFiles(gerberDir)),
+    ...(await collectExistingFiles(drillDir)),
+    path.join(context.files.projectDir, 'fab', 'bom.csv'),
+    path.join(context.files.projectDir, 'fab', 'cpl.csv'),
+    path.join(context.files.projectDir, 'reports', 'drc.json'),
+  ]
+  const output = await packageJlcpcb({ projectDir: context.files.projectDir, outputFile: path.join(context.files.projectDir, 'fab', `${path.basename(context.files.projectDir)}-jlcpcb.zip`), requiredFiles })
+  return result(job, output.status, output.missingFiles?.length ? [{ severity: 'WARNING', code: 'PACKAGE_MISSING_FILES', message: `${output.missingFiles.length} required package files are missing.` }] : [], [], { package: output, generatedFiles: output.outputFile && output.status === 'MANUFACTURING_PACKAGE_GENERATED_NEEDS_REVIEW' ? [output.outputFile] : [], humanReviewRequired: true })
+}
+
+async function collectExistingFiles(directory) {
+  try {
+    const entries = await readdir(directory, { withFileTypes: true })
+    const files = []
+    for (const entry of entries) {
+      const full = path.join(directory, entry.name)
+      if (entry.isDirectory()) files.push(...await collectExistingFiles(full))
+      else files.push(full)
+    }
+    return files
+  } catch {
+    return []
+  }
 }

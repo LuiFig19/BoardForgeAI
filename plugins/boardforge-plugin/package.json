@@ -9,5 +9,8 @@
   "scripts": {
     "smoke": "node ./bin/boardforge-plugin.mjs --job ./examples/outline-job.json --workspace ./tmp",
     "test": "node --test ./tests/*.test.mjs"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
   }
 }

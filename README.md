@@ -80,7 +80,11 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - partial routing plans that report unrouted nets
 - self-review quality gates
 - existing `.kicad_pcb` project scanning
-- honest blocked statuses for DRC/ERC/export commands that are not wired yet
+- KiCad 10 CLI detection on Windows common install paths
+- DRC/ERC execution with KiCad JSON reports when project files exist
+- Gerber, drill, CPL, and BOM export through whitelisted KiCad commands
+- JLCPCB ZIP packaging only when required files already exist
+- honest blocked statuses when schematic/project/export files are missing
 
 ```bash
 node plugins/boardforge-plugin/bin/boardforge-plugin.mjs \
@@ -123,12 +127,35 @@ Not complete yet:
 - full schematic generation
 - footprint assignment from live KiCad/JLCPCB libraries
 - complete autorouting
-- KiCad CLI DRC/ERC execution
-- Gerber/drill/BOM/CPL export
-- JLCPCB package ZIP creation
+- ERC/BOM on outline-only projects because no schematic exists yet
+- JLCPCB package ZIP when BOM/CPL/Gerbers/drill/reports are missing
 - native KiCad plugin UI
 
-Future phases add the local MCP/tool server, KiCad CLI detection, DRC/ERC parsing, Gerbers, drill, BOM, CPL, and JLCPCB packaging.
+Future phases add the local MCP/tool server, schematic/footprint generation, richer DRC/ERC parsing, and native KiCad plugin UI.
+
+### KiCad 10 Adapter
+
+BoardForge auto-detects:
+
+```text
+C:\Program Files\KiCad\10.0\bin\kicad-cli.exe
+```
+
+You can override it with:
+
+```powershell
+$env:BOARDFORGE_KICAD_CLI="C:\Program Files\KiCad\10.0\bin\kicad-cli.exe"
+```
+
+Real KiCad-backed commands now include:
+
+- `run_kicad_drc`
+- `run_kicad_erc`
+- `export_gerbers`
+- `export_drill_files`
+- `export_cpl`
+- `export_bom`
+- `package_jlcpcb`
 
 ## Vercel
 

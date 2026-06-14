@@ -104,6 +104,9 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `generate_placement_plan` creates deterministic placement plans and fails on off-board/overlap issues.
 - `generate_routing_plan` creates a partial routing plan and reports unrouted nets. It does not claim full autorouting.
 - `scan_kicad_project` parses existing `.kicad_pcb` projects for layers, nets, footprints, tracks, vias, zones, and mounting holes.
+- `run_kicad_drc` and `run_kicad_erc` call local KiCad 10/9/8 `kicad-cli` when available and parse JSON reports.
+- `export_gerbers`, `export_drill_files`, `export_cpl`, and `export_bom` use whitelisted KiCad CLI commands.
+- `package_jlcpcb` creates a ZIP only when required Gerber, drill, BOM, CPL, and report files exist.
 
 ## Explicitly Not Complete Yet
 
@@ -111,8 +114,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Footprint assignment from live libraries.
 - Real trace autorouting.
 - Native KiCad API editing.
-- KiCad CLI DRC/ERC/export adapters.
-- Gerber, drill, BOM, CPL, or JLCPCB ZIP generation.
+- ERC/BOM for outline-only projects because those projects intentionally do not include schematics.
+- JLCPCB ZIP generation when required export files are missing.
 
 These commands return blocked or not-implemented statuses until the safe adapters exist.
 
@@ -124,4 +127,4 @@ The local helper can be called as:
 node plugins/boardforge-plugin/bin/boardforge-plugin.mjs --job path/to/job.json --workspace path/to/workspace
 ```
 
-Current MVP implements outline generation, outline validation, net classes, placement planning, routing planning, self-review, and KiCad project scanning. Export and KiCad CLI commands return honest blocked results until their adapters are added.
+Current MVP implements outline generation, outline validation, net classes, placement planning, routing planning, self-review, KiCad project scanning, KiCad CLI DRC/ERC, Gerber/drill/CPL/BOM export, and gated JLCPCB packaging.
