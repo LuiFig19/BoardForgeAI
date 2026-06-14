@@ -6,7 +6,7 @@ import { getManufacturerProfile } from './manufacturers.mjs'
 import { createBoardShape, createTemplateBoard, boardTemplates } from './templates.mjs'
 import { generatePlacementPlan } from './placement.mjs'
 import { generateRoutingPlan } from './routing.mjs'
-import { kicadPcbFile, kicadProjectFile, readmeFile, scanKiCadProject } from './kicad.mjs'
+import { kicadPcbFile, kicadProjectFile, kicadSchematicFile, projectReadmeFile, readmeFile, scanKiCadProject } from './kicad.mjs'
 import { runFullSelfReview, validateBoardOutline } from './validation.mjs'
 import { detectKiCadCli, exportBom, exportCpl, exportDrill, exportGerbers, findKiCadProjectFiles, packageJlcpcb, runDrc, runErc } from './kicad-cli.mjs'
 
@@ -39,6 +39,7 @@ export async function executeJob(job, workspace) {
   validateJob(job)
   const profile = getManufacturerProfile(job.input?.manufacturerProfile || job.input?.manufacturer || 'JLCPCB_STANDARD')
   if (job.type === 'create_outline_board') return createOutlineBoard(job, workspace, profile)
+  if (job.type === 'create_kicad_project') return createKiCadProject(job, workspace, profile)
   if (job.type === 'validate_board_outline') return validateOutlineJob(job, profile)
   if (job.type === 'create_net_classes') return result(job, 'NET_CLASSES_CREATED', [], [], { netClasses: createNetClasses(profile), humanReviewRequired: true })
   if (job.type === 'validate_net_classes' || job.type === 'report_unclassified_nets') return validateNetClassesJob(job)
@@ -70,6 +71,29 @@ async function createOutlineBoard(job, workspace, profile) {
     for (const file of files) await writeFile(resolveInsideWorkspace(projectDir, file.path), file.content, 'utf8')
   }
   return result(job, 'OUTLINE_GENERATED_NEEDS_REVIEW', review.issues.filter((item) => item.severity === 'WARNING'), review.issues.filter((item) => ['BLOCKER', 'ERROR'].includes(item.severity)), { projectPath: projectDir, generatedFiles: files.map((file) => path.join(projectDir, file.path)), qualityGates: review.qualityGates, summary: review.summary, humanReviewRequired: true })
+}
+
+async function createKiCadProject(job, workspace, profile) {
+  const board = boardFromJob(job)
+  const outlineIssues = validateBoardOutline(board, profile)
+  if (outlineIssues.some((item) => item.severity === 'BLOCKER')) return result(job, 'VALIDATION_FAILED', [], outlineIssues, { generatedFiles: [], humanReviewRequired: true })
+  const review = runFullSelfReview({ board, components: [], nets: assignNetsToClasses(job.input?.nets || []), routes: [], profile, kicad: { cliAvailable: false } })
+  const safeName = sanitizeName(job.input?.projectName || board.name)
+  const projectDir = resolveInsideWorkspace(workspace, safeName)
+  if (existsSync(projectDir) && !job.allowOverwrite) return result(job, 'NEEDS_FIX', [], [{ severity: 'ERROR', code: 'PROJECT_EXISTS', message: `Project already exists. Set allowOverwrite true to replace files: ${projectDir}` }], { projectPath: projectDir, generatedFiles: [] })
+  const netClasses = createNetClasses(profile)
+  const files = [
+    { path: `${safeName}.kicad_pro`, content: kicadProjectFile(board, netClasses) },
+    { path: `${safeName}.kicad_sch`, content: kicadSchematicFile(board) },
+    { path: `${safeName}.kicad_pcb`, content: kicadPcbFile(board, { netClasses }) },
+    { path: 'boardforge-review.json', content: JSON.stringify(review, null, 2) },
+    { path: 'README.md', content: projectReadmeFile(job, board, review) },
+  ]
+  if (!job.dryRun) {
+    await mkdir(projectDir, { recursive: true })
+    for (const file of files) await writeFile(resolveInsideWorkspace(projectDir, file.path), file.content, 'utf8')
+  }
+  return result(job, 'KICAD_PROJECT_CREATED_NEEDS_REVIEW', review.issues.filter((item) => item.severity === 'WARNING'), review.issues.filter((item) => ['BLOCKER', 'ERROR'].includes(item.severity)), { projectPath: projectDir, generatedFiles: files.map((file) => path.join(projectDir, file.path)), qualityGates: review.qualityGates, summary: review.summary, humanReviewRequired: true })
 }
 
 function validateOutlineJob(job, profile) {
@@ -170,9 +194,11 @@ async function packageJlcpcbJob(job, workspace) {
   if (context.blocked) return context.blocked
   const gerberDir = path.join(context.files.projectDir, 'fab', 'gerbers')
   const drillDir = path.join(context.files.projectDir, 'fab', 'drill')
+  const gerbers = await collectExistingFiles(gerberDir)
+  const drillFiles = await collectExistingFiles(drillDir)
   const requiredFiles = [
-    ...(await collectExistingFiles(gerberDir)),
-    ...(await collectExistingFiles(drillDir)),
+    ...(gerbers.length ? gerbers : [path.join(gerberDir, '__missing_gerbers__')]),
+    ...(drillFiles.length ? drillFiles : [path.join(drillDir, '__missing_drill_files__')]),
     path.join(context.files.projectDir, 'fab', 'bom.csv'),
     path.join(context.files.projectDir, 'fab', 'cpl.csv'),
     path.join(context.files.projectDir, 'reports', 'drc.json'),

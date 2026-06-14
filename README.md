@@ -72,6 +72,7 @@ plugins/boardforge-plugin
 The CLI MVP accepts structured JSON jobs. It now includes real engineering scaffolding for:
 
 - outline-only KiCad project generation
+- KiCad project scaffolds with `.kicad_sch`, `.kicad_pcb`, and `.kicad_pro`
 - Edge.Cuts geometry validation
 - mounting-hole inside/edge-clearance checks
 - JLCPCB/PCBWay manufacturer profiles
@@ -127,8 +128,8 @@ Not complete yet:
 - full schematic generation
 - footprint assignment from live KiCad/JLCPCB libraries
 - complete autorouting
-- ERC/BOM on outline-only projects because no schematic exists yet
-- JLCPCB package ZIP when BOM/CPL/Gerbers/drill/reports are missing
+- populated BOM rows until schematic symbols exist
+- CPL rows until footprints/components exist on the PCB
 - native KiCad plugin UI
 
 Future phases add the local MCP/tool server, schematic/footprint generation, richer DRC/ERC parsing, and native KiCad plugin UI.
@@ -149,6 +150,7 @@ $env:BOARDFORGE_KICAD_CLI="C:\Program Files\KiCad\10.0\bin\kicad-cli.exe"
 
 Real KiCad-backed commands now include:
 
+- `create_kicad_project`
 - `run_kicad_drc`
 - `run_kicad_erc`
 - `export_gerbers`
@@ -156,6 +158,8 @@ Real KiCad-backed commands now include:
 - `export_cpl`
 - `export_bom`
 - `package_jlcpcb`
+
+For a scaffolded project, BoardForge can now create the schematic scaffold, run ERC, export an empty BOM, export board fabrication files, and generate a JLCPCB ZIP after the required files exist. The output still remains review-required because symbols, footprints, and routed copper are not complete yet.
 
 ## Vercel
 

@@ -64,7 +64,21 @@ test('create_outline_board writes real KiCad files and review JSON only', async 
   }
 })
 
-test('package_jlcpcb is blocked until a real KiCad adapter exists', async () => {
+test('create_kicad_project writes a KiCad schematic scaffold', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-project-test-'))
+  try {
+    const result = await executeJob({ id: 'project', type: 'create_kicad_project', input: { projectName: 'Sensor Project', templateId: 'ESP32_S3_SENSOR' } }, workspace)
+    assert.equal(result.status, 'KICAD_PROJECT_CREATED_NEEDS_REVIEW')
+    assert.equal(result.generatedFiles.some((file) => file.endsWith('.kicad_sch')), true)
+    const schematic = await readFile(path.join(result.projectPath, 'sensor-project.kicad_sch'), 'utf8')
+    assert.match(schematic, /kicad_sch/)
+    assert.match(schematic, /Generated scaffold/)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('package_jlcpcb blocks when required export files are missing', async () => {
   const result = await executeJob({ id: 'pkg', type: 'package_jlcpcb', input: {} }, process.cwd())
   assert.ok(['BLOCKED_MISSING_ADAPTER', 'NEEDS_FIX', 'PACKAGE_BLOCKED_MISSING_FILES'].includes(result.status))
   assert.deepEqual(result.generatedFiles, [])
@@ -78,16 +92,24 @@ test('KiCad CLI adapter runs DRC and exports board files when KiCad is installed
   }
   const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-kicad-test-'))
   try {
-    await executeJob({ id: 'outline', type: 'create_outline_board', input: { projectName: 'Adapter Outline', templateId: 'ESP32_S3_SENSOR' } }, workspace)
-    const input = { projectPath: 'adapter-outline' }
+    await executeJob({ id: 'project', type: 'create_kicad_project', input: { projectName: 'Adapter Project', templateId: 'ESP32_S3_SENSOR' } }, workspace)
+    const input = { projectPath: 'adapter-project' }
     const drc = await executeJob({ id: 'drc', type: 'run_kicad_drc', input }, workspace)
     assert.equal(drc.status, 'DRC_PASSED')
+    const erc = await executeJob({ id: 'erc', type: 'run_kicad_erc', input }, workspace)
+    assert.equal(erc.status, 'ERC_PASSED')
     const gerbers = await executeJob({ id: 'gerbers', type: 'export_gerbers', input }, workspace)
     assert.equal(gerbers.status, 'GERBERS_EXPORTED')
     assert.ok(gerbers.generatedFiles.length > 0)
-    const erc = await executeJob({ id: 'erc', type: 'run_kicad_erc', input }, workspace)
-    assert.equal(erc.status, 'NEEDS_FIX')
-    assert.equal(erc.errors[0].code, 'SCHEMATIC_FILE_MISSING')
+    const bom = await executeJob({ id: 'bom', type: 'export_bom', input }, workspace)
+    assert.equal(bom.status, 'BOM_EXPORTED')
+    const drill = await executeJob({ id: 'drill', type: 'export_drill_files', input }, workspace)
+    assert.equal(drill.status, 'DRILL_EXPORTED')
+    const cpl = await executeJob({ id: 'cpl', type: 'export_cpl', input }, workspace)
+    assert.equal(cpl.status, 'CPL_EXPORTED')
+    const pkg = await executeJob({ id: 'pkg', type: 'package_jlcpcb', input }, workspace)
+    assert.equal(pkg.status, 'MANUFACTURING_PACKAGE_GENERATED_NEEDS_REVIEW')
+    assert.equal(pkg.generatedFiles[0].endsWith('-jlcpcb.zip'), true)
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

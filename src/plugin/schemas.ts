@@ -113,6 +113,7 @@ export const pluginResultSchema = z.object({
   jobId: z.string(),
   status: z.enum([
     'OUTLINE_GENERATED_NEEDS_REVIEW',
+    'KICAD_PROJECT_CREATED_NEEDS_REVIEW',
     'OUTLINE_VALID_NEEDS_REVIEW',
     'NET_CLASSES_CREATED',
     'NET_CLASSES_VALID_NEEDS_REVIEW',

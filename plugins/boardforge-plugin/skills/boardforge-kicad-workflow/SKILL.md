@@ -99,6 +99,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 ## Current Real Capabilities
 
 - `create_outline_board` writes real `.kicad_pro`, `.kicad_pcb`, `README.md`, and `boardforge-review.json`.
+- `create_kicad_project` writes real `.kicad_pro`, `.kicad_sch`, `.kicad_pcb`, `README.md`, and `boardforge-review.json`.
 - `validate_board_outline` checks outline area, self-intersections, mounting hole containment, and edge clearance.
 - `create_net_classes`, `validate_net_classes`, and `report_unclassified_nets` use BoardForge net-class rules.
 - `generate_placement_plan` creates deterministic placement plans and fails on off-board/overlap issues.
@@ -114,8 +115,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Footprint assignment from live libraries.
 - Real trace autorouting.
 - Native KiCad API editing.
-- ERC/BOM for outline-only projects because those projects intentionally do not include schematics.
-- JLCPCB ZIP generation when required export files are missing.
+- Populated BOM rows until the schematic contains real symbols.
+- CPL rows until the PCB contains real placed footprints.
 
 These commands return blocked or not-implemented statuses until the safe adapters exist.
 
