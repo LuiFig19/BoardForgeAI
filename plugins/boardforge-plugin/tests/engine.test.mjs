@@ -73,6 +73,12 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     const schematic = await readFile(path.join(result.projectPath, 'sensor-project.kicad_sch'), 'utf8')
     assert.match(schematic, /kicad_sch/)
     assert.match(schematic, /Generated scaffold/)
+    const pcb = await readFile(path.join(result.projectPath, 'sensor-project.kicad_pcb'), 'utf8')
+    assert.match(pcb, /footprint/)
+    assert.match(pcb, /USB-C/)
+    const scan = await executeJob({ id: 'scan', type: 'scan_kicad_project', input: { projectPath: 'sensor-project' } }, workspace)
+    assert.equal(scan.status, 'SCAN_COMPLETE_NEEDS_REVIEW')
+    assert.ok(scan.scan.footprints.length >= 4)
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }
@@ -95,7 +101,8 @@ test('KiCad CLI adapter runs DRC and exports board files when KiCad is installed
     await executeJob({ id: 'project', type: 'create_kicad_project', input: { projectName: 'Adapter Project', templateId: 'ESP32_S3_SENSOR' } }, workspace)
     const input = { projectPath: 'adapter-project' }
     const drc = await executeJob({ id: 'drc', type: 'run_kicad_drc', input }, workspace)
-    assert.equal(drc.status, 'DRC_PASSED')
+    assert.equal(drc.status, 'DRC_NEEDS_FIX')
+    assert.ok(drc.errors.length > 0)
     const erc = await executeJob({ id: 'erc', type: 'run_kicad_erc', input }, workspace)
     assert.equal(erc.status, 'ERC_PASSED')
     const gerbers = await executeJob({ id: 'gerbers', type: 'export_gerbers', input }, workspace)
@@ -108,8 +115,8 @@ test('KiCad CLI adapter runs DRC and exports board files when KiCad is installed
     const cpl = await executeJob({ id: 'cpl', type: 'export_cpl', input }, workspace)
     assert.equal(cpl.status, 'CPL_EXPORTED')
     const pkg = await executeJob({ id: 'pkg', type: 'package_jlcpcb', input }, workspace)
-    assert.equal(pkg.status, 'MANUFACTURING_PACKAGE_GENERATED_NEEDS_REVIEW')
-    assert.equal(pkg.generatedFiles[0].endsWith('-jlcpcb.zip'), true)
+    assert.equal(pkg.status, 'PACKAGE_BLOCKED_DRC_ERRORS')
+    assert.deepEqual(pkg.generatedFiles, [])
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

@@ -73,6 +73,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 
 - outline-only KiCad project generation
 - KiCad project scaffolds with `.kicad_sch`, `.kicad_pcb`, and `.kicad_pro`
+- deterministic placement of real KiCad footprints from installed libraries
 - Edge.Cuts geometry validation
 - mounting-hole inside/edge-clearance checks
 - JLCPCB/PCBWay manufacturer profiles
@@ -85,6 +86,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - DRC/ERC execution with KiCad JSON reports when project files exist
 - Gerber, drill, CPL, and BOM export through whitelisted KiCad commands
 - JLCPCB ZIP packaging only when required files already exist
+- JLCPCB ZIP blocking when the DRC report contains errors
 - honest blocked statuses when schematic/project/export files are missing
 
 ```bash
@@ -127,9 +129,10 @@ Not complete yet:
 
 - full schematic generation
 - footprint assignment from live KiCad/JLCPCB libraries
+- schematic-to-PCB net assignment
 - complete autorouting
 - populated BOM rows until schematic symbols exist
-- CPL rows until footprints/components exist on the PCB
+- clean DRC on component projects until nets/clearances/routing are solved
 - native KiCad plugin UI
 
 Future phases add the local MCP/tool server, schematic/footprint generation, richer DRC/ERC parsing, and native KiCad plugin UI.
@@ -159,7 +162,7 @@ Real KiCad-backed commands now include:
 - `export_bom`
 - `package_jlcpcb`
 
-For a scaffolded project, BoardForge can now create the schematic scaffold, run ERC, export an empty BOM, export board fabrication files, and generate a JLCPCB ZIP after the required files exist. The output still remains review-required because symbols, footprints, and routed copper are not complete yet.
+For a scaffolded project, BoardForge can now create the schematic scaffold, place real KiCad footprints, run ERC/DRC, export an empty BOM, export board fabrication files, and block JLCPCB packaging when DRC errors remain. The output stays review-required because real schematic symbols, net assignment, and routed copper are not complete yet.
 
 ## Vercel
 

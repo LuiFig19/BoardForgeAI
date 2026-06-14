@@ -114,6 +114,14 @@ export async function packageJlcpcb({ projectDir, outputFile, requiredFiles }) {
   if (missingFiles.length > 0) {
     return { status: 'PACKAGE_BLOCKED_MISSING_FILES', outputFile, files: existingFiles, missingFiles }
   }
+  const drcFile = existingFiles.find((file) => path.basename(file).toLowerCase() === 'drc.json')
+  if (drcFile) {
+    const drc = await readJsonIfExists(drcFile)
+    const counts = extractReportIssues(drc)
+    if (counts.errors > 0) {
+      return { status: 'PACKAGE_BLOCKED_DRC_ERRORS', outputFile, files: existingFiles, issueCounts: counts }
+    }
+  }
   const zip = new JSZip()
   for (const file of existingFiles) {
     const relative = path.relative(projectDir, file).replaceAll(path.sep, '/')

@@ -9,6 +9,7 @@ import { generateRoutingPlan } from './routing.mjs'
 import { kicadPcbFile, kicadProjectFile, kicadSchematicFile, projectReadmeFile, readmeFile, scanKiCadProject } from './kicad.mjs'
 import { runFullSelfReview, validateBoardOutline } from './validation.mjs'
 import { detectKiCadCli, exportBom, exportCpl, exportDrill, exportGerbers, findKiCadProjectFiles, packageJlcpcb, runDrc, runErc } from './kicad-cli.mjs'
+import { generateTemplateComponents, renderPlacedFootprints } from './components.mjs'
 
 export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
@@ -82,11 +83,14 @@ async function createKiCadProject(job, workspace, profile) {
   const projectDir = resolveInsideWorkspace(workspace, safeName)
   if (existsSync(projectDir) && !job.allowOverwrite) return result(job, 'NEEDS_FIX', [], [{ severity: 'ERROR', code: 'PROJECT_EXISTS', message: `Project already exists. Set allowOverwrite true to replace files: ${projectDir}` }], { projectPath: projectDir, generatedFiles: [] })
   const netClasses = createNetClasses(profile)
+  const components = generateTemplateComponents(board, job.input?.templateId)
+  const footprints = await renderPlacedFootprints(components)
   const files = [
     { path: `${safeName}.kicad_pro`, content: kicadProjectFile(board, netClasses) },
     { path: `${safeName}.kicad_sch`, content: kicadSchematicFile(board) },
-    { path: `${safeName}.kicad_pcb`, content: kicadPcbFile(board, { netClasses }) },
-    { path: 'boardforge-review.json', content: JSON.stringify(review, null, 2) },
+    { path: `${safeName}.kicad_pcb`, content: kicadPcbFile(board, { netClasses, footprints }) },
+    { path: 'boardforge-components.json', content: JSON.stringify(components, null, 2) },
+    { path: 'boardforge-review.json', content: JSON.stringify({ ...review, components }, null, 2) },
     { path: 'README.md', content: projectReadmeFile(job, board, review) },
   ]
   if (!job.dryRun) {

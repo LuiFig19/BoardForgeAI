@@ -99,7 +99,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 ## Current Real Capabilities
 
 - `create_outline_board` writes real `.kicad_pro`, `.kicad_pcb`, `README.md`, and `boardforge-review.json`.
-- `create_kicad_project` writes real `.kicad_pro`, `.kicad_sch`, `.kicad_pcb`, `README.md`, and `boardforge-review.json`.
+- `create_kicad_project` writes real `.kicad_pro`, `.kicad_sch`, `.kicad_pcb`, `README.md`, `boardforge-components.json`, and `boardforge-review.json`.
+- `create_kicad_project` places real KiCad footprints from installed footprint libraries for template components.
 - `validate_board_outline` checks outline area, self-intersections, mounting hole containment, and edge clearance.
 - `create_net_classes`, `validate_net_classes`, and `report_unclassified_nets` use BoardForge net-class rules.
 - `generate_placement_plan` creates deterministic placement plans and fails on off-board/overlap issues.
@@ -116,7 +117,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Real trace autorouting.
 - Native KiCad API editing.
 - Populated BOM rows until the schematic contains real symbols.
-- CPL rows until the PCB contains real placed footprints.
+- Clean DRC on component projects until net assignment, clearances, and routing are solved.
 
 These commands return blocked or not-implemented statuses until the safe adapters exist.
 
@@ -128,4 +129,4 @@ The local helper can be called as:
 node plugins/boardforge-plugin/bin/boardforge-plugin.mjs --job path/to/job.json --workspace path/to/workspace
 ```
 
-Current MVP implements outline generation, outline validation, net classes, placement planning, routing planning, self-review, KiCad project scanning, KiCad CLI DRC/ERC, Gerber/drill/CPL/BOM export, and gated JLCPCB packaging.
+Current MVP implements outline generation, outline validation, net classes, placement planning, real KiCad footprint placement for templates, routing planning, self-review, KiCad project scanning, KiCad CLI DRC/ERC, Gerber/drill/CPL/BOM export, and gated JLCPCB packaging.
