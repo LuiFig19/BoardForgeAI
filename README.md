@@ -78,6 +78,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - KiCad library indexing for installed KiCad symbols, footprints, and 3D models
 - component asset resolution for symbols, footprints, and 3D model candidates
 - symbol/footprint/pin-map compatibility validation from parsed KiCad symbol pins and footprint pads
+- BoardForge netlist generation from component pin maps for schematic/PCB sync review
 - 3D model linking from indexed KiCad footprint/model libraries
 - review-required BOM generation from the placed component manifest when the schematic BOM is empty
 - Edge.Cuts geometry validation
@@ -91,6 +92,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - PCB net synchronization from component pin maps to footprint pads
 - routing endpoint inference from component connectivity instead of manual-only coordinates
 - explicit route waypoint generation so written copper is split into reviewable 45/90-degree legs
+- manufacturing readiness validation that gates exports on DRC/ERC reports by default
 - self-review quality gates
 - existing `.kicad_pcb` project scanning
 - KiCad 10 CLI detection on Windows common install paths
@@ -131,6 +133,8 @@ Endpoints:
 - `POST /jobs/search-library`
 - `POST /jobs/resolve-assets`
 - `POST /jobs/validate-bindings`
+- `POST /jobs/validate-manufacturing`
+- `POST /jobs/generate-netlist`
 - `POST /jobs/find-missing-footprints`
 - `POST /jobs/link-3d-models`
 - `POST /jobs/validate`
@@ -152,6 +156,7 @@ This writes:
 - `boardforge-components.json` for project scaffolds
 - `boardforge-library.json` for project scaffolds
 - `boardforge-bindings.json` for project scaffolds and binding validation
+- `boardforge-netlist.json` when the netlist job runs
 - `boardforge-review.json`
 - `README.md`
 

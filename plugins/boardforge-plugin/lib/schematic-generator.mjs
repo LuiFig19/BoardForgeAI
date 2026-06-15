@@ -23,6 +23,48 @@ export function generateSchematicModel(board, components = [], input = {}) {
   }
 }
 
+export function boardforgeNetlistFromComponents(components = [], nets = []) {
+  const mappedComponents = components.map((component) => ({
+    ...component,
+    pinMap: Object.keys(component.pinMap || {}).length ? component.pinMap : fallbackPinMap(component),
+  }))
+  const netMap = new Map((nets || []).map((net) => [net.name, { name: net.name, className: net.className || 'DEFAULT', pins: [] }]))
+  for (const component of mappedComponents) {
+    for (const [pin, netName] of Object.entries(component.pinMap || {})) {
+      if (!netName) continue
+      const entry = netMap.get(netName) || { name: netName, className: 'DEFAULT', pins: [] }
+      entry.pins.push({ ref: component.ref, pin, group: component.group || null, value: component.value || null })
+      netMap.set(netName, entry)
+    }
+  }
+  return {
+    schemaVersion: 1,
+    generatedBy: 'BoardForge Plugin CLI',
+    components: mappedComponents.map((component) => ({
+      ref: component.ref,
+      value: component.value || component.group || '',
+      group: component.group || null,
+      symbol: component.symbol?.libId || component.symbol || null,
+      footprint: component.footprint?.libId || component.footprint || null,
+      pinCount: Object.keys(component.pinMap || {}).length,
+    })),
+    nets: [...netMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    warnings: [...netMap.values()].filter((net) => net.pins.length < 2).map((net) => ({ severity: 'WARNING', code: 'NET_HAS_FEWER_THAN_TWO_PINS', message: `${net.name} has ${net.pins.length} mapped pin(s).`, net: net.name })),
+    humanReviewRequired: true,
+  }
+}
+
+function fallbackPinMap(component) {
+  if (component.group === 'USB') return { VBUS: 'VUSB', GND: 'GND', 'D+': 'USB_DP', 'D-': 'USB_DN', CC1: 'CC1', CC2: 'CC2' }
+  if (component.group === 'ESP32_S3') return { '3V3': '3V3', GND: 'GND', USB_DP: 'USB_DP', USB_DN: 'USB_DN', SCL: 'I2C_SCL', SDA: 'I2C_SDA', EN: 'EN', IO0: 'BOOT' }
+  if (component.group === 'REGULATOR') return { VIN: 'VIN', GND: 'GND', VOUT: '3V3', EN: 'EN' }
+  if (component.group === 'SENSOR_CONNECTOR') return { 1: '3V3', 2: 'GND', 3: 'I2C_SCL', 4: 'I2C_SDA' }
+  if (component.group === 'RJ45') return { 'TX+': 'ETH_TX_P', 'TX-': 'ETH_TX_N', 'RX+': 'ETH_RX_P', 'RX-': 'ETH_RX_N', SHIELD: 'CHASSIS' }
+  if (component.group === 'CAP') return { 1: '3V3', 2: 'GND' }
+  if (component.group === 'RES') return { 1: null, 2: null }
+  return {}
+}
+
 export function kicadSchematicFromModel(board, schematicModel) {
   const symbolText = schematicModel.symbols.map((symbol) => symbolObject(symbol)).join('\n')
   const connectivity = schematicModel.symbols.flatMap((symbol) => pinConnectivityObjects(symbol))

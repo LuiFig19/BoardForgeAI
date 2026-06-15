@@ -15,12 +15,13 @@ import { createProjectState, normalizeComponents, readProjectState, stateFileNam
 import { createDesignIntent, validateZones } from './design-rules.mjs'
 import { applyRoutingPlanToPcb } from './copper-writer.mjs'
 import { buildComponentDatabase, enrichComponents } from './component-database.mjs'
-import { generateSchematicModel, kicadSchematicFromModel } from './schematic-generator.mjs'
+import { boardforgeNetlistFromComponents, generateSchematicModel, kicadSchematicFromModel } from './schematic-generator.mjs'
 import { applySafeDrcRepairs, planDrcRepairs } from './drc-repair.mjs'
 import { applyInteractiveEdits } from './interactive-edits.mjs'
 import { validateComponentBindings } from './component-compatibility.mjs'
+import { validateExportGate, validateManufacturingReadiness } from './manufacturing-readiness.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'validate_component_bindings', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_netlist', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -56,6 +57,8 @@ export async function executeJob(job, workspace) {
   if (job.type === 'resolve_component_assets') return resolveAssetsJob(job, workspace)
   if (job.type === 'sync_component_database' || job.type === 'resolve_bom_parts') return componentDatabaseJob(job, workspace)
   if (job.type === 'validate_component_bindings') return validateComponentBindingsJob(job, workspace)
+  if (job.type === 'validate_manufacturing_readiness') return manufacturingReadinessJob(job, workspace)
+  if (job.type === 'generate_netlist') return generateNetlistJob(job, workspace)
   if (job.type === 'generate_schematic') return generateSchematicJob(job, workspace)
   if (job.type === 'plan_drc_repairs') return planDrcRepairsJob(job, workspace)
   if (job.type === 'apply_safe_drc_repairs') return applySafeDrcRepairsJob(job, workspace)
@@ -188,7 +191,8 @@ async function componentDatabaseJob(job, workspace) {
 async function validateComponentBindingsJob(job, workspace) {
   const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
   const state = projectDir ? await readProjectState(projectDir) : null
-  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const rawComponents = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const components = rawComponents.some((component) => Object.keys(component.pinMap || {}).length) ? rawComponents : await enrichComponents({ workspace, components: rawComponents, input: job.input || {} })
   const output = await validateComponentBindings(components)
   if (projectDir) {
     const outputFile = path.join(projectDir, 'boardforge-bindings.json')
@@ -204,6 +208,43 @@ async function validateComponentBindingsJob(job, workspace) {
     return result(job, output.status, output.warnings, output.errors, { ...output, generatedFiles: [outputFile] })
   }
   return result(job, output.status, output.warnings, output.errors, output)
+}
+
+async function manufacturingReadinessJob(job, workspace) {
+  const context = await getKiCadContext(job, workspace, 'pcb')
+  if (context.blocked) return context.blocked
+  const readiness = await validateManufacturingReadiness(context.files.projectDir, job.input || {})
+  await updateProjectState(context.files.projectDir, async (current) => ({
+    ...current,
+    status: readiness.status,
+    manufacturingReadiness: readiness,
+    lastJobType: job.type,
+    lastHistoryMessage: `Manufacturing readiness checked with ${readiness.errors.length} blockers and ${readiness.warnings.length} warnings.`,
+  }))
+  return result(job, readiness.status, readiness.warnings, readiness.errors, { readiness, humanReviewRequired: true })
+}
+
+async function generateNetlistJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const nets = assignNetsToClasses(job.input?.nets || state?.requirements?.nets || [])
+  const netlist = boardforgeNetlistFromComponents(components, nets)
+  const status = netlist.warnings.length ? 'NETLIST_GENERATED_NEEDS_REVIEW' : 'NETLIST_GENERATED_NEEDS_ERC'
+  if (projectDir && !job.dryRun) {
+    const outputFile = path.join(projectDir, 'boardforge-netlist.json')
+    await writeFile(outputFile, JSON.stringify(netlist, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status,
+      netlist,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Generated BoardForge netlist with ${netlist.nets.length} nets.`,
+    }))
+    return result(job, status, netlist.warnings, [], { netlist, generatedFiles: [outputFile], humanReviewRequired: true })
+  }
+  return result(job, status, netlist.warnings, [], { netlist, generatedFiles: [], humanReviewRequired: true })
 }
 
 async function readRichComponents(projectDir) {
@@ -424,6 +465,8 @@ async function runErcJob(job, workspace) {
 async function exportGerbersJob(job, workspace) {
   const context = await getKiCadContext(job, workspace, 'pcb')
   if (context.blocked) return context.blocked
+  const gate = await validateExportGate(context.files.projectDir, 'gerbers', job.input || {})
+  if (!gate.allowed) return result(job, 'GERBERS_BLOCKED_VALIDATION_REQUIRED', gate.warnings || [], gate.errors || [], { readiness: gate.readiness, generatedFiles: [], humanReviewRequired: true })
   const output = await exportGerbers({ pcbFile: context.files.pcbFile, outputDir: path.join(context.files.projectDir, 'fab', 'gerbers'), kicadCliPath: context.detected.path })
   await updateExportState(context.files.projectDir, job.type, 'gerbers', output)
   return result(job, output.status, output.status.endsWith('FAILED') ? [{ severity: 'WARNING', code: 'GERBER_EXPORT_FAILED', message: output.stderr || 'Gerber export failed.' }] : [], [], { kicad: context.detected, export: output, generatedFiles: output.files, humanReviewRequired: true })
@@ -432,6 +475,8 @@ async function exportGerbersJob(job, workspace) {
 async function exportDrillJob(job, workspace) {
   const context = await getKiCadContext(job, workspace, 'pcb')
   if (context.blocked) return context.blocked
+  const gate = await validateExportGate(context.files.projectDir, 'drill', job.input || {})
+  if (!gate.allowed) return result(job, 'DRILL_BLOCKED_VALIDATION_REQUIRED', gate.warnings || [], gate.errors || [], { readiness: gate.readiness, generatedFiles: [], humanReviewRequired: true })
   const output = await exportDrill({ pcbFile: context.files.pcbFile, outputDir: path.join(context.files.projectDir, 'fab', 'drill'), kicadCliPath: context.detected.path })
   await updateExportState(context.files.projectDir, job.type, 'drill', output)
   return result(job, output.status, output.status.endsWith('FAILED') ? [{ severity: 'WARNING', code: 'DRILL_EXPORT_FAILED', message: output.stderr || 'Drill export failed.' }] : [], [], { kicad: context.detected, export: output, generatedFiles: output.files, humanReviewRequired: true })
@@ -440,6 +485,8 @@ async function exportDrillJob(job, workspace) {
 async function exportBomJob(job, workspace) {
   const context = await getKiCadContext(job, workspace, 'sch')
   if (context.blocked) return context.blocked
+  const gate = await validateExportGate(context.files.projectDir, 'bom', job.input || {})
+  if (!gate.allowed) return result(job, 'BOM_BLOCKED_VALIDATION_REQUIRED', gate.warnings || [], gate.errors || [], { readiness: gate.readiness, generatedFiles: [], humanReviewRequired: true })
   const outputFile = path.join(context.files.projectDir, 'fab', 'bom.csv')
   const output = await exportBom({ schFile: context.files.schFile, outputFile, kicadCliPath: context.detected.path })
   const hasRows = await csvHasBomRows(outputFile)
@@ -457,6 +504,8 @@ async function exportBomJob(job, workspace) {
 async function exportCplJob(job, workspace) {
   const context = await getKiCadContext(job, workspace, 'pcb')
   if (context.blocked) return context.blocked
+  const gate = await validateExportGate(context.files.projectDir, 'cpl', job.input || {})
+  if (!gate.allowed) return result(job, 'CPL_BLOCKED_VALIDATION_REQUIRED', gate.warnings || [], gate.errors || [], { readiness: gate.readiness, generatedFiles: [], humanReviewRequired: true })
   const output = await exportCpl({ pcbFile: context.files.pcbFile, outputFile: path.join(context.files.projectDir, 'fab', 'cpl.csv'), kicadCliPath: context.detected.path })
   await updateExportState(context.files.projectDir, job.type, 'cpl', output)
   return result(job, output.status, output.status.endsWith('FAILED') ? [{ severity: 'WARNING', code: 'CPL_EXPORT_FAILED', message: output.stderr || 'CPL export failed.' }] : [], [], { kicad: context.detected, export: output, generatedFiles: output.files, humanReviewRequired: true })

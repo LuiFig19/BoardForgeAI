@@ -19,7 +19,8 @@ export async function validateComponentBindings(components = []) {
 
 async function validateSingleComponentBinding(component) {
   const symbolPins = await loadSymbolPins(component.symbol)
-  const footprintPads = await loadFootprintPads(component.footprint)
+  const footprintData = await loadFootprintData(component.footprint)
+  const footprintPads = footprintData.pads
   const pinMap = component.pinMap || {}
   const issues = []
 
@@ -55,6 +56,7 @@ async function validateSingleComponentBinding(component) {
     footprint: assetId(component.footprint),
     symbolPinCount: symbolPins.length,
     footprintPadCount: footprintPads.length,
+    courtyard: footprintData.courtyard,
     mappedPins: pinMapKeys.length,
     compatibilityScore: compatibilityScore({ symbolPins, footprintPads, pinMapKeys, issues }),
     issues,
@@ -72,19 +74,37 @@ async function loadSymbolPins(symbol) {
   }
 }
 
-async function loadFootprintPads(footprint) {
+async function loadFootprintData(footprint) {
   const path = typeof footprint === 'object' ? footprint.path : null
-  if (!path) return []
+  if (!path) return { pads: [], courtyard: { segments: [], bounds: null, width: 0, height: 0 } }
   try {
-    return parseFootprintPadsFromText(await readFile(path, 'utf8'))
+    const text = await readFile(path, 'utf8')
+    return { pads: parseFootprintPadsFromText(text), courtyard: parseFootprintCourtyardFromText(text) }
   } catch {
-    return []
+    return { pads: [], courtyard: { segments: [], bounds: null, width: 0, height: 0 } }
   }
 }
 
 export function parseFootprintPadsFromText(text) {
   return [...String(text || '').matchAll(/\(pad\s+"([^"]+)"\s+([^\s)]+)\s+([^\s)]+)/g)]
     .map((match) => ({ name: match[1], type: match[2], shape: match[3] }))
+}
+
+export function parseFootprintCourtyardFromText(text) {
+  const segments = []
+  const pattern = /\((?:fp_line|gr_line)\s+\(start\s+([-\d.]+)\s+([-\d.]+)\)\s+\(end\s+([-\d.]+)\s+([-\d.]+)\)[\s\S]*?\(layer\s+"F\.CrtYd"\)/g
+  for (const match of String(text || '').matchAll(pattern)) {
+    segments.push({ start: { x: Number(match[1]), y: Number(match[2]) }, end: { x: Number(match[3]), y: Number(match[4]) } })
+  }
+  if (!segments.length) return { segments: [], bounds: null, width: 0, height: 0 }
+  const points = segments.flatMap((segment) => [segment.start, segment.end])
+  const bounds = {
+    minX: Math.min(...points.map((point) => point.x)),
+    minY: Math.min(...points.map((point) => point.y)),
+    maxX: Math.max(...points.map((point) => point.x)),
+    maxY: Math.max(...points.map((point) => point.y)),
+  }
+  return { segments, bounds, width: Number((bounds.maxX - bounds.minX).toFixed(3)), height: Number((bounds.maxY - bounds.minY).toFixed(3)) }
 }
 
 export function parseSymbolPinsFromText(text, libId = '') {

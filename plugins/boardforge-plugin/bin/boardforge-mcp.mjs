@@ -23,6 +23,8 @@ const toolToJobType = {
   sync_component_database: 'sync_component_database',
   resolve_bom_parts: 'resolve_bom_parts',
   validate_component_bindings: 'validate_component_bindings',
+  validate_manufacturing_readiness: 'validate_manufacturing_readiness',
+  generate_netlist: 'generate_netlist',
   generate_schematic: 'generate_schematic',
   plan_drc_repairs: 'plan_drc_repairs',
   apply_safe_drc_repairs: 'apply_safe_drc_repairs',

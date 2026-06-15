@@ -11,7 +11,7 @@ import { generateRoutingPlan } from '../lib/routing.mjs'
 import { executeJob } from '../lib/jobs.mjs'
 import { detectKiCadCli } from '../lib/kicad-cli.mjs'
 import { detectKiCadLibraryRoots } from '../lib/library-adapter.mjs'
-import { parseFootprintPadsFromText, parseSymbolPinsFromText } from '../lib/component-compatibility.mjs'
+import { parseFootprintCourtyardFromText, parseFootprintPadsFromText, parseSymbolPinsFromText } from '../lib/component-compatibility.mjs'
 import { scorePlacement } from '../lib/placement.mjs'
 
 test('validates a simple rectangular board outline', () => {
@@ -52,9 +52,10 @@ test('routing plan does not claim full autorouting', () => {
 
 test('parses KiCad symbol pins and footprint pads for compatibility checks', () => {
   const symbolText = `(kicad_symbol_lib (version 20241209) (symbol "Device:R" (pin passive line (at 0 0 0) (length 2.54) (name "~") (number "1")) (pin passive line (at 0 2.54 0) (length 2.54) (name "~") (number "2"))))`
-  const footprintText = `(footprint "Resistor_SMD:R_0603_1608Metric" (pad "1" smd roundrect (at -0.8 0) (size 0.8 0.95) (layers "F.Cu")) (pad "2" smd roundrect (at 0.8 0) (size 0.8 0.95) (layers "F.Cu")))`
+  const footprintText = `(footprint "Resistor_SMD:R_0603_1608Metric" (fp_line (start -1 -0.5) (end 1 -0.5) (stroke (width 0.05) (type solid)) (layer "F.CrtYd")) (fp_line (start 1 -0.5) (end 1 0.5) (stroke (width 0.05) (type solid)) (layer "F.CrtYd")) (pad "1" smd roundrect (at -0.8 0) (size 0.8 0.95) (layers "F.Cu")) (pad "2" smd roundrect (at 0.8 0) (size 0.8 0.95) (layers "F.Cu")))`
   assert.deepEqual(parseSymbolPinsFromText(symbolText, 'Device:R').map((pin) => pin.number), ['1', '2'])
   assert.deepEqual(parseFootprintPadsFromText(footprintText).map((pad) => pad.name), ['1', '2'])
+  assert.equal(parseFootprintCourtyardFromText(footprintText).width, 2)
 })
 
 test('placement scoring reports ratsnest and edge connector intent', () => {
@@ -148,6 +149,9 @@ test('advanced jobs build component database, schematic model, interactive edits
     const bindings = await executeJob({ id: 'bindings', type: 'validate_component_bindings', input: { projectPath } }, workspace)
     assert.ok(['COMPONENT_BINDINGS_VALID_NEEDS_REVIEW', 'COMPONENT_BINDINGS_NEED_REVIEW', 'COMPONENT_BINDINGS_NEED_FIX'].includes(bindings.status))
     assert.ok(bindings.checked >= 4)
+    const netlist = await executeJob({ id: 'netlist', type: 'generate_netlist', input: { projectPath } }, workspace)
+    assert.ok(['NETLIST_GENERATED_NEEDS_REVIEW', 'NETLIST_GENERATED_NEEDS_ERC'].includes(netlist.status))
+    assert.ok(netlist.netlist.nets.length > 0)
     const schematic = await executeJob({ id: 'sch', type: 'generate_schematic', input: { projectPath } }, workspace)
     assert.ok(['SCHEMATIC_MODEL_READY_NEEDS_ERC', 'SCHEMATIC_MODEL_NEEDS_ASSET_REVIEW'].includes(schematic.status))
     assert.ok(schematic.schematicModel.symbols.length >= 4)
@@ -165,6 +169,7 @@ test('advanced jobs build component database, schematic model, interactive edits
     const state = JSON.parse(await readFile(path.join(workspace, projectPath, 'boardforge-project.json'), 'utf8'))
     assert.ok(state.componentDatabase)
     assert.ok(state.componentBindings)
+    assert.ok(state.netlist)
     assert.ok(state.schematic)
     assert.ok(state.interactiveEdits.length > 0)
     assert.ok(state.drcRepair)
@@ -308,17 +313,21 @@ test('KiCad CLI adapter runs DRC and exports board files when KiCad is installed
     assert.ok(drc.errors.length > 0)
     const erc = await executeJob({ id: 'erc', type: 'run_kicad_erc', input }, workspace)
     assert.equal(erc.status, 'ERC_PASSED')
-    const gerbers = await executeJob({ id: 'gerbers', type: 'export_gerbers', input }, workspace)
+    const blockedGerbers = await executeJob({ id: 'blocked_gerbers', type: 'export_gerbers', input }, workspace)
+    assert.equal(blockedGerbers.status, 'GERBERS_BLOCKED_VALIDATION_REQUIRED')
+    const readiness = await executeJob({ id: 'readiness', type: 'validate_manufacturing_readiness', input }, workspace)
+    assert.equal(readiness.status, 'MANUFACTURING_READINESS_BLOCKED')
+    const gerbers = await executeJob({ id: 'gerbers', type: 'export_gerbers', input: { ...input, allowUnvalidatedExport: true } }, workspace)
     assert.equal(gerbers.status, 'GERBERS_EXPORTED')
     assert.ok(gerbers.generatedFiles.length > 0)
-    const bom = await executeJob({ id: 'bom', type: 'export_bom', input }, workspace)
+    const bom = await executeJob({ id: 'bom', type: 'export_bom', input: { ...input, allowUnvalidatedExport: true } }, workspace)
     assert.equal(bom.status, 'BOM_EXPORTED_FROM_PLACEMENT_NEEDS_REVIEW')
     const bomCsv = await readFile(path.join(workspace, 'adapter-project', 'fab', 'bom.csv'), 'utf8')
     assert.match(bomCsv, /BoardForge placed components/)
     assert.match(bomCsv, /USB-C/)
-    const drill = await executeJob({ id: 'drill', type: 'export_drill_files', input }, workspace)
+    const drill = await executeJob({ id: 'drill', type: 'export_drill_files', input: { ...input, allowUnvalidatedExport: true } }, workspace)
     assert.equal(drill.status, 'DRILL_EXPORTED')
-    const cpl = await executeJob({ id: 'cpl', type: 'export_cpl', input }, workspace)
+    const cpl = await executeJob({ id: 'cpl', type: 'export_cpl', input: { ...input, allowUnvalidatedExport: true } }, workspace)
     assert.equal(cpl.status, 'CPL_EXPORTED')
     const pkg = await executeJob({ id: 'pkg', type: 'package_jlcpcb', input }, workspace)
     assert.equal(pkg.status, 'PACKAGE_BLOCKED_DRC_ERRORS')

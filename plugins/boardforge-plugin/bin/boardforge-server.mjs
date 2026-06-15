@@ -19,6 +19,8 @@ const routes = {
   'POST /jobs/search-library': 'search_library_assets',
   'POST /jobs/resolve-assets': 'resolve_component_assets',
   'POST /jobs/validate-bindings': 'validate_component_bindings',
+  'POST /jobs/validate-manufacturing': 'validate_manufacturing_readiness',
+  'POST /jobs/generate-netlist': 'generate_netlist',
   'POST /jobs/find-missing-footprints': 'find_missing_footprints',
   'POST /jobs/link-3d-models': 'link_3d_models',
   'POST /jobs/validate': 'run_full_self_review',

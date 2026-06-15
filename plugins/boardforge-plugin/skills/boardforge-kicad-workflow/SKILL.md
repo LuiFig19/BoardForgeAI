@@ -44,6 +44,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `sync_component_database`
 - `resolve_bom_parts`
 - `validate_component_bindings`
+- `generate_netlist`
+- `validate_manufacturing_readiness`
 - `find_missing_footprints`
 - `link_3d_models`
 - `create_net_classes`
@@ -118,6 +120,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `resolve_component_assets` and `link_3d_models` update `boardforge-project.json` when `projectPath` is provided.
 - `sync_component_database` and `resolve_bom_parts` enrich components with LCSC, MPN, package, pin-map, symbol, footprint, 3D model, and stock-risk candidates.
 - `validate_component_bindings` parses KiCad symbol pins and footprint pads, compares them to BoardForge pin maps, and writes compatibility results to `boardforge-bindings.json` when `projectPath` is provided.
+- `generate_netlist` writes `boardforge-netlist.json` from component pin maps so Codex can review schematic/PCB connectivity before routing.
+- `validate_manufacturing_readiness` checks DRC/ERC reports plus BOM/CPL artifacts and reports blockers before export/package workflows.
 - `generate_schematic` writes review-required KiCad schematic objects into `.kicad_sch`, including symbols, footprint properties, wires, labels, global labels, and symbol instances. Run ERC after it.
 - `plan_drc_repairs` and `apply_safe_drc_repairs` create a DRC repair plan and apply only low-risk safe repairs; rerun DRC after any repair.
 - `interactive_edit` parses plain-English edits such as resizing the board, rounding corners, moving USB to an edge, enforcing antenna keepout, or increasing power route width.
@@ -131,6 +135,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `scan_kicad_project` parses existing `.kicad_pcb` projects for layers, nets, footprints, tracks, vias, zones, and mounting holes.
 - `run_kicad_drc` and `run_kicad_erc` call local KiCad 10/9/8 `kicad-cli` when available and parse JSON reports.
 - `export_gerbers`, `export_drill_files`, `export_cpl`, and `export_bom` use whitelisted KiCad CLI commands.
+- Export jobs are validation-gated by default. Use `allowUnvalidatedExport: true` only for development artifacts that must not be called manufacturing-ready.
 - If the schematic BOM is empty but placed components exist, `export_bom` writes a review-required BOM from `boardforge-components.json`.
 - `package_jlcpcb` creates a ZIP only when required Gerber, drill, BOM, CPL, DRC, and ERC report files exist, and it blocks if DRC/ERC reports contain errors.
 
@@ -173,6 +178,8 @@ Supported endpoints:
 - `POST /jobs/search-library`
 - `POST /jobs/resolve-assets`
 - `POST /jobs/validate-bindings`
+- `POST /jobs/validate-manufacturing`
+- `POST /jobs/generate-netlist`
 - `POST /jobs/find-missing-footprints`
 - `POST /jobs/link-3d-models`
 - `POST /jobs/validate`
