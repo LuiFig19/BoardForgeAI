@@ -117,6 +117,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `create_net_classes`, `validate_net_classes`, and `report_unclassified_nets` use BoardForge net-class rules.
 - `generate_placement_plan` creates deterministic placement plans and fails on off-board/overlap issues.
 - `generate_routing_plan` creates a partial routing plan and reports unrouted nets. It does not claim full autorouting.
+- Routing tools return compact-board via policy, layer-change rules, copper pour plans, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions.
+- `add_ground_zone`, `stitch_ground_vias`, `route_critical_nets`, `route_power_nets`, `route_diff_pair`, `route_signal_net`, `validate_routes`, and `report_unrouted_nets` are controlled planning tools. They do not claim completed copper until a later KiCad route writer applies and validates geometry.
 - `scan_kicad_project` parses existing `.kicad_pcb` projects for layers, nets, footprints, tracks, vias, zones, and mounting holes.
 - `run_kicad_drc` and `run_kicad_erc` call local KiCad 10/9/8 `kicad-cli` when available and parse JSON reports.
 - `export_gerbers`, `export_drill_files`, `export_cpl`, and `export_bom` use whitelisted KiCad CLI commands.

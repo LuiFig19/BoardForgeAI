@@ -24,6 +24,7 @@ export function createProjectState({ job, board, mode, profile, components = [],
     requirements: extractRequirements(job.input || {}),
     board: normalizeBoard(board),
     components: normalizeComponents(components),
+    designIntent: job.input?.designIntent || null,
     library,
     validation: {
       selfReview: review,

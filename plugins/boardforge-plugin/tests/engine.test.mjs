@@ -38,10 +38,34 @@ test('detects off-board components', () => {
 })
 
 test('routing plan does not claim full autorouting', () => {
-  const plan = generateRoutingPlan(assignNetsToClasses([{ name: 'USB_DP' }, { name: 'GND' }]), { layerCount: 4 })
+  const plan = generateRoutingPlan(assignNetsToClasses([{ name: 'USB_DP' }, { name: 'GND' }]), { layerCount: 4, board: { layerCount: 4, widthMm: 40, heightMm: 30, outline: rectanglePoints(40, 30) } })
   assert.equal(plan.status, 'PARTIAL_ROUTING_PLAN')
   assert.deepEqual(plan.routedNets, [])
   assert.equal(plan.unroutedNets.includes('USB_DP'), true)
+  assert.equal(plan.designIntent.copperPours.some((pour) => pour.net === 'GND'), true)
+  assert.equal(plan.routes.find((route) => route.net === 'USB_DP').viaPlan.maxVias, 0)
+  assert.equal(plan.designIntent.viaRules.preferSameLayerFor.includes('USB_DIFF'), true)
+})
+
+test('routing jobs return keepout, via, and copper-pour logic for compact boards', async () => {
+  const board = { widthMm: 36, heightMm: 30, outline: rectanglePoints(36, 30), layerCount: 4 }
+  const result = await executeJob({
+    id: 'routing_rules',
+    type: 'add_ground_zone',
+    input: {
+      board,
+      nets: [{ name: 'GND' }, { name: 'USB_DP' }, { name: 'VIN' }],
+      components: [
+        { ref: 'U1', group: 'ESP32_S3', value: 'ESP32-S3 WROOM', x: 20, y: 15, width: 18, height: 14 },
+        { ref: 'U2', group: 'REGULATOR', value: '3V3 regulator', x: 12, y: 18, width: 5, height: 5 },
+      ],
+    },
+  }, process.cwd())
+  assert.equal(result.status, 'GROUND_ZONE_PLAN_READY_NEEDS_REVIEW')
+  assert.ok(result.copperPours.some((pour) => pour.net === 'GND'))
+  assert.ok(result.keepouts.some((zone) => zone.kind === 'antenna_keepout'))
+  assert.ok(result.keepouts.some((zone) => zone.kind === 'thermal_keepout'))
+  assert.equal(result.viaRules.compactBoardPolicy.includes('midpoint vias'), true)
 })
 
 test('create_outline_board writes real KiCad files and review JSON only', async () => {

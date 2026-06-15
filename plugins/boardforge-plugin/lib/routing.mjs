@@ -1,14 +1,27 @@
 import { netClassProfiles } from './net-classes.mjs'
+import { createDesignIntent, planViasForRoute } from './design-rules.mjs'
 
 const routingOrder = ['BATTERY', 'POWER_HIGH_CURRENT', 'POWER_LOW_CURRENT', 'USB_DIFF', 'ETHERNET_DIFF', 'CAN_DIFF', 'CRYSTAL', 'CLOCK', 'SPI', 'I2C', 'UART', 'SENSOR', 'ANALOG', 'DEFAULT']
 
 export function generateRoutingPlan(nets, options = {}) {
   const layerCount = options.layerCount || 2
+  const board = options.board || { layerCount, outline: [] }
+  const designIntent = createDesignIntent({ ...board, layerCount }, options.components || [], nets || [], options.profile || {})
   const classified = [...(nets || [])].sort((a, b) => (routingOrder.indexOf(a.className || 'DEFAULT') || 999) - (routingOrder.indexOf(b.className || 'DEFAULT') || 999))
   const routes = classified.map((net) => {
     const profile = netClassProfiles[net.className || 'DEFAULT'] || netClassProfiles.DEFAULT
     const canPlanOnly = ['GROUND'].includes(net.className) || Boolean(options.allowExperimentalRouting)
-    return { net: net.name, className: net.className || 'DEFAULT', strategy: strategyForClass(net.className || 'DEFAULT', layerCount), widthMm: profile.traceWidthMm, clearanceMm: profile.clearanceMm, status: canPlanOnly ? 'planned_zone_or_short_route' : 'planned_not_routed' }
+    const viaPlan = planViasForRoute({ net, start: net.start, end: net.end, board: { ...board, layerCount }, zones: designIntent.zones, profile: options.profile || {} })
+    return {
+      net: net.name,
+      className: net.className || 'DEFAULT',
+      strategy: strategyForClass(net.className || 'DEFAULT', layerCount),
+      widthMm: profile.traceWidthMm,
+      clearanceMm: profile.clearanceMm,
+      layerPreference: profile.layerPreference,
+      viaPlan,
+      status: canPlanOnly ? 'planned_zone_or_short_route' : 'planned_not_routed',
+    }
   })
   return {
     status: 'PARTIAL_ROUTING_PLAN',
@@ -16,7 +29,8 @@ export function generateRoutingPlan(nets, options = {}) {
     partiallyRoutedNets: routes.filter((route) => route.status !== 'planned_not_routed').map((route) => route.net),
     unroutedNets: routes.filter((route) => route.status === 'planned_not_routed').map((route) => route.net),
     routes,
-    warnings: ['CLI MVP generates a routing plan and ground strategy only. It does not claim full autorouting.', 'Use KiCad interactive routing or a later BoardForge routing adapter for completed copper.'],
+    designIntent,
+    warnings: ['CLI MVP generates a routing/via/copper-pour plan only. It does not claim full autorouting.', 'Use KiCad interactive routing or a later BoardForge routing adapter for completed copper.', 'Sensitive antenna, thermal, and analog/IMU keepouts require human review before manufacturing.'],
   }
 }
 

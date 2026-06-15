@@ -12,6 +12,7 @@ import { detectKiCadCli, exportBom, exportCpl, exportDrill, exportGerbers, findK
 import { generateTemplateComponents, renderPlacedFootprints } from './components.mjs'
 import { findMissingFootprints, link3dModels, resolveComponentAssets, searchLibraryAssets, syncKiCadLibraries } from './library-adapter.mjs'
 import { createProjectState, normalizeComponents, readProjectState, stateFileName, summarizeProjectState, updateProjectState } from './project-state.mjs'
+import { createDesignIntent, validateZones } from './design-rules.mjs'
 
 export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
@@ -52,7 +53,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'create_net_classes') return result(job, 'NET_CLASSES_CREATED', [], [], { netClasses: createNetClasses(profile), humanReviewRequired: true })
   if (job.type === 'validate_net_classes' || job.type === 'report_unclassified_nets') return validateNetClassesJob(job)
   if (job.type === 'generate_placement_plan') return placementPlanJob(job, profile)
-  if (job.type === 'generate_routing_plan' || job.type === 'report_unrouted_nets') return routingPlanJob(job)
+  if (['generate_routing_plan', 'report_unrouted_nets', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes'].includes(job.type)) return routingPlanJob(job)
   if (job.type === 'run_full_self_review') return selfReviewJob(job, profile)
   if (job.type === 'scan_kicad_project' || job.type === 'summarize_project') return scanProjectJob(job, workspace)
   if (job.type === 'run_kicad_drc') return runDrcJob(job, workspace)
@@ -93,9 +94,12 @@ async function createKiCadProject(job, workspace, profile) {
   if (existsSync(projectDir) && !job.allowOverwrite) return result(job, 'NEEDS_FIX', [], [{ severity: 'ERROR', code: 'PROJECT_EXISTS', message: `Project already exists. Set allowOverwrite true to replace files: ${projectDir}` }], { projectPath: projectDir, generatedFiles: [] })
   const netClasses = createNetClasses(profile)
   const components = generateTemplateComponents(board, job.input?.templateId)
+  const designIntent = createDesignIntent(board, components, assignNetsToClasses(job.input?.nets || []), profile)
+  const zoneIssues = validateZones(board, designIntent.zones)
   const placementIssues = validatePlacement(board, components, profile)
-  if (placementIssues.some((item) => ['BLOCKER', 'ERROR'].includes(item.severity))) {
-    return result(job, 'PLACEMENT_NEEDS_FIX', placementIssues.filter((item) => item.severity === 'WARNING'), placementIssues.filter((item) => ['BLOCKER', 'ERROR'].includes(item.severity)), { projectPath: projectDir, components, generatedFiles: [], humanReviewRequired: true })
+  const blockingPlacementIssues = [...placementIssues, ...zoneIssues].filter((item) => ['BLOCKER', 'ERROR'].includes(item.severity) && item.code !== 'ANTENNA_KEEPOUT_ALLOWS_COPPER')
+  if (blockingPlacementIssues.length) {
+    return result(job, 'PLACEMENT_NEEDS_FIX', [...placementIssues, ...zoneIssues].filter((item) => item.severity === 'WARNING'), blockingPlacementIssues, { projectPath: projectDir, components, designIntent, generatedFiles: [], humanReviewRequired: true })
   }
   const library = await resolveComponentAssets({ workspace, input: { ...job.input, components } })
   const footprintsResult = await renderPlacedFootprints(components, { workspace, ...job.input })
@@ -104,7 +108,7 @@ async function createKiCadProject(job, workspace, profile) {
     const resolved = library.components?.find((item) => item.ref === component.ref)
     return { ...component, symbol: resolved?.symbol || component.symbol || null, footprint: resolved?.footprint || component.footprint, model3d: resolved?.model3d || component.model3d || null, confidence: resolved?.confidence || 'needs_review' }
   })
-  const state = createProjectState({ job, board, mode: 'full_project_scaffold', profile, components: resolvedComponents, library, review: { ...review, placementIssues }, generatedFiles: [] })
+  const state = createProjectState({ job: { ...job, input: { ...job.input, designIntent } }, board, mode: 'full_project_scaffold', profile, components: resolvedComponents, library, review: { ...review, placementIssues, zoneIssues }, generatedFiles: [] })
   const files = [
     { path: `${safeName}.kicad_pro`, content: kicadProjectFile(board, netClasses) },
     { path: `${safeName}.kicad_sch`, content: kicadSchematicFile(board, { components: resolvedComponents }) },
@@ -182,8 +186,19 @@ function placementPlanJob(job, profile) {
 }
 
 function routingPlanJob(job) {
-  const plan = generateRoutingPlan(assignNetsToClasses(job.input?.nets || []), { layerCount: job.input?.layerCount })
-  return result(job, plan.status, plan.warnings, [], { routingPlan: plan, humanReviewRequired: true })
+  const board = boardFromJob(job)
+  const plan = generateRoutingPlan(assignNetsToClasses(job.input?.nets || []), { layerCount: job.input?.layerCount || board.layerCount, board, components: job.input?.components || [], profile: getManufacturerProfile(job.input?.manufacturerProfile || job.input?.manufacturer || 'JLCPCB_STANDARD') })
+  const statusByType = {
+    add_ground_zone: plan.designIntent.copperPours.some((pour) => pour.net === 'GND') ? 'GROUND_ZONE_PLAN_READY_NEEDS_REVIEW' : 'GROUND_ZONE_NEEDS_GND_NET',
+    stitch_ground_vias: 'GROUND_STITCHING_PLAN_READY_NEEDS_REVIEW',
+    route_diff_pair: 'DIFF_PAIR_ROUTE_PLAN_READY_NEEDS_REVIEW',
+    route_power_nets: 'POWER_ROUTE_PLAN_READY_NEEDS_REVIEW',
+    route_signal_net: 'SIGNAL_ROUTE_PLAN_READY_NEEDS_REVIEW',
+    route_critical_nets: 'CRITICAL_ROUTE_PLAN_READY_NEEDS_REVIEW',
+    validate_routes: 'ROUTE_RULES_VALIDATED_NEEDS_REVIEW',
+  }
+  const status = statusByType[job.type] || plan.status
+  return result(job, status, plan.warnings, [], { routingPlan: plan, copperPours: plan.designIntent.copperPours, viaRules: plan.designIntent.viaRules, keepouts: plan.designIntent.zones, humanReviewRequired: true })
 }
 
 function selfReviewJob(job, profile) {

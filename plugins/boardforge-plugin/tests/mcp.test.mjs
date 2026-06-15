@@ -21,6 +21,7 @@ test('MCP server exposes BoardForge tools and runs controlled jobs', async () =>
     const listed = await client.request('tools/list', {})
     assert.equal(listed.tools.some((tool) => tool.name === 'create_outline_board'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'resolve_component_assets'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'add_ground_zone'), true)
 
     const status = await client.request('tools/call', { name: 'status', arguments: {} })
     const statusPayload = JSON.parse(status.content[0].text)
