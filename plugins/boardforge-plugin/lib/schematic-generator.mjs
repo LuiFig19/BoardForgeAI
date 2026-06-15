@@ -24,19 +24,10 @@ export function generateSchematicModel(board, components = [], input = {}) {
 }
 
 export function kicadSchematicFromModel(board, schematicModel) {
-  const symbolText = schematicModel.symbols.map((symbol) => [
-    `\t(text "${safe(`${symbol.ref} ${symbol.value}`)}"`,
-    `\t\t(at ${symbol.at.x} ${symbol.at.y} 0)`,
-    '\t\t(effects (font (size 1.27 1.27)) (justify left bottom))',
-    `\t\t(uuid "${symbol.uuid}")`,
-    '\t)',
-    `\t(text "${safe(`SYM ${symbol.symbol || 'MISSING'} | FP ${symbol.footprint || 'MISSING'}`)}"`,
-    `\t\t(at ${symbol.at.x} ${symbol.at.y + 4} 0)`,
-    '\t\t(effects (font (size 0.9 0.9)) (justify left bottom))',
-    `\t\t(uuid "${crypto.randomUUID()}")`,
-    '\t)',
-  ].join('\n')).join('\n')
-  const netText = schematicModel.nets.map((net, index) => `\t(text "${safe(`NET ${net.name} -> ${net.className}`)}"\n\t\t(at 25 ${160 + index * 4} 0)\n\t\t(effects (font (size 0.9 0.9)) (justify left bottom))\n\t\t(uuid "${crypto.randomUUID()}")\n\t)`).join('\n')
+  const symbolText = schematicModel.symbols.map((symbol) => symbolObject(symbol)).join('\n')
+  const connectivity = schematicModel.symbols.flatMap((symbol) => pinConnectivityObjects(symbol))
+  const netLabels = schematicModel.nets.map((net, index) => labelObject(net.name, 25, 160 + index * 4, /^(GND|3V3|5V|VIN|VBAT|VUSB)$/i.test(net.name)))
+  const instances = schematicModel.symbols.map((symbol) => `\t\t(path "/${symbol.uuid}"\n\t\t\t(reference "${safe(symbol.ref)}")\n\t\t\t(unit 1)\n\t\t\t(value "${safe(symbol.value)}")\n\t\t\t(footprint "${safe(symbol.footprint || '')}")\n\t\t)`).join('\n')
   return `(kicad_sch
 \t(version 20250114)
 \t(generator "BoardForge Plugin CLI")
@@ -50,13 +41,61 @@ export function kicadSchematicFromModel(board, schematicModel) {
 \t)
 \t(lib_symbols)
 ${symbolText}
-${netText}
+${connectivity.join('\n')}
+${netLabels.join('\n')}
 \t(sheet_instances
 \t\t(path "/" (page "1"))
+\t)
+\t(symbol_instances
+${instances}
 \t)
 \t(embedded_fonts no)
 )
 `
+}
+
+function symbolObject(symbol) {
+  const libId = symbol.symbol || 'Device:R'
+  return `\t(symbol
+\t\t(lib_id "${safe(libId)}")
+\t\t(at ${symbol.at.x} ${symbol.at.y} 0)
+\t\t(unit 1)
+\t\t(exclude_from_sim no)
+\t\t(in_bom yes)
+\t\t(on_board yes)
+\t\t(dnp no)
+\t\t(uuid "${symbol.uuid}")
+\t\t(property "Reference" "${safe(symbol.ref)}"
+\t\t\t(at ${symbol.at.x} ${symbol.at.y - 4} 0)
+\t\t\t(effects (font (size 1.27 1.27)))
+\t\t)
+\t\t(property "Value" "${safe(symbol.value)}"
+\t\t\t(at ${symbol.at.x} ${symbol.at.y + 4} 0)
+\t\t\t(effects (font (size 1.27 1.27)))
+\t\t)
+\t\t(property "Footprint" "${safe(symbol.footprint || '')}"
+\t\t\t(at ${symbol.at.x} ${symbol.at.y + 8} 0)
+\t\t\t(effects (font (size 1.0 1.0)) hide)
+\t\t)
+\t)`
+}
+
+function pinConnectivityObjects(symbol) {
+  return Object.entries(symbol.pinMap || {}).filter(([, net]) => net).flatMap(([pin, net], index) => {
+    const x = symbol.at.x + 18
+    const y = symbol.at.y + index * 3
+    return [
+      `\t(wire (pts (xy ${symbol.at.x + 5} ${y}) (xy ${x} ${y}))\n\t\t(stroke (width 0) (type default))\n\t\t(uuid "${crypto.randomUUID()}")\n\t)`,
+      labelObject(net, x, y, /^(GND|3V3|5V|VIN|VBAT|VUSB)$/i.test(net)),
+      `\t(text "${safe(`${symbol.ref}.${pin}`)}"\n\t\t(at ${symbol.at.x + 6} ${y - 1.2} 0)\n\t\t(effects (font (size 0.7 0.7)) (justify left bottom))\n\t\t(uuid "${crypto.randomUUID()}")\n\t)`,
+    ]
+  })
+}
+
+function labelObject(name, x, y, global = false) {
+  const tag = global ? 'global_label' : 'label'
+  const shape = global ? '\n\t\t(shape input)' : ''
+  return `\t(${tag} "${safe(name)}"${shape}\n\t\t(at ${x} ${y} 0)\n\t\t(effects (font (size 1.0 1.0)) (justify left bottom))\n\t\t(uuid "${crypto.randomUUID()}")\n\t)`
 }
 
 function normalizeNets(nets = [], components = []) {

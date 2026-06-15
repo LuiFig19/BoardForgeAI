@@ -320,7 +320,7 @@ async function applyRoutingPlanJob(job, workspace, profile) {
   if (!routingPlan.routes?.some((route) => route.start && route.end) && !routingPlan.designIntent?.copperPours?.length) {
     return result(job, 'ROUTING_PLAN_HAS_NO_WRITABLE_GEOMETRY', routingPlan.warnings || [], [{ severity: 'ERROR', code: 'NO_WRITABLE_ROUTE_GEOMETRY', message: 'Provide nets with start/end points or a routingPlan with writable routes/zones.' }], { routingPlan, generatedFiles: [], humanReviewRequired: true })
   }
-  const output = await applyRoutingPlanToPcb({ pcbFile: context.files.pcbFile, board, routingPlan })
+  const output = await applyRoutingPlanToPcb({ pcbFile: context.files.pcbFile, board, routingPlan, components })
   await updateProjectState(context.files.projectDir, async (current) => ({
     ...current,
     status: output.status,

@@ -114,16 +114,16 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `link_3d_models` attaches available 3D model references from indexed KiCad footprints/packages.
 - `resolve_component_assets` and `link_3d_models` update `boardforge-project.json` when `projectPath` is provided.
 - `sync_component_database` and `resolve_bom_parts` enrich components with LCSC, MPN, package, pin-map, symbol, footprint, 3D model, and stock-risk candidates.
-- `generate_schematic` writes a review-required schematic model into `.kicad_sch` and project state. Run ERC after it.
+- `generate_schematic` writes review-required KiCad schematic objects into `.kicad_sch`, including symbols, footprint properties, wires, labels, global labels, and symbol instances. Run ERC after it.
 - `plan_drc_repairs` and `apply_safe_drc_repairs` create a DRC repair plan and apply only low-risk safe repairs; rerun DRC after any repair.
 - `interactive_edit` parses plain-English edits such as resizing the board, rounding corners, moving USB to an edge, enforcing antenna keepout, or increasing power route width.
 - `validate_board_outline` checks outline area, self-intersections, mounting hole containment, and edge clearance.
 - `create_net_classes`, `validate_net_classes`, and `report_unclassified_nets` use BoardForge net-class rules.
 - `generate_placement_plan` creates deterministic placement plans and fails on off-board/overlap issues.
-- `generate_routing_plan` creates a partial routing plan and reports unrouted nets. It does not claim full autorouting.
+- `generate_routing_plan` creates a partial routing plan from explicit route points or inferred component pin-map endpoints, and reports unrouted nets. It does not claim full autorouting.
 - Routing tools return compact-board via policy, layer-change rules, copper pour plans, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions.
 - `add_ground_zone`, `stitch_ground_vias`, `route_critical_nets`, `route_power_nets`, `route_diff_pair`, `route_signal_net`, `validate_routes`, and `report_unrouted_nets` are controlled planning tools. They do not claim completed copper until a later KiCad route writer applies and validates geometry.
-- `apply_routing_plan` can write review-required KiCad `segment`, `via`, and `zone` objects from a BoardForge routing plan, then requires `run_kicad_drc` before any export/manufacturing claim.
+- `apply_routing_plan` can write review-required KiCad `segment`, `via`, and `zone` objects from a BoardForge routing plan, add PCB nets, and assign footprint pad nets from component pin maps, then requires `run_kicad_drc` before any export/manufacturing claim.
 - `scan_kicad_project` parses existing `.kicad_pcb` projects for layers, nets, footprints, tracks, vias, zones, and mounting holes.
 - `run_kicad_drc` and `run_kicad_erc` call local KiCad 10/9/8 `kicad-cli` when available and parse JSON reports.
 - `export_gerbers`, `export_drill_files`, `export_cpl`, and `export_bom` use whitelisted KiCad CLI commands.
@@ -132,12 +132,11 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 
 ## Explicitly Not Complete Yet
 
-- Full native schematic symbol/wire generation.
 - Fully automatic DRC-clean repair for all geometry classes.
 - Full DRC-clean trace autorouting and route repair.
 - Native KiCad API editing.
-- Schematic-derived BOM rows until the schematic contains real symbols.
-- Clean DRC on component projects until net assignment, clearances, and routing are solved.
+- Full KiCad-symbol-library fidelity for every possible component family.
+- Clean DRC on component projects until clearances, placement, routing, and KiCad validation are solved.
 
 These commands return blocked or not-implemented statuses until the safe adapters exist.
 
@@ -149,7 +148,7 @@ The local helper can be called as:
 node plugins/boardforge-plugin/bin/boardforge-plugin.mjs --job path/to/job.json --workspace path/to/workspace
 ```
 
-Current MVP implements outline generation, outline validation, net classes, placement planning, real KiCad footprint placement for templates, routing planning, self-review, KiCad project scanning, KiCad CLI DRC/ERC, Gerber/drill/CPL/BOM export, and gated JLCPCB packaging.
+Current MVP implements outline generation, outline validation, schematic object generation, net classes, placement planning, real KiCad footprint placement for templates, component pin-map net assignment, routing planning, review-required copper writing, self-review, KiCad project scanning, KiCad CLI DRC/ERC, Gerber/drill/CPL/BOM export, and gated JLCPCB packaging.
 
 ## Local Tool Server
 

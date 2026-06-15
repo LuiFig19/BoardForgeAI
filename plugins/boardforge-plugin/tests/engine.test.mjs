@@ -127,6 +127,9 @@ test('advanced jobs build component database, schematic model, interactive edits
     assert.ok(schematic.schematicModel.symbols.length >= 4)
     const schText = await readFile(path.join(workspace, projectPath, 'advanced-project.kicad_sch'), 'utf8')
     assert.match(schText, /BoardForge schematic model/)
+    assert.match(schText, /\(symbol\s+/)
+    assert.match(schText, /\(global_label\s+"GND"/)
+    assert.match(schText, /\(wire\s+/)
     const edit = await executeJob({ id: 'edit', type: 'interactive_edit', input: { projectPath, prompt: 'make the board 10mm wider and round the corners' } }, workspace)
     assert.equal(edit.status, 'INTERACTIVE_EDITS_APPLIED_NEEDS_REVIEW')
     assert.ok(edit.edits.length >= 2)
@@ -138,6 +141,35 @@ test('advanced jobs build component database, schematic model, interactive edits
     assert.ok(state.schematic)
     assert.ok(state.interactiveEdits.length > 0)
     assert.ok(state.drcRepair)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('routing infers endpoints from component pin maps and assigns PCB pad nets', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-net-sync-test-'))
+  try {
+    await executeJob({ id: 'project', type: 'create_kicad_project', allowOverwrite: true, input: { projectName: 'Net Sync Project', templateId: 'ESP32_S3_SENSOR' } }, workspace)
+    const components = [
+      { ref: 'J1', group: 'USB', x: 6, y: 16, width: 9, height: 7, pinMap: { 'A6': 'USB_DP', 'A7': 'USB_DN', 'B6': 'USB_DP', 'B7': 'USB_DN', A1: 'GND', B1: 'GND' } },
+      { ref: 'U1', group: 'ESP32_S3', x: 29, y: 16, width: 18, height: 14, pinMap: { USB_DP: 'USB_DP', USB_DN: 'USB_DN', GND: 'GND' } },
+    ]
+    const applied = await executeJob({
+      id: 'net_sync_routes',
+      type: 'apply_routing_plan',
+      input: {
+        projectPath: 'net-sync-project',
+        board: { widthMm: 58, heightMm: 32, layerCount: 4, outline: rectanglePoints(58, 32) },
+        components,
+        nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }, { name: 'GND' }],
+      },
+    }, workspace)
+    assert.equal(applied.status, 'COPPER_APPLIED_NEEDS_DRC')
+    assert.ok(applied.routes.some((route) => route.net === 'USB_DP'))
+    const pcb = await readFile(path.join(workspace, 'net-sync-project', 'net-sync-project.kicad_pcb'), 'utf8')
+    assert.match(pcb, /\(net \d+ "USB_DP"\)/)
+    assert.match(pcb, /\(pad "A6"[\s\S]*?\(net \d+ "USB_DP"\)[\s\S]*?\n\t\)/)
+    assert.match(pcb, /\(segment .*"?.*\(net \d+\)/s)
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

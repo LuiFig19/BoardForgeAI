@@ -85,6 +85,9 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - PCB net-class profiles and net classification
 - deterministic placement planning with off-board/overlap checks
 - partial routing plans that report unrouted nets
+- native KiCad schematic object generation for symbols, wires, labels, global labels, and symbol instances
+- PCB net synchronization from component pin maps to footprint pads
+- routing endpoint inference from component connectivity instead of manual-only coordinates
 - self-review quality gates
 - existing `.kicad_pcb` project scanning
 - KiCad 10 CLI detection on Windows common install paths
@@ -169,22 +172,21 @@ Real today:
 - compact-board routing policy with via rules, layer-change logic, copper pour planning, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions
 - controlled `apply_routing_plan` writer for review-required KiCad `segment`, `via`, and `zone` objects
 - BoardForge component database enrichment with LCSC/MPN/package/pin-map candidates
-- schematic model generation with component/net/power intent written into `.kicad_sch`
+- schematic object generation with symbols, wires, labels, power/global labels, component footprint properties, and symbol instances written into `.kicad_sch`
+- schematic-to-PCB net propagation that writes net declarations and assigns component pad nets from BoardForge pin maps
+- routing endpoint inference from matching component pins so route plans start from actual component connectivity
 - DRC repair planning plus safe repair application for low-risk cleanup actions
 - plain-English interactive edit parsing for board resize, rounded corners, edge placement, keepouts, and route-width intents
 - test coverage for geometry, net classes, placement, routing-plan honesty, outline generation, library resolution, MCP calls, KiCad CLI validation/export, and blocked packaging
 
 Not complete yet:
 
-- full native schematic symbol/wire generation
 - automatic multi-pass DRC-clean repair for all violation types
-- schematic-to-PCB net assignment
 - complete autorouting and DRC-clean route repair
-- schematic-derived BOM rows until schematic symbols exist
 - clean DRC on component projects until nets/clearances/routing are solved
 - native KiCad plugin UI
 
-Future phases add native schematic symbol/wire emission, richer DRC/ERC repair loops, placement edits inside existing KiCad projects, and native KiCad plugin UI.
+Future phases add richer DRC/ERC repair loops, placement edits inside existing KiCad projects, full KiCad-symbol-library fidelity, and native KiCad plugin UI.
 
 ### KiCad 10 Adapter
 
@@ -211,7 +213,7 @@ Real KiCad-backed commands now include:
 - `export_bom`
 - `package_jlcpcb`
 
-For a scaffolded project, BoardForge can now create the schematic scaffold, place real KiCad footprints, run ERC/DRC, export fabrication files, generate a review-required BOM from placed components when the schematic BOM is empty, and block JLCPCB packaging when DRC errors remain. The output stays review-required because real schematic symbols, net assignment, and routed copper are not complete yet.
+For a scaffolded project, BoardForge can now create schematic objects, place real KiCad footprints, assign PCB pad nets from component pin maps, infer route endpoints from connectivity, write review-required copper, run ERC/DRC, export fabrication files, generate a review-required BOM from placed components when needed, and block JLCPCB packaging when DRC errors remain. The output stays review-required until KiCad ERC/DRC reports prove it is clean.
 
 ## Vercel
 

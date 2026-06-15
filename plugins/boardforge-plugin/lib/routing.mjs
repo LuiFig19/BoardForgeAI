@@ -6,17 +6,22 @@ const routingOrder = ['BATTERY', 'POWER_HIGH_CURRENT', 'POWER_LOW_CURRENT', 'USB
 export function generateRoutingPlan(nets, options = {}) {
   const layerCount = options.layerCount || 2
   const board = options.board || { layerCount, outline: [] }
+  const components = options.components || []
   const designIntent = createDesignIntent({ ...board, layerCount }, options.components || [], nets || [], options.profile || {})
   const classified = [...(nets || [])].sort((a, b) => (routingOrder.indexOf(a.className || 'DEFAULT') || 999) - (routingOrder.indexOf(b.className || 'DEFAULT') || 999))
   const routes = classified.map((net) => {
     const profile = netClassProfiles[net.className || 'DEFAULT'] || netClassProfiles.DEFAULT
     const canPlanOnly = ['GROUND'].includes(net.className) || Boolean(options.allowExperimentalRouting)
-    const viaPlan = planViasForRoute({ net, start: net.start, end: net.end, board: { ...board, layerCount }, zones: designIntent.zones, profile: options.profile || {} })
+    const endpoints = inferEndpoints(net, components)
+    const start = net.start || endpoints.start
+    const end = net.end || endpoints.end
+    const viaPlan = planViasForRoute({ net, start, end, board: { ...board, layerCount }, zones: designIntent.zones, profile: options.profile || {} })
     return {
       net: net.name,
       className: net.className || 'DEFAULT',
-      start: net.start || null,
-      end: net.end || null,
+      start: start || null,
+      end: end || null,
+      endpointRefs: endpoints.refs,
       strategy: strategyForClass(net.className || 'DEFAULT', layerCount),
       widthMm: profile.traceWidthMm,
       clearanceMm: profile.clearanceMm,
@@ -34,6 +39,25 @@ export function generateRoutingPlan(nets, options = {}) {
     designIntent,
     warnings: ['CLI MVP generates a routing/via/copper-pour plan only. It does not claim full autorouting.', 'Use KiCad interactive routing or a later BoardForge routing adapter for completed copper.', 'Sensitive antenna, thermal, and analog/IMU keepouts require human review before manufacturing.'],
   }
+}
+
+function inferEndpoints(net, components) {
+  const refs = []
+  for (const component of components) {
+    const pins = component.pinMap || {}
+    if (Object.values(pins).includes(net.name)) refs.push(component.ref)
+  }
+  const matched = components.filter((component) => refs.includes(component.ref))
+  if (matched.length >= 2) return { start: pointForComponent(matched[0]), end: pointForComponent(matched[1]), refs }
+  if (matched.length === 1) {
+    const component = matched[0]
+    return { start: pointForComponent(component), end: { x: (component.x || 0) + 8, y: component.y || 0 }, refs }
+  }
+  return { start: null, end: null, refs }
+}
+
+function pointForComponent(component) {
+  return { x: component.x || 0, y: component.y || 0 }
 }
 
 function strategyForClass(className, layerCount) {

@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { round } from './geometry.mjs'
 
-export async function applyRoutingPlanToPcb({ pcbFile, board, routingPlan }) {
+export async function applyRoutingPlanToPcb({ pcbFile, board, routingPlan, components = [] }) {
   const original = await readFile(pcbFile, 'utf8')
   const routeObjects = materializeRouteObjects(board, routingPlan)
   const netNames = [...new Set([
@@ -9,7 +9,8 @@ export async function applyRoutingPlanToPcb({ pcbFile, board, routingPlan }) {
     ...routeObjects.vias.map((item) => item.net),
     ...routeObjects.zones.map((item) => item.net),
   ].filter(Boolean))]
-  const { content, netNumbers } = ensureNets(original, netNames)
+  const { content, netNumbers } = ensureNets(original, [...netNames, ...componentNetNames(components)])
+  const withPadNets = assignPadNets(content, components, netNumbers)
   const generated = [
     '  (gr_text "BoardForge review-required copper: run DRC before manufacturing" (at 2 -6 0) (layer "Cmts.User")',
     `    (effects (font (size 1 1) (thickness 0.12))) (uuid "${crypto.randomUUID()}"))`,
@@ -17,7 +18,7 @@ export async function applyRoutingPlanToPcb({ pcbFile, board, routingPlan }) {
     ...routeObjects.vias.map((via) => viaText(via, netNumbers.get(via.net) || 0)),
     ...routeObjects.zones.map((zone) => zoneText(zone, netNumbers.get(zone.net) || 0)),
   ].join('\n')
-  const next = content.replace(/\)\s*$/, `${generated}\n)\n`)
+  const next = withPadNets.replace(/\)\s*$/, `${generated}\n)\n`)
   await writeFile(pcbFile, next, 'utf8')
   return {
     status: 'COPPER_APPLIED_NEEDS_DRC',
@@ -32,6 +33,69 @@ export async function applyRoutingPlanToPcb({ pcbFile, board, routingPlan }) {
     zones: routeObjects.zones,
     humanReviewRequired: true,
   }
+}
+
+function componentNetNames(components) {
+  return components.flatMap((component) => Object.values(component.pinMap || {}).filter(Boolean))
+}
+
+function assignPadNets(content, components, netNumbers) {
+  let next = content
+  for (const component of components) {
+    const pinMap = component.pinMap || {}
+    if (!Object.keys(pinMap).length) continue
+    const refPattern = new RegExp(`\\(property\\s+"Reference"\\s+"${escapeRegExp(component.ref)}"[\\s\\S]*?\\n\\s*\\)`, 'm')
+    const refMatch = next.match(refPattern)
+    if (!refMatch) continue
+    const fpStart = next.lastIndexOf('(footprint', refMatch.index)
+    const fpEnd = findClosingParen(next, fpStart)
+    if (fpStart < 0 || fpEnd < 0) continue
+    const footprintBlock = next.slice(fpStart, fpEnd + 1)
+    const updated = assignPadsInFootprint(footprintBlock, pinMap, netNumbers)
+    next = `${next.slice(0, fpStart)}${updated}${next.slice(fpEnd + 1)}`
+  }
+  return next
+}
+
+function assignPadsInFootprint(footprintBlock, pinMap, netNumbers) {
+  let output = ''
+  let cursor = 0
+  const padPattern = /\(pad\s+"([^"]+)"/g
+  let match = padPattern.exec(footprintBlock)
+  while (match) {
+    const padStart = match.index
+    const padEnd = findClosingParen(footprintBlock, padStart)
+    if (padEnd < 0) break
+    output += footprintBlock.slice(cursor, padStart)
+    const padBlock = footprintBlock.slice(padStart, padEnd + 1)
+    const padName = match[1]
+    const netName = pinMap[padName] || pinMap[normalizePinName(padName)]
+    const netNumber = netNumbers.get(netName)
+    output += netName && netNumber ? withPadNet(padBlock, netNumber, netName) : padBlock
+    cursor = padEnd + 1
+    padPattern.lastIndex = cursor
+    match = padPattern.exec(footprintBlock)
+  }
+  return output + footprintBlock.slice(cursor)
+}
+
+function withPadNet(padBlock, netNumber, netName) {
+  const withoutOldNet = padBlock.replace(/\s+\(net\s+\d+\s+"[^"]*"\)/, '')
+  return withoutOldNet.replace(/\)$/, `\n\t\t(net ${netNumber} "${safeText(netName)}")\n\t)`)
+}
+
+function findClosingParen(text, start) {
+  let depth = 0
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === '(') depth += 1
+    if (text[index] === ')') depth -= 1
+    if (depth === 0) return index
+  }
+  return -1
+}
+
+function normalizePinName(pin) {
+  return String(pin).replace(/^0+/, '')
 }
 
 export function materializeRouteObjects(board, routingPlan) {
@@ -114,4 +178,8 @@ function zoneText(zone, netNumber) {
 
 function safeText(value) {
   return String(value || '').replace(/"/g, "'")
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
