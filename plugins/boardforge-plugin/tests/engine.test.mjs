@@ -144,6 +144,24 @@ test('3D model paths normalize to KiCad model variables when possible', () => {
   assert.equal(normalize3dModelPath('${KICAD10_3DMODEL_DIR}/Package.step', { version: '10' }), '${KICAD10_3DMODEL_DIR}/Package.step')
 })
 
+test('component library audit reports missing assets and 3D model coverage', async () => {
+  const result = await executeJob({
+    id: 'component_audit',
+    type: 'audit_component_library',
+    input: {
+      components: [
+        { ref: 'U1', group: 'MCU', value: 'QFN MCU', symbol: 'MCU:Example', footprint: 'Package_DFN_QFN:QFN-32', model3d: '${KICAD10_3DMODEL_DIR}/Package_DFN_QFN.3dshapes/QFN-32.step', pinMap: { VDD: '3V3', GND: 'GND' }, lcsc: 'C123' },
+        { ref: 'U2', group: 'SENSOR', value: 'unresolved sensor' },
+      ],
+    },
+  }, process.cwd())
+  assert.equal(result.status, 'COMPONENT_LIBRARY_AUDIT_NEEDS_FIX')
+  assert.equal(result.totals.components, 2)
+  assert.ok(result.errors.some((issue) => issue.code === 'FOOTPRINT_MISSING'))
+  assert.ok(result.warnings.some((issue) => issue.code === 'MODEL_3D_MISSING'))
+  assert.ok(result.actions.some((action) => action.includes('resolve_component_assets')))
+})
+
 test('project snapshots can be listed and restored without touching arbitrary files', async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-snapshot-test-'))
   try {
@@ -230,6 +248,9 @@ test('advanced jobs build component database, schematic model, interactive edits
     const db = await executeJob({ id: 'db', type: 'sync_component_database', input: { projectPath } }, workspace)
     assert.ok(['COMPONENT_DATABASE_READY_NEEDS_REVIEW', 'COMPONENT_DATABASE_PARTIAL_NEEDS_REVIEW'].includes(db.status))
     assert.ok(db.components.length >= 4)
+    const componentAudit = await executeJob({ id: 'component_audit_project', type: 'audit_component_library', input: { projectPath } }, workspace)
+    assert.ok(['COMPONENT_LIBRARY_AUDIT_NEEDS_FIX', 'COMPONENT_LIBRARY_AUDIT_NEEDS_REVIEW', 'COMPONENT_LIBRARY_AUDIT_READY_NEEDS_REVIEW'].includes(componentAudit.status))
+    assert.equal(componentAudit.generatedFiles.some((file) => file.endsWith('boardforge-component-audit.json')), true)
     const bindings = await executeJob({ id: 'bindings', type: 'validate_component_bindings', input: { projectPath } }, workspace)
     assert.ok(['COMPONENT_BINDINGS_VALID_NEEDS_REVIEW', 'COMPONENT_BINDINGS_NEED_REVIEW', 'COMPONENT_BINDINGS_NEED_FIX'].includes(bindings.status))
     assert.ok(bindings.checked >= 4)
@@ -256,6 +277,7 @@ test('advanced jobs build component database, schematic model, interactive edits
     assert.ok(['DRC_REPAIR_PLAN_READY_NEEDS_REVIEW', 'DRC_REPAIR_NO_ACTIONS_FOUND'].includes(repair.status))
     const state = JSON.parse(await readFile(path.join(workspace, projectPath, 'boardforge-project.json'), 'utf8'))
     assert.ok(state.componentDatabase)
+    assert.ok(state.componentAudit)
     assert.ok(state.componentBindings)
     assert.ok(state.netlist)
     assert.ok(state.designAudit)

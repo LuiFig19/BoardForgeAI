@@ -80,6 +80,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - KiCad library indexing for installed KiCad symbols, footprints, and 3D models
 - component asset resolution for symbols, footprints, and 3D model candidates
 - richer built-in component database defaults for ESP32, USB-C, RJ45, IMU, barometer, SPI flash, Ethernet PHY, PoE front end, power input, SWD, ESC headers, passives, inductors, packages, LCSC/MPN candidates, and pin-map intent
+- component library audit reports for symbol, footprint, 3D model, pin-map, and supplier coverage before schematic/placement/export workflows
 - symbol/footprint/pin-map compatibility validation from parsed KiCad symbol pins and footprint pads
 - BoardForge netlist generation from component pin maps for schematic/PCB sync review
 - portable 3D model linking from indexed KiCad footprint/model libraries with KiCad environment-variable model paths where possible
@@ -142,6 +143,7 @@ Endpoints:
 - `POST /jobs/sync-libraries`
 - `POST /jobs/search-library`
 - `POST /jobs/resolve-assets`
+- `POST /jobs/audit-component-library`
 - `POST /jobs/validate-bindings`
 - `POST /jobs/validate-manufacturing`
 - `POST /jobs/generate-netlist`
@@ -168,6 +170,7 @@ This writes:
 - `.boardforge/snapshots/*` when snapshot jobs are run
 - `boardforge-components.json` for project scaffolds
 - `boardforge-library.json` for project scaffolds
+- `boardforge-component-audit.json` when component coverage audit runs
 - `boardforge-bindings.json` for project scaffolds and binding validation
 - `boardforge-netlist.json` when the netlist job runs
 - `boardforge-design-report.json` when the design audit job runs
@@ -204,6 +207,7 @@ Real today:
 - compact-board routing policy with via rules, layer-change logic, copper pour planning, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions
 - controlled `apply_routing_plan` writer for review-required KiCad `segment`, `via`, and `zone` objects
 - BoardForge component database enrichment with LCSC/MPN/package/pin-map candidates
+- component library coverage auditing for symbol, footprint, 3D model, pin-map, and supplier readiness
 - schematic object generation with symbols, wires, labels, power/global labels, component footprint properties, and symbol instances written into `.kicad_sch`
 - schematic-to-PCB net propagation that writes net declarations and assigns component pad nets from BoardForge pin maps
 - routing endpoint inference from matching component pins so route plans start from actual component connectivity

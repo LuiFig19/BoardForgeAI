@@ -22,6 +22,7 @@ const routes = {
   'POST /jobs/sync-libraries': 'sync_kicad_libraries',
   'POST /jobs/search-library': 'search_library_assets',
   'POST /jobs/resolve-assets': 'resolve_component_assets',
+  'POST /jobs/audit-component-library': 'audit_component_library',
   'POST /jobs/validate-bindings': 'validate_component_bindings',
   'POST /jobs/validate-manufacturing': 'validate_manufacturing_readiness',
   'POST /jobs/generate-netlist': 'generate_netlist',

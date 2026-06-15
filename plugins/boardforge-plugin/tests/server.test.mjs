@@ -32,6 +32,11 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { query: '0603 resistor', maxAssets: 2000, limit: 5 },
     })
     assert.equal(search.status, 'LIBRARY_SEARCH_COMPLETE_NEEDS_REVIEW')
+    const audit = await postJson(`http://127.0.0.1:${port}/jobs/audit-component-library`, {
+      id: 'server_component_audit',
+      input: { projectPath: 'server-project' },
+    })
+    assert.ok(['COMPONENT_LIBRARY_AUDIT_NEEDS_FIX', 'COMPONENT_LIBRARY_AUDIT_NEEDS_REVIEW', 'COMPONENT_LIBRARY_AUDIT_READY_NEEDS_REVIEW'].includes(audit.status))
     const snapshot = await postJson(`http://127.0.0.1:${port}/jobs/snapshot`, {
       id: 'server_snapshot',
       input: { projectPath: 'server-project', label: 'server-smoke' },

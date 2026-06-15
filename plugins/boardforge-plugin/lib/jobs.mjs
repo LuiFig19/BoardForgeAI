@@ -23,8 +23,9 @@ import { validateExportGate, validateManufacturingReadiness } from './manufactur
 import { validateRoutingGeometry } from './routing-validation.mjs'
 import { runDesignAudit } from './design-audit.mjs'
 import { createProjectSnapshot, diffProjectSnapshot, listProjectSnapshots, restoreProjectSnapshot } from './project-snapshots.mjs'
+import { auditComponentLibraryCoverage } from './component-audit.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -63,6 +64,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'search_library_assets') return librarySearchJob(job, workspace)
   if (job.type === 'resolve_component_assets') return resolveAssetsJob(job, workspace)
   if (job.type === 'sync_component_database' || job.type === 'resolve_bom_parts') return componentDatabaseJob(job, workspace)
+  if (job.type === 'audit_component_library') return componentLibraryAuditJob(job, workspace)
   if (job.type === 'validate_component_bindings') return validateComponentBindingsJob(job, workspace)
   if (job.type === 'validate_manufacturing_readiness') return manufacturingReadinessJob(job, workspace)
   if (job.type === 'generate_netlist') return generateNetlistJob(job, workspace)
@@ -250,6 +252,30 @@ async function componentDatabaseJob(job, workspace) {
     }))
   }
   return result(job, output.status, output.riskSummary.missingAssets ? [{ severity: 'WARNING', code: 'COMPONENT_ASSETS_MISSING', message: `${output.riskSummary.missingAssets} components are missing complete symbol/footprint assets.` }] : [], [], output)
+}
+
+async function componentLibraryAuditJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const rawComponents = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const components = rawComponents.some((component) => component.assetStatus || component.symbol || component.footprint)
+    ? rawComponents
+    : await enrichComponents({ workspace, components: rawComponents, input: job.input || {} })
+  const output = auditComponentLibraryCoverage(components)
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-component-audit.json') : null
+  if (projectDir) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      componentAudit: output,
+      components: normalizeComponents(components),
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Component library audit scored ${output.coverageScore}/100 with ${output.errors.length} blockers and ${output.warnings.length} warnings.`,
+    }))
+  }
+  return result(job, output.status, output.warnings, output.errors, { ...output, generatedFiles: outputFile ? [outputFile] : [] })
 }
 
 async function validateComponentBindingsJob(job, workspace) {

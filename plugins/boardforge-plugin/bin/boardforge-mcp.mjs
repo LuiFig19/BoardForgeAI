@@ -26,6 +26,7 @@ const toolToJobType = {
   resolve_component_assets: 'resolve_component_assets',
   sync_component_database: 'sync_component_database',
   resolve_bom_parts: 'resolve_bom_parts',
+  audit_component_library: 'audit_component_library',
   validate_component_bindings: 'validate_component_bindings',
   validate_manufacturing_readiness: 'validate_manufacturing_readiness',
   generate_netlist: 'generate_netlist',
