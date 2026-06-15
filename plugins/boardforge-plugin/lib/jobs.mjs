@@ -14,8 +14,12 @@ import { findMissingFootprints, link3dModels, resolveComponentAssets, searchLibr
 import { createProjectState, normalizeComponents, readProjectState, stateFileName, summarizeProjectState, updateProjectState } from './project-state.mjs'
 import { createDesignIntent, validateZones } from './design-rules.mjs'
 import { applyRoutingPlanToPcb } from './copper-writer.mjs'
+import { buildComponentDatabase, enrichComponents } from './component-database.mjs'
+import { generateSchematicModel, kicadSchematicFromModel } from './schematic-generator.mjs'
+import { applySafeDrcRepairs, planDrcRepairs } from './drc-repair.mjs'
+import { applyInteractiveEdits } from './interactive-edits.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -49,11 +53,16 @@ export async function executeJob(job, workspace) {
   if (job.type === 'sync_kicad_libraries') return librarySyncJob(job, workspace)
   if (job.type === 'search_library_assets') return librarySearchJob(job, workspace)
   if (job.type === 'resolve_component_assets') return resolveAssetsJob(job, workspace)
+  if (job.type === 'sync_component_database' || job.type === 'resolve_bom_parts') return componentDatabaseJob(job, workspace)
+  if (job.type === 'generate_schematic') return generateSchematicJob(job, workspace)
+  if (job.type === 'plan_drc_repairs') return planDrcRepairsJob(job, workspace)
+  if (job.type === 'apply_safe_drc_repairs') return applySafeDrcRepairsJob(job, workspace)
+  if (job.type === 'interactive_edit') return interactiveEditJob(job, workspace, profile)
   if (job.type === 'find_missing_footprints') return missingFootprintsJob(job, workspace)
   if (job.type === 'link_3d_models') return link3dModelsJob(job, workspace)
   if (job.type === 'create_net_classes') return result(job, 'NET_CLASSES_CREATED', [], [], { netClasses: createNetClasses(profile), humanReviewRequired: true })
   if (job.type === 'validate_net_classes' || job.type === 'report_unclassified_nets') return validateNetClassesJob(job)
-  if (job.type === 'generate_placement_plan') return placementPlanJob(job, profile)
+  if (job.type === 'generate_placement_plan' || job.type === 'optimize_placement') return placementPlanJob(job, profile)
   if (job.type === 'apply_routing_plan') return applyRoutingPlanJob(job, workspace, profile)
   if (['generate_routing_plan', 'report_unrouted_nets', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes'].includes(job.type)) return routingPlanJob(job)
   if (job.type === 'run_full_self_review') return selfReviewJob(job, profile)
@@ -153,9 +162,106 @@ async function resolveAssetsJob(job, workspace) {
   return result(job, output.status, output.warnings || [], [], output)
 }
 
+async function componentDatabaseJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const components = job.input?.components || state?.components || []
+  const output = await buildComponentDatabase({ workspace, input: { ...job.input, components } })
+  if (projectDir) {
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      components: normalizeComponents(output.components),
+      componentDatabase: output,
+      lastJobType: job.type,
+      lastHistoryMessage: `Component database resolved ${output.components.length} components.`,
+    }))
+  }
+  return result(job, output.status, output.riskSummary.missingAssets ? [{ severity: 'WARNING', code: 'COMPONENT_ASSETS_MISSING', message: `${output.riskSummary.missingAssets} components are missing complete symbol/footprint assets.` }] : [], [], output)
+}
+
+async function generateSchematicJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const rawComponents = job.input?.components || state?.components || []
+  const components = await enrichComponents({ workspace, components: rawComponents, input: job.input || {} })
+  const schematicModel = generateSchematicModel(board, components, job.input || state?.requirements || {})
+  const generatedFiles = []
+  if (projectDir && !job.dryRun) {
+    const files = await findKiCadProjectFiles(projectDir)
+    if (files.schFile) {
+      await writeFile(files.schFile, kicadSchematicFromModel(board, schematicModel), 'utf8')
+      generatedFiles.push(files.schFile)
+    }
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: schematicModel.status,
+      schematic: schematicModel,
+      components: normalizeComponents(components),
+      generatedFiles: [...new Set([...(current.generatedFiles || []), ...generatedFiles])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Generated schematic model with ${schematicModel.symbols.length} symbols and ${schematicModel.nets.length} nets.`,
+    }))
+  }
+  return result(job, schematicModel.status, schematicModel.warnings, [], { schematicModel, generatedFiles, humanReviewRequired: true })
+}
+
 async function missingFootprintsJob(job, workspace) {
   const output = await findMissingFootprints({ workspace, input: job.input || {} })
   return result(job, output.status, [], [], output)
+}
+
+async function planDrcRepairsJob(job, workspace) {
+  const context = await getKiCadContext(job, workspace, 'pcb')
+  if (context.blocked) return context.blocked
+  const reportFile = job.input?.reportFile ? resolveInsideWorkspace(workspace, job.input.reportFile) : path.join(context.files.projectDir, 'reports', 'drc.json')
+  const repairPlan = await planDrcRepairs({ reportFile, pcbFile: context.files.pcbFile })
+  await updateProjectState(context.files.projectDir, async (current) => ({
+    ...current,
+    status: repairPlan.status,
+    drcRepair: repairPlan,
+    lastJobType: job.type,
+    lastHistoryMessage: `Planned ${repairPlan.repairs.length} DRC repair actions.`,
+  }))
+  return result(job, repairPlan.status, repairPlan.repairs.length ? [{ severity: 'WARNING', code: 'REPAIR_REVIEW_REQUIRED', message: 'DRC repair plan requires review before applying geometry changes.' }] : [], [], { repairPlan, humanReviewRequired: true })
+}
+
+async function applySafeDrcRepairsJob(job, workspace) {
+  const context = await getKiCadContext(job, workspace, 'pcb')
+  if (context.blocked) return context.blocked
+  const state = await readProjectState(context.files.projectDir)
+  const repairPlan = job.input?.repairPlan || state?.drcRepair
+  if (!repairPlan) return result(job, 'NEEDS_FIX', [], [{ severity: 'ERROR', code: 'MISSING_REPAIR_PLAN', message: 'Run plan_drc_repairs before apply_safe_drc_repairs.' }], { generatedFiles: [], humanReviewRequired: true })
+  const output = await applySafeDrcRepairs({ pcbFile: context.files.pcbFile, repairPlan })
+  await updateProjectState(context.files.projectDir, async (current) => ({
+    ...current,
+    status: output.status,
+    drcRepair: { ...(current.drcRepair || repairPlan), applied: output },
+    lastJobType: job.type,
+    lastHistoryMessage: `Applied ${output.applied} safe DRC repair actions. Rerun DRC.`,
+  }))
+  return result(job, output.status, [{ severity: 'WARNING', code: 'RERUN_DRC_REQUIRED', message: 'Safe repairs were attempted. Run run_kicad_drc again.' }], [], { ...output, generatedFiles: [context.files.pcbFile], humanReviewRequired: true })
+}
+
+async function interactiveEditJob(job, workspace, profile) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const components = job.input?.components || state?.components || []
+  const output = applyInteractiveEdits({ board, components, profile, prompt: job.input?.prompt || job.input?.edit || '' })
+  if (projectDir) {
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      board: output.board,
+      components: normalizeComponents(output.components),
+      interactiveEdits: [...(current.interactiveEdits || []), { prompt: output.prompt, edits: output.edits, status: output.status }],
+      lastJobType: job.type,
+      lastHistoryMessage: `Applied ${output.edits.length} interactive edit intents.`,
+    }))
+  }
+  return result(job, output.status, output.status.includes('CLARIFICATION') ? [{ severity: 'WARNING', code: 'EDIT_NEEDS_CLARIFICATION', message: 'No supported edit intent was recognized.' }] : [], [], output)
 }
 
 async function link3dModelsJob(job, workspace) {

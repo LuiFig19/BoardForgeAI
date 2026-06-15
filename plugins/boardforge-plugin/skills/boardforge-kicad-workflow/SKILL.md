@@ -113,6 +113,10 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `find_missing_footprints` reports which component footprints cannot be found in the indexed allowlisted libraries.
 - `link_3d_models` attaches available 3D model references from indexed KiCad footprints/packages.
 - `resolve_component_assets` and `link_3d_models` update `boardforge-project.json` when `projectPath` is provided.
+- `sync_component_database` and `resolve_bom_parts` enrich components with LCSC, MPN, package, pin-map, symbol, footprint, 3D model, and stock-risk candidates.
+- `generate_schematic` writes a review-required schematic model into `.kicad_sch` and project state. Run ERC after it.
+- `plan_drc_repairs` and `apply_safe_drc_repairs` create a DRC repair plan and apply only low-risk safe repairs; rerun DRC after any repair.
+- `interactive_edit` parses plain-English edits such as resizing the board, rounding corners, moving USB to an edge, enforcing antenna keepout, or increasing power route width.
 - `validate_board_outline` checks outline area, self-intersections, mounting hole containment, and edge clearance.
 - `create_net_classes`, `validate_net_classes`, and `report_unclassified_nets` use BoardForge net-class rules.
 - `generate_placement_plan` creates deterministic placement plans and fails on off-board/overlap issues.
@@ -129,6 +133,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 ## Explicitly Not Complete Yet
 
 - Full native schematic symbol/wire generation.
+- Fully automatic DRC-clean repair for all geometry classes.
 - Full DRC-clean trace autorouting and route repair.
 - Native KiCad API editing.
 - Schematic-derived BOM rows until the schematic contains real symbols.

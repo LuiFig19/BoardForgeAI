@@ -168,11 +168,16 @@ Real today:
 - project state tracking across create, resolve, link, validate, export, and package jobs
 - compact-board routing policy with via rules, layer-change logic, copper pour planning, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions
 - controlled `apply_routing_plan` writer for review-required KiCad `segment`, `via`, and `zone` objects
+- BoardForge component database enrichment with LCSC/MPN/package/pin-map candidates
+- schematic model generation with component/net/power intent written into `.kicad_sch`
+- DRC repair planning plus safe repair application for low-risk cleanup actions
+- plain-English interactive edit parsing for board resize, rounded corners, edge placement, keepouts, and route-width intents
 - test coverage for geometry, net classes, placement, routing-plan honesty, outline generation, library resolution, MCP calls, KiCad CLI validation/export, and blocked packaging
 
 Not complete yet:
 
 - full native schematic symbol/wire generation
+- automatic multi-pass DRC-clean repair for all violation types
 - schematic-to-PCB net assignment
 - complete autorouting and DRC-clean route repair
 - schematic-derived BOM rows until schematic symbols exist

@@ -114,6 +114,35 @@ test('apply_routing_plan writes review-required KiCad copper, vias, and zones', 
   }
 })
 
+test('advanced jobs build component database, schematic model, interactive edits, and DRC repair plan', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-advanced-test-'))
+  try {
+    await executeJob({ id: 'project', type: 'create_kicad_project', allowOverwrite: true, input: { projectName: 'Advanced Project', templateId: 'ESP32_S3_SENSOR' } }, workspace)
+    const projectPath = 'advanced-project'
+    const db = await executeJob({ id: 'db', type: 'sync_component_database', input: { projectPath } }, workspace)
+    assert.ok(['COMPONENT_DATABASE_READY_NEEDS_REVIEW', 'COMPONENT_DATABASE_PARTIAL_NEEDS_REVIEW'].includes(db.status))
+    assert.ok(db.components.length >= 4)
+    const schematic = await executeJob({ id: 'sch', type: 'generate_schematic', input: { projectPath } }, workspace)
+    assert.ok(['SCHEMATIC_MODEL_READY_NEEDS_ERC', 'SCHEMATIC_MODEL_NEEDS_ASSET_REVIEW'].includes(schematic.status))
+    assert.ok(schematic.schematicModel.symbols.length >= 4)
+    const schText = await readFile(path.join(workspace, projectPath, 'advanced-project.kicad_sch'), 'utf8')
+    assert.match(schText, /BoardForge schematic model/)
+    const edit = await executeJob({ id: 'edit', type: 'interactive_edit', input: { projectPath, prompt: 'make the board 10mm wider and round the corners' } }, workspace)
+    assert.equal(edit.status, 'INTERACTIVE_EDITS_APPLIED_NEEDS_REVIEW')
+    assert.ok(edit.edits.length >= 2)
+    await executeJob({ id: 'drc', type: 'run_kicad_drc', input: { projectPath } }, workspace)
+    const repair = await executeJob({ id: 'repair', type: 'plan_drc_repairs', input: { projectPath } }, workspace)
+    assert.ok(['DRC_REPAIR_PLAN_READY_NEEDS_REVIEW', 'DRC_REPAIR_NO_ACTIONS_FOUND'].includes(repair.status))
+    const state = JSON.parse(await readFile(path.join(workspace, projectPath, 'boardforge-project.json'), 'utf8'))
+    assert.ok(state.componentDatabase)
+    assert.ok(state.schematic)
+    assert.ok(state.interactiveEdits.length > 0)
+    assert.ok(state.drcRepair)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
 test('create_outline_board writes real KiCad files and review JSON only', async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-test-'))
   try {
