@@ -63,7 +63,11 @@ export function generateTemplateComponents(board, templateId) {
 
 function comp(ref, group, value, x, y, rotation) {
   const fp = footprintMap[group] || footprintMap.DEFAULT
-  return { ref, group, value, x, y, rotation, footprint: fp.footprint, footprintFile: fp.file }
+  const [width, height] = {
+    MCU: [10, 10], ESP32_S3: [18, 14], IMU: [3, 3], USB: [9, 7], RJ45: [16, 16], REGULATOR: [5, 5],
+    BLACKBOX: [6, 5], SENSOR_CONNECTOR: [10, 4], ESC_CONNECTOR: [10, 4], CAP: [1.6, 0.8], RES: [1.6, 0.8],
+  }[group] || [4, 3]
+  return { ref, group, value, x, y, rotation, width, height, footprint: fp.footprint, footprintFile: fp.file }
 }
 
 export async function renderPlacedFootprints(components = [], options = {}) {

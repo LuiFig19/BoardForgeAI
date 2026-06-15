@@ -23,7 +23,9 @@ export function kicadPcbFile(board, options = {}) {
   return `(kicad_pcb (version 20240108) (generator "BoardForge Plugin CLI")\n  (general (thickness 1.6))\n  (paper "A4")\n  (layers\n    (0 "F.Cu" signal)\n    (1 "In1.Cu" signal)\n    (2 "In2.Cu" signal)\n    (31 "B.Cu" signal)\n    (36 "B.SilkS" user)\n    (37 "F.SilkS" user)\n    (38 "B.Mask" user)\n    (39 "F.Mask" user)\n    (44 "Edge.Cuts" user)\n    (45 "Margin" user)\n    (46 "B.CrtYd" user)\n    (47 "F.CrtYd" user)\n    (48 "B.Fab" user)\n    (49 "F.Fab" user)\n  )${classes}\n  (setup (pad_to_mask_clearance 0))\n${edgeCuts.join('\n')}\n${holes.join('\n')}\n${grText(`BoardForge outline-only: ${board.name}`, bounds.minX, bounds.minY - 3)}\n${(options.footprints || []).join('\n')}\n)\n`
 }
 
-export function kicadSchematicFile(board) {
+export function kicadSchematicFile(board, options = {}) {
+  const components = options.components || []
+  const componentNotes = components.map((component, index) => `\t(text "${text(`${component.ref}: ${component.value || component.group || 'component'} | ${component.symbol?.libId || component.symbol || 'symbol needs review'} | ${component.footprint?.libId || component.footprint || 'footprint needs review'}`)}"\n\t\t(at 25 ${35 + index * 5} 0)\n\t\t(effects (font (size 1.2 1.2)) (justify left bottom))\n\t\t(uuid "${uuid()}")\n\t)`).join('\n')
   return `(kicad_sch
 \t(version 20250114)
 \t(generator "BoardForge Plugin CLI")
@@ -33,9 +35,15 @@ export function kicadSchematicFile(board) {
 \t(title_block
 \t\t(title "${text(board.name)}")
 \t\t(company "BoardForge AI")
-\t\t(comment 1 "Generated scaffold. Symbols and wiring still require BoardForge schematic adapter or human review.")
+\t\t(comment 1 "Review-required component manifest. Native symbol/wire emission must pass ERC before manufacturing.")
 \t)
 \t(lib_symbols)
+\t(text "BoardForge component manifest - review required"
+\t\t(at 25 25 0)
+\t\t(effects (font (size 1.5 1.5) bold) (justify left bottom))
+\t\t(uuid "${uuid()}")
+\t)
+${componentNotes}
 \t(sheet_instances
 \t\t(path "/"
 \t\t\t(page "1")

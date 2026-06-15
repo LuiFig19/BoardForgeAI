@@ -105,12 +105,14 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 
 - `create_outline_board` writes real `.kicad_pro`, `.kicad_pcb`, `README.md`, and `boardforge-review.json`.
 - `create_kicad_project` writes real `.kicad_pro`, `.kicad_sch`, `.kicad_pcb`, `README.md`, `boardforge-components.json`, and `boardforge-review.json`.
+- Project creation writes persistent `boardforge-project.json` state with requirements, board geometry, component/library decisions, validation results, exports, generated files, and history.
 - `create_kicad_project` places real KiCad footprints from installed footprint libraries for template components.
 - `sync_kicad_libraries` detects installed KiCad 10/9/8 library roots, optionally syncs allowlisted official KiCad symbol/footprint/3D repos, and writes `.boardforge/library-cache/boardforge-library-index.json`.
 - `search_library_assets` searches indexed symbols, footprints, and 3D models.
 - `resolve_component_assets` maps component refs/groups/values/MPNs to review-required symbol, footprint, and 3D model candidates.
 - `find_missing_footprints` reports which component footprints cannot be found in the indexed allowlisted libraries.
 - `link_3d_models` attaches available 3D model references from indexed KiCad footprints/packages.
+- `resolve_component_assets` and `link_3d_models` update `boardforge-project.json` when `projectPath` is provided.
 - `validate_board_outline` checks outline area, self-intersections, mounting hole containment, and edge clearance.
 - `create_net_classes`, `validate_net_classes`, and `report_unclassified_nets` use BoardForge net-class rules.
 - `generate_placement_plan` creates deterministic placement plans and fails on off-board/overlap issues.
@@ -119,12 +121,11 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `run_kicad_drc` and `run_kicad_erc` call local KiCad 10/9/8 `kicad-cli` when available and parse JSON reports.
 - `export_gerbers`, `export_drill_files`, `export_cpl`, and `export_bom` use whitelisted KiCad CLI commands.
 - If the schematic BOM is empty but placed components exist, `export_bom` writes a review-required BOM from `boardforge-components.json`.
-- `package_jlcpcb` creates a ZIP only when required Gerber, drill, BOM, CPL, and report files exist.
+- `package_jlcpcb` creates a ZIP only when required Gerber, drill, BOM, CPL, DRC, and ERC report files exist, and it blocks if DRC/ERC reports contain errors.
 
 ## Explicitly Not Complete Yet
 
-- Full schematic generation.
-- Footprint assignment from live libraries.
+- Full native schematic symbol/wire generation.
 - Real trace autorouting.
 - Native KiCad API editing.
 - Schematic-derived BOM rows until the schematic contains real symbols.
