@@ -92,7 +92,9 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - PCB net synchronization from component pin maps to footprint pads
 - routing endpoint inference from component connectivity instead of manual-only coordinates
 - explicit route waypoint generation so written copper is split into reviewable 45/90-degree legs
+- route geometry prechecks for off-board routes, bad vias, keepout violations, hole clearance, differential-pair mates, and power-route width review
 - manufacturing readiness validation that gates exports on DRC/ERC reports by default
+- BOM/CPL sanity checks for required columns, refs, coordinates, values, and placement rows
 - self-review quality gates
 - existing `.kicad_pcb` project scanning
 - KiCad 10 CLI detection on Windows common install paths
@@ -135,6 +137,7 @@ Endpoints:
 - `POST /jobs/validate-bindings`
 - `POST /jobs/validate-manufacturing`
 - `POST /jobs/generate-netlist`
+- `POST /jobs/validate-routing`
 - `POST /jobs/find-missing-footprints`
 - `POST /jobs/link-3d-models`
 - `POST /jobs/validate`

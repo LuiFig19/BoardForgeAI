@@ -35,6 +35,7 @@ const toolToJobType = {
   run_kicad_drc: 'run_kicad_drc',
   run_kicad_erc: 'run_kicad_erc',
   generate_routing_plan: 'generate_routing_plan',
+  validate_routing_geometry: 'validate_routing_geometry',
   optimize_placement: 'optimize_placement',
   apply_routing_plan: 'apply_routing_plan',
   route_critical_nets: 'route_critical_nets',

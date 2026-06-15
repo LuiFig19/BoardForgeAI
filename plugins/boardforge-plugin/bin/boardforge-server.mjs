@@ -23,6 +23,7 @@ const routes = {
   'POST /jobs/generate-netlist': 'generate_netlist',
   'POST /jobs/find-missing-footprints': 'find_missing_footprints',
   'POST /jobs/link-3d-models': 'link_3d_models',
+  'POST /jobs/validate-routing': 'validate_routing_geometry',
   'POST /jobs/validate': 'run_full_self_review',
   'POST /jobs/export': 'package_jlcpcb',
   'POST /jobs/run-drc': 'run_kicad_drc',

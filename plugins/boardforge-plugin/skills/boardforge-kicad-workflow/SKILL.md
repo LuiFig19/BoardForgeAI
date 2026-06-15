@@ -60,6 +60,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `fix_component_overlap`
 - `fix_mounting_hole_conflicts`
 - `generate_routing_plan`
+- `validate_routing_geometry`
 - `route_critical_nets`
 - `route_power_nets`
 - `route_diff_pair`
@@ -129,13 +130,15 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `create_net_classes`, `validate_net_classes`, and `report_unclassified_nets` use BoardForge net-class rules.
 - `generate_placement_plan` creates deterministic placement plans, scores density, edge connector intent, passive proximity, and ratsnest length, and fails on off-board/overlap issues.
 - `generate_routing_plan` creates a partial routing plan from explicit route points or inferred component pin-map endpoints, emits route waypoints for reviewable 45/90-degree legs, and reports unrouted nets. It does not claim full autorouting.
+- `validate_routing_geometry` prechecks route points, widths, via size/drill, via keepouts, mounting-hole clearance, differential-pair mates, copper-pour keepouts, and power-route width before copper is written.
 - Routing tools return compact-board via policy, layer-change rules, copper pour plans, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions.
 - `add_ground_zone`, `stitch_ground_vias`, `route_critical_nets`, `route_power_nets`, `route_diff_pair`, `route_signal_net`, `validate_routes`, and `report_unrouted_nets` are controlled planning tools. They do not claim completed copper until a later KiCad route writer applies and validates geometry.
-- `apply_routing_plan` can write review-required KiCad `segment`, `via`, and `zone` objects from a BoardForge routing plan, add PCB nets, and assign footprint pad nets from component pin maps, then requires `run_kicad_drc` before any export/manufacturing claim.
+- `apply_routing_plan` can write review-required KiCad `segment`, `via`, and `zone` objects from a BoardForge routing plan, add PCB nets, and assign footprint pad nets from component pin maps. It runs routing geometry prechecks first and then requires `run_kicad_drc` before any export/manufacturing claim.
 - `scan_kicad_project` parses existing `.kicad_pcb` projects for layers, nets, footprints, tracks, vias, zones, and mounting holes.
 - `run_kicad_drc` and `run_kicad_erc` call local KiCad 10/9/8 `kicad-cli` when available and parse JSON reports.
 - `export_gerbers`, `export_drill_files`, `export_cpl`, and `export_bom` use whitelisted KiCad CLI commands.
 - Export jobs are validation-gated by default. Use `allowUnvalidatedExport: true` only for development artifacts that must not be called manufacturing-ready.
+- Manufacturing readiness also checks BOM/CPL columns, refs, values, coordinates, and placement rows.
 - If the schematic BOM is empty but placed components exist, `export_bom` writes a review-required BOM from `boardforge-components.json`.
 - `package_jlcpcb` creates a ZIP only when required Gerber, drill, BOM, CPL, DRC, and ERC report files exist, and it blocks if DRC/ERC reports contain errors.
 
@@ -180,6 +183,7 @@ Supported endpoints:
 - `POST /jobs/validate-bindings`
 - `POST /jobs/validate-manufacturing`
 - `POST /jobs/generate-netlist`
+- `POST /jobs/validate-routing`
 - `POST /jobs/find-missing-footprints`
 - `POST /jobs/link-3d-models`
 - `POST /jobs/validate`

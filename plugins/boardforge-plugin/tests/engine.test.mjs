@@ -13,6 +13,7 @@ import { detectKiCadCli } from '../lib/kicad-cli.mjs'
 import { detectKiCadLibraryRoots } from '../lib/library-adapter.mjs'
 import { parseFootprintCourtyardFromText, parseFootprintPadsFromText, parseSymbolPinsFromText } from '../lib/component-compatibility.mjs'
 import { scorePlacement } from '../lib/placement.mjs'
+import { validateRoutingGeometry } from '../lib/routing-validation.mjs'
 
 test('validates a simple rectangular board outline', () => {
   const board = { outline: rectanglePoints(40, 30), mountingHoles: [{ id: 'MH1', x: 5, y: 5, diameterMm: 3 }] }
@@ -69,6 +70,28 @@ test('placement scoring reports ratsnest and edge connector intent', () => {
   assert.ok(scoring.score > 0)
   assert.ok(scoring.ratsnest.connectionCount >= 1)
   assert.ok(scoring.edgeConnectorScore > 70)
+})
+
+test('routing geometry precheck blocks bad vias and off-board routes', () => {
+  const board = { outline: rectanglePoints(30, 20), mountingHoles: [{ id: 'MH1', x: 15, y: 10, diameterMm: 3 }] }
+  const routingPlan = {
+    routes: [
+      {
+        net: 'VIN',
+        className: 'POWER_HIGH_CURRENT',
+        start: { x: 5, y: 10 },
+        end: { x: 34, y: 10 },
+        waypoints: [{ x: 5, y: 10 }, { x: 34, y: 10 }],
+        widthMm: 0.1,
+        viaPlan: { maxVias: 0, candidates: [{ x: 35, y: 10, diameterMm: 0.2, drillMm: 0.1 }], rules: { diameterMm: 0.45, drillMm: 0.2 } },
+      },
+    ],
+    designIntent: { zones: [], copperPours: [] },
+  }
+  const output = validateRoutingGeometry({ board, components: [], routingPlan, profile: getManufacturerProfile() })
+  assert.equal(output.status, 'ROUTING_GEOMETRY_NEEDS_FIX')
+  assert.ok(output.errors.some((issue) => issue.code === 'ROUTE_POINT_OFF_BOARD'))
+  assert.ok(output.errors.some((issue) => issue.code === 'VIA_DIAMETER_TOO_SMALL'))
 })
 
 test('routing jobs return keepout, via, and copper-pour logic for compact boards', async () => {
@@ -317,6 +340,7 @@ test('KiCad CLI adapter runs DRC and exports board files when KiCad is installed
     assert.equal(blockedGerbers.status, 'GERBERS_BLOCKED_VALIDATION_REQUIRED')
     const readiness = await executeJob({ id: 'readiness', type: 'validate_manufacturing_readiness', input }, workspace)
     assert.equal(readiness.status, 'MANUFACTURING_READINESS_BLOCKED')
+    assert.ok(readiness.errors.some((issue) => issue.code === 'DRC_ERRORS'))
     const gerbers = await executeJob({ id: 'gerbers', type: 'export_gerbers', input: { ...input, allowUnvalidatedExport: true } }, workspace)
     assert.equal(gerbers.status, 'GERBERS_EXPORTED')
     assert.ok(gerbers.generatedFiles.length > 0)

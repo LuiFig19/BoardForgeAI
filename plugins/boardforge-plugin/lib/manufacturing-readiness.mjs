@@ -64,19 +64,51 @@ function gateReport(report, label, required) {
 async function validateBom(file) {
   if (!existsSync(file)) return { file, exists: false, rowCount: 0, errors: [{ severity: 'ERROR', code: 'BOM_MISSING', message: 'BOM CSV has not been exported.' }], warnings: [] }
   const rows = parseCsv(await readFile(file, 'utf8'))
+  const header = rows[0] || []
   const body = rows.slice(1).filter((row) => row.some((cell) => cell.trim()))
   const warnings = []
+  const errors = []
+  for (const required of ['Refs', 'Value', 'Footprint']) {
+    if (!header.includes(required)) errors.push({ severity: 'ERROR', code: 'BOM_REQUIRED_COLUMN_MISSING', message: `BOM is missing required column ${required}.` })
+  }
   if (!body.length) warnings.push({ severity: 'WARNING', code: 'BOM_EMPTY', message: 'BOM CSV contains no component rows.' })
-  return { file, exists: true, rowCount: body.length, errors: [], warnings }
+  const refsIndex = header.indexOf('Refs')
+  const valueIndex = header.indexOf('Value')
+  const footprintIndex = header.indexOf('Footprint')
+  for (const [index, row] of body.entries()) {
+    if (refsIndex >= 0 && !row[refsIndex]?.trim()) errors.push({ severity: 'ERROR', code: 'BOM_ROW_MISSING_REFS', message: `BOM row ${index + 2} is missing refs.` })
+    if (valueIndex >= 0 && !row[valueIndex]?.trim()) warnings.push({ severity: 'WARNING', code: 'BOM_ROW_MISSING_VALUE', message: `BOM row ${index + 2} is missing value.` })
+    if (footprintIndex >= 0 && !row[footprintIndex]?.trim()) warnings.push({ severity: 'WARNING', code: 'BOM_ROW_MISSING_FOOTPRINT', message: `BOM row ${index + 2} is missing footprint.` })
+  }
+  return { file, exists: true, rowCount: body.length, errors, warnings }
 }
 
 async function validateCpl(file) {
   if (!existsSync(file)) return { file, exists: false, rowCount: 0, errors: [{ severity: 'ERROR', code: 'CPL_MISSING', message: 'CPL/pick-and-place CSV has not been exported.' }], warnings: [] }
   const rows = parseCsv(await readFile(file, 'utf8'))
+  const header = rows[0] || []
   const body = rows.slice(1).filter((row) => row.some((cell) => cell.trim()))
   const warnings = []
+  const errors = []
+  const refIndex = findHeader(header, ['Ref', 'Designator', 'Refs'])
+  const xIndex = findHeader(header, ['PosX', 'X', 'Mid X'])
+  const yIndex = findHeader(header, ['PosY', 'Y', 'Mid Y'])
+  const rotIndex = findHeader(header, ['Rot', 'Rotation'])
+  if (refIndex < 0) errors.push({ severity: 'ERROR', code: 'CPL_REF_COLUMN_MISSING', message: 'CPL is missing a reference/designator column.' })
+  if (xIndex < 0 || yIndex < 0) errors.push({ severity: 'ERROR', code: 'CPL_COORD_COLUMNS_MISSING', message: 'CPL is missing X/Y coordinate columns.' })
   if (!body.length) warnings.push({ severity: 'WARNING', code: 'CPL_EMPTY', message: 'CPL CSV contains no placement rows.' })
-  return { file, exists: true, rowCount: body.length, errors: [], warnings }
+  for (const [index, row] of body.entries()) {
+    if (refIndex >= 0 && !row[refIndex]?.trim()) errors.push({ severity: 'ERROR', code: 'CPL_ROW_MISSING_REF', message: `CPL row ${index + 2} is missing ref.` })
+    if (xIndex >= 0 && Number.isNaN(Number(row[xIndex]))) errors.push({ severity: 'ERROR', code: 'CPL_ROW_BAD_X', message: `CPL row ${index + 2} has non-numeric X coordinate.` })
+    if (yIndex >= 0 && Number.isNaN(Number(row[yIndex]))) errors.push({ severity: 'ERROR', code: 'CPL_ROW_BAD_Y', message: `CPL row ${index + 2} has non-numeric Y coordinate.` })
+    if (rotIndex >= 0 && row[rotIndex] && Number.isNaN(Number(row[rotIndex]))) warnings.push({ severity: 'WARNING', code: 'CPL_ROW_BAD_ROTATION', message: `CPL row ${index + 2} has non-numeric rotation.` })
+  }
+  return { file, exists: true, rowCount: body.length, errors, warnings }
+}
+
+function findHeader(header, names) {
+  const normalized = header.map((item) => String(item || '').trim().toLowerCase())
+  return normalized.findIndex((item) => names.map((name) => name.toLowerCase()).includes(item))
 }
 
 function parseCsv(text) {

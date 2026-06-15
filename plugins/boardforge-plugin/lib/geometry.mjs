@@ -1,6 +1,15 @@
 export const round = (value, digits = 3) => Number(Number(value).toFixed(digits))
 export const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
 
+export function distancePointToSegment(point, a, b) {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const lengthSq = dx * dx + dy * dy
+  if (lengthSq === 0) return distance(point, a)
+  const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSq))
+  return distance(point, { x: a.x + t * dx, y: a.y + t * dy })
+}
+
 export function polygonArea(points) {
   if (!Array.isArray(points) || points.length < 3) return 0
   return points.reduce((area, point, index) => {
