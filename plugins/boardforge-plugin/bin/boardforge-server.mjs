@@ -17,6 +17,7 @@ const routes = {
   'POST /jobs/create-project': 'create_kicad_project',
   'POST /jobs/snapshot': 'snapshot_project',
   'POST /jobs/list-snapshots': 'list_project_snapshots',
+  'POST /jobs/diff-snapshot': 'diff_project_snapshot',
   'POST /jobs/restore-snapshot': 'restore_project_snapshot',
   'POST /jobs/sync-libraries': 'sync_kicad_libraries',
   'POST /jobs/search-library': 'search_library_assets',

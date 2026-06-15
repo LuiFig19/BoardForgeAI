@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import crypto from 'node:crypto'
 import path from 'node:path'
 
 const snapshotRootName = '.boardforge'
@@ -78,6 +79,69 @@ export async function restoreProjectSnapshot(projectDir, snapshotId) {
   }
 }
 
+export async function diffProjectSnapshot(projectDir, snapshotId, input = {}) {
+  const root = safeResolve(projectDir, '.')
+  const id = safeSnapshotId(snapshotId)
+  const source = safeResolve(root, path.join(snapshotRootName, snapshotDirName, id))
+  const manifestPath = safeResolve(source, 'snapshot.json')
+  if (!existsSync(manifestPath)) throw new Error(`Snapshot not found: ${id}`)
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+  const maxPreviewLines = Number(input.maxPreviewLines || 80)
+  const fileDiffs = []
+  for (const relative of manifest.files || []) {
+    const beforePath = safeResolve(source, relative)
+    const afterPath = safeResolve(root, relative)
+    const before = existsSync(beforePath) ? await readFile(beforePath, 'utf8') : ''
+    const after = existsSync(afterPath) ? await readFile(afterPath, 'utf8') : ''
+    const beforeHash = sha256(before)
+    const afterHash = existsSync(afterPath) ? sha256(after) : null
+    const status = !existsSync(afterPath) ? 'deleted' : beforeHash === afterHash ? 'unchanged' : 'modified'
+    fileDiffs.push({
+      path: relative,
+      status,
+      beforeHash,
+      afterHash,
+      beforeLines: lineCount(before),
+      afterLines: existsSync(afterPath) ? lineCount(after) : 0,
+      summary: summarizeLineDelta(before, after),
+      preview: status === 'modified' ? diffPreview(before, after, maxPreviewLines) : [],
+    })
+  }
+  const currentFiles = await collectSnapshotFiles(root)
+  const manifestSet = new Set((manifest.files || []).map((file) => file.replace(/\\/g, '/')))
+  for (const file of currentFiles) {
+    const relative = path.relative(root, file).replace(/\\/g, '/')
+    if (manifestSet.has(relative)) continue
+    const after = await readFile(file, 'utf8')
+    fileDiffs.push({
+      path: relative,
+      status: 'added',
+      beforeHash: null,
+      afterHash: sha256(after),
+      beforeLines: 0,
+      afterLines: lineCount(after),
+      summary: { addedLines: lineCount(after), removedLines: 0, changed: true },
+      preview: after.split(/\r?\n/).slice(0, maxPreviewLines).map((line) => `+ ${line}`),
+    })
+  }
+  const changedFiles = fileDiffs.filter((file) => file.status !== 'unchanged')
+  return {
+    status: changedFiles.length ? 'PROJECT_DIFF_HAS_CHANGES_NEEDS_REVIEW' : 'PROJECT_DIFF_NO_CHANGES',
+    snapshot: manifest,
+    changedFiles: changedFiles.length,
+    files: fileDiffs,
+    totals: {
+      added: fileDiffs.filter((file) => file.status === 'added').length,
+      modified: fileDiffs.filter((file) => file.status === 'modified').length,
+      deleted: fileDiffs.filter((file) => file.status === 'deleted').length,
+      unchanged: fileDiffs.filter((file) => file.status === 'unchanged').length,
+      addedLines: fileDiffs.reduce((sum, file) => sum + file.summary.addedLines, 0),
+      removedLines: fileDiffs.reduce((sum, file) => sum + file.summary.removedLines, 0),
+    },
+    humanReviewRequired: changedFiles.length > 0,
+  }
+}
+
 async function collectSnapshotFiles(root) {
   const entries = await readdir(root, { withFileTypes: true })
   const files = []
@@ -101,4 +165,44 @@ function safeSnapshotId(value) {
   const id = String(value || '').trim().replace(/[^a-zA-Z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 96)
   if (!id || id === '.' || id === '..') throw new Error('Snapshot id is empty or unsafe.')
   return id
+}
+
+function sha256(value) {
+  return crypto.createHash('sha256').update(value).digest('hex')
+}
+
+function lineCount(value) {
+  if (!value) return 0
+  return value.split(/\r?\n/).length
+}
+
+function summarizeLineDelta(before, after) {
+  const beforeLines = before.split(/\r?\n/)
+  const afterLines = after.split(/\r?\n/)
+  const beforeCounts = countLines(beforeLines)
+  const afterCounts = countLines(afterLines)
+  let addedLines = 0
+  let removedLines = 0
+  for (const [line, count] of afterCounts) addedLines += Math.max(0, count - (beforeCounts.get(line) || 0))
+  for (const [line, count] of beforeCounts) removedLines += Math.max(0, count - (afterCounts.get(line) || 0))
+  return { addedLines, removedLines, changed: addedLines > 0 || removedLines > 0 }
+}
+
+function countLines(lines) {
+  const counts = new Map()
+  for (const line of lines) counts.set(line, (counts.get(line) || 0) + 1)
+  return counts
+}
+
+function diffPreview(before, after, maxLines) {
+  const beforeLines = before.split(/\r?\n/)
+  const afterLines = after.split(/\r?\n/)
+  const max = Math.max(beforeLines.length, afterLines.length)
+  const preview = []
+  for (let index = 0; index < max && preview.length < maxLines; index += 1) {
+    if (beforeLines[index] === afterLines[index]) continue
+    if (beforeLines[index] !== undefined) preview.push(`- ${beforeLines[index]}`)
+    if (afterLines[index] !== undefined && preview.length < maxLines) preview.push(`+ ${afterLines[index]}`)
+  }
+  return preview
 }

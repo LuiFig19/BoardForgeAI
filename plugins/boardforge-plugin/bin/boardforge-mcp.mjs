@@ -19,6 +19,7 @@ const toolToJobType = {
   validate_board_outline: 'validate_board_outline',
   snapshot_project: 'snapshot_project',
   list_project_snapshots: 'list_project_snapshots',
+  diff_project_snapshot: 'diff_project_snapshot',
   restore_project_snapshot: 'restore_project_snapshot',
   sync_kicad_libraries: 'sync_kicad_libraries',
   search_library_assets: 'search_library_assets',

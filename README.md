@@ -75,6 +75,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - KiCad project scaffolds with `.kicad_sch`, `.kicad_pcb`, and `.kicad_pro`
 - persistent `boardforge-project.json` state for requirements, board outline, components, library matches, validation reports, exports, generated files, and job history
 - controlled project snapshots, snapshot listing, and restore-before-review rollback for generated KiCad work
+- snapshot diff reports that show added/modified/deleted KiCad and BoardForge files before restore/export decisions
 - deterministic placement of real KiCad footprints from installed libraries
 - KiCad library indexing for installed KiCad symbols, footprints, and 3D models
 - component asset resolution for symbols, footprints, and 3D model candidates
@@ -136,6 +137,7 @@ Endpoints:
 - `POST /jobs/create-project`
 - `POST /jobs/snapshot`
 - `POST /jobs/list-snapshots`
+- `POST /jobs/diff-snapshot`
 - `POST /jobs/restore-snapshot`
 - `POST /jobs/sync-libraries`
 - `POST /jobs/search-library`
@@ -198,6 +200,7 @@ Real today:
 - local MCP tool calls for Codex
 - project state tracking across create, resolve, link, validate, export, and package jobs
 - project snapshots and restore jobs for safe rollback before/after AI-assisted edits
+- project snapshot diffs for approval and audit trails before restore/export
 - compact-board routing policy with via rules, layer-change logic, copper pour planning, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions
 - controlled `apply_routing_plan` writer for review-required KiCad `segment`, `via`, and `zone` objects
 - BoardForge component database enrichment with LCSC/MPN/package/pin-map candidates

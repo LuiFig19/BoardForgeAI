@@ -48,6 +48,12 @@ test('MCP server exposes BoardForge tools and runs controlled jobs', async () =>
     })
     const snapshotPayload = JSON.parse(snapshot.content[0].text)
     assert.equal(snapshotPayload.status, 'PROJECT_SNAPSHOT_CREATED')
+    const diff = await client.request('tools/call', {
+      name: 'diff_project_snapshot',
+      arguments: { id: 'mcp_diff', input: { projectPath: 'mcp-outline', snapshotId: snapshotPayload.snapshot.id } },
+    })
+    const diffPayload = JSON.parse(diff.content[0].text)
+    assert.equal(diffPayload.status, 'PROJECT_DIFF_NO_CHANGES')
   } finally {
     child.kill('SIGTERM')
     await rm(workspace, { recursive: true, force: true })

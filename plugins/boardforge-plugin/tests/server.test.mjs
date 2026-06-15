@@ -42,6 +42,11 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { projectPath: 'server-project' },
     })
     assert.equal(listed.count, 1)
+    const diff = await postJson(`http://127.0.0.1:${port}/jobs/diff-snapshot`, {
+      id: 'server_snapshot_diff',
+      input: { projectPath: 'server-project', snapshotId: snapshot.snapshot.id },
+    })
+    assert.equal(diff.status, 'PROJECT_DIFF_NO_CHANGES')
   } finally {
     child.kill('SIGTERM')
     await rm(workspace, { recursive: true, force: true })

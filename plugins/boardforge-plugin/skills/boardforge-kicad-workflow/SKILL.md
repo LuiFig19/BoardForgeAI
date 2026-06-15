@@ -40,6 +40,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `scan_kicad_project`
 - `snapshot_project`
 - `list_project_snapshots`
+- `diff_project_snapshot`
 - `restore_project_snapshot`
 - `sync_kicad_libraries`
 - `search_library_assets`
@@ -97,6 +98,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Prefer dry run before destructive edits.
 - Snapshot existing projects before edits when supported.
 - Restore only through `restore_project_snapshot`, then rerun scan, ERC, and DRC before export.
+- Run `diff_project_snapshot` before restore or export when a snapshot exists so the user can review changed files.
 - Treat all AI plans as proposals until validated.
 - Require human review before manufacturing.
 - Never claim `DRC pass`, `ERC pass`, `routed`, `JLCPCB ready`, or `manufacturable` unless the local tool result proves it.
@@ -118,6 +120,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `create_kicad_project` writes real `.kicad_pro`, `.kicad_sch`, `.kicad_pcb`, `README.md`, `boardforge-components.json`, `boardforge-bindings.json`, and `boardforge-review.json`.
 - Project creation writes persistent `boardforge-project.json` state with requirements, board geometry, component/library decisions, validation results, exports, generated files, and history.
 - `snapshot_project`, `list_project_snapshots`, and `restore_project_snapshot` provide controlled rollback for KiCad project files and BoardForge metadata before risky edits.
+- `diff_project_snapshot` compares current project files to a saved snapshot and reports added, modified, deleted, and unchanged files with line-delta summaries.
 - `create_kicad_project` places real KiCad footprints from installed footprint libraries for template components.
 - `sync_kicad_libraries` detects installed KiCad 10/9/8 library roots, optionally syncs allowlisted official KiCad symbol/footprint/3D repos, and writes `.boardforge/library-cache/boardforge-library-index.json`.
 - `search_library_assets` searches indexed symbols, footprints, and 3D models.
@@ -186,6 +189,7 @@ Supported endpoints:
 - `POST /jobs/create-project`
 - `POST /jobs/snapshot`
 - `POST /jobs/list-snapshots`
+- `POST /jobs/diff-snapshot`
 - `POST /jobs/restore-snapshot`
 - `POST /jobs/sync-libraries`
 - `POST /jobs/search-library`

@@ -89,6 +89,10 @@ const pluginCommands = [
   'create_kicad_project',
   'apply_edge_cuts',
   'scan_kicad_project',
+  'snapshot_project',
+  'list_project_snapshots',
+  'diff_project_snapshot',
+  'restore_project_snapshot',
   'find_missing_footprints',
   'link_3d_models',
   'run_kicad_drc',
@@ -1942,6 +1946,7 @@ function PluginPage() {
     'Place components',
     'Assist critical routing',
     'Run ERC/DRC',
+    'Snapshot and diff KiCad projects',
     'Export Gerbers',
     'Export drill files',
     'Export BOM',
@@ -2007,7 +2012,7 @@ function PluginPage() {
         </Panel>
         <Panel title="Local security model">
           <div className="icon-list">
-            {['No arbitrary shell execution', 'Whitelisted KiCad commands only', 'Workspace path sanitization', 'Dry-run before destructive edits', 'Snapshots before overwrite', 'Schema validation for every AI output', 'Full action logs and reports'].map((item) => (
+            {['No arbitrary shell execution', 'Whitelisted KiCad commands only', 'Workspace path sanitization', 'Dry-run before destructive edits', 'Snapshots before overwrite', 'Snapshot diffs before restore/export', 'Schema validation for every AI output', 'Full action logs and reports'].map((item) => (
               <span key={item}><ShieldCheck size={17} /> {item}</span>
             ))}
           </div>
