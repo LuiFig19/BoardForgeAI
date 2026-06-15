@@ -41,6 +41,9 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `sync_kicad_libraries`
 - `search_library_assets`
 - `resolve_component_assets`
+- `sync_component_database`
+- `resolve_bom_parts`
+- `validate_component_bindings`
 - `find_missing_footprints`
 - `link_3d_models`
 - `create_net_classes`
@@ -104,7 +107,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 ## Current Real Capabilities
 
 - `create_outline_board` writes real `.kicad_pro`, `.kicad_pcb`, `README.md`, and `boardforge-review.json`.
-- `create_kicad_project` writes real `.kicad_pro`, `.kicad_sch`, `.kicad_pcb`, `README.md`, `boardforge-components.json`, and `boardforge-review.json`.
+- `create_kicad_project` writes real `.kicad_pro`, `.kicad_sch`, `.kicad_pcb`, `README.md`, `boardforge-components.json`, `boardforge-bindings.json`, and `boardforge-review.json`.
 - Project creation writes persistent `boardforge-project.json` state with requirements, board geometry, component/library decisions, validation results, exports, generated files, and history.
 - `create_kicad_project` places real KiCad footprints from installed footprint libraries for template components.
 - `sync_kicad_libraries` detects installed KiCad 10/9/8 library roots, optionally syncs allowlisted official KiCad symbol/footprint/3D repos, and writes `.boardforge/library-cache/boardforge-library-index.json`.
@@ -114,13 +117,14 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `link_3d_models` attaches available 3D model references from indexed KiCad footprints/packages.
 - `resolve_component_assets` and `link_3d_models` update `boardforge-project.json` when `projectPath` is provided.
 - `sync_component_database` and `resolve_bom_parts` enrich components with LCSC, MPN, package, pin-map, symbol, footprint, 3D model, and stock-risk candidates.
+- `validate_component_bindings` parses KiCad symbol pins and footprint pads, compares them to BoardForge pin maps, and writes compatibility results to `boardforge-bindings.json` when `projectPath` is provided.
 - `generate_schematic` writes review-required KiCad schematic objects into `.kicad_sch`, including symbols, footprint properties, wires, labels, global labels, and symbol instances. Run ERC after it.
 - `plan_drc_repairs` and `apply_safe_drc_repairs` create a DRC repair plan and apply only low-risk safe repairs; rerun DRC after any repair.
 - `interactive_edit` parses plain-English edits such as resizing the board, rounding corners, moving USB to an edge, enforcing antenna keepout, or increasing power route width.
 - `validate_board_outline` checks outline area, self-intersections, mounting hole containment, and edge clearance.
 - `create_net_classes`, `validate_net_classes`, and `report_unclassified_nets` use BoardForge net-class rules.
-- `generate_placement_plan` creates deterministic placement plans and fails on off-board/overlap issues.
-- `generate_routing_plan` creates a partial routing plan from explicit route points or inferred component pin-map endpoints, and reports unrouted nets. It does not claim full autorouting.
+- `generate_placement_plan` creates deterministic placement plans, scores density, edge connector intent, passive proximity, and ratsnest length, and fails on off-board/overlap issues.
+- `generate_routing_plan` creates a partial routing plan from explicit route points or inferred component pin-map endpoints, emits route waypoints for reviewable 45/90-degree legs, and reports unrouted nets. It does not claim full autorouting.
 - Routing tools return compact-board via policy, layer-change rules, copper pour plans, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions.
 - `add_ground_zone`, `stitch_ground_vias`, `route_critical_nets`, `route_power_nets`, `route_diff_pair`, `route_signal_net`, `validate_routes`, and `report_unrouted_nets` are controlled planning tools. They do not claim completed copper until a later KiCad route writer applies and validates geometry.
 - `apply_routing_plan` can write review-required KiCad `segment`, `via`, and `zone` objects from a BoardForge routing plan, add PCB nets, and assign footprint pad nets from component pin maps, then requires `run_kicad_drc` before any export/manufacturing claim.
@@ -168,6 +172,7 @@ Supported endpoints:
 - `POST /jobs/sync-libraries`
 - `POST /jobs/search-library`
 - `POST /jobs/resolve-assets`
+- `POST /jobs/validate-bindings`
 - `POST /jobs/find-missing-footprints`
 - `POST /jobs/link-3d-models`
 - `POST /jobs/validate`

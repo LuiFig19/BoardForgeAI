@@ -77,6 +77,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - deterministic placement of real KiCad footprints from installed libraries
 - KiCad library indexing for installed KiCad symbols, footprints, and 3D models
 - component asset resolution for symbols, footprints, and 3D model candidates
+- symbol/footprint/pin-map compatibility validation from parsed KiCad symbol pins and footprint pads
 - 3D model linking from indexed KiCad footprint/model libraries
 - review-required BOM generation from the placed component manifest when the schematic BOM is empty
 - Edge.Cuts geometry validation
@@ -84,10 +85,12 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - JLCPCB/PCBWay manufacturer profiles
 - PCB net-class profiles and net classification
 - deterministic placement planning with off-board/overlap checks
+- placement scoring for density, edge connector intent, passive proximity, and estimated ratsnest length
 - partial routing plans that report unrouted nets
 - native KiCad schematic object generation for symbols, wires, labels, global labels, and symbol instances
 - PCB net synchronization from component pin maps to footprint pads
 - routing endpoint inference from component connectivity instead of manual-only coordinates
+- explicit route waypoint generation so written copper is split into reviewable 45/90-degree legs
 - self-review quality gates
 - existing `.kicad_pcb` project scanning
 - KiCad 10 CLI detection on Windows common install paths
@@ -124,6 +127,12 @@ Endpoints:
 - `GET /jobs/:id`
 - `POST /jobs/create-outline`
 - `POST /jobs/create-project`
+- `POST /jobs/sync-libraries`
+- `POST /jobs/search-library`
+- `POST /jobs/resolve-assets`
+- `POST /jobs/validate-bindings`
+- `POST /jobs/find-missing-footprints`
+- `POST /jobs/link-3d-models`
 - `POST /jobs/validate`
 - `POST /jobs/run-drc`
 - `POST /jobs/run-erc`
@@ -142,6 +151,7 @@ This writes:
 - `boardforge-project.json`
 - `boardforge-components.json` for project scaffolds
 - `boardforge-library.json` for project scaffolds
+- `boardforge-bindings.json` for project scaffolds and binding validation
 - `boardforge-review.json`
 - `README.md`
 
@@ -167,6 +177,7 @@ Real today:
 - placement/routing plan validation
 - scan summaries for existing KiCad PCB files
 - installed KiCad library indexing and component asset matching
+- parsed symbol/footprint compatibility reports written to `boardforge-bindings.json`
 - local MCP tool calls for Codex
 - project state tracking across create, resolve, link, validate, export, and package jobs
 - compact-board routing policy with via rules, layer-change logic, copper pour planning, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions
@@ -175,6 +186,8 @@ Real today:
 - schematic object generation with symbols, wires, labels, power/global labels, component footprint properties, and symbol instances written into `.kicad_sch`
 - schematic-to-PCB net propagation that writes net declarations and assigns component pad nets from BoardForge pin maps
 - routing endpoint inference from matching component pins so route plans start from actual component connectivity
+- placement scoring with ratsnest, edge-connector, passive-proximity, and density metrics
+- route waypoint generation for sane review-required copper legs before DRC
 - DRC repair planning plus safe repair application for low-risk cleanup actions
 - plain-English interactive edit parsing for board resize, rounded corners, edge placement, keepouts, and route-width intents
 - test coverage for geometry, net classes, placement, routing-plan honesty, outline generation, library resolution, MCP calls, KiCad CLI validation/export, and blocked packaging

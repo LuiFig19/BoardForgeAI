@@ -16,6 +16,7 @@ export function generateRoutingPlan(nets, options = {}) {
     const start = net.start || endpoints.start
     const end = net.end || endpoints.end
     const viaPlan = planViasForRoute({ net, start, end, board: { ...board, layerCount }, zones: designIntent.zones, profile: options.profile || {} })
+    const waypoints = start && end ? routeWaypoints({ start, end, net, viaPlan }) : []
     return {
       net: net.name,
       className: net.className || 'DEFAULT',
@@ -27,6 +28,8 @@ export function generateRoutingPlan(nets, options = {}) {
       clearanceMm: profile.clearanceMm,
       layerPreference: profile.layerPreference,
       viaPlan,
+      waypoints,
+      estimatedLengthMm: estimatePathLength(waypoints),
       status: canPlanOnly ? 'planned_zone_or_short_route' : 'planned_not_routed',
     }
   })
@@ -39,6 +42,40 @@ export function generateRoutingPlan(nets, options = {}) {
     designIntent,
     warnings: ['CLI MVP generates a routing/via/copper-pour plan only. It does not claim full autorouting.', 'Use KiCad interactive routing or a later BoardForge routing adapter for completed copper.', 'Sensitive antenna, thermal, and analog/IMU keepouts require human review before manufacturing.'],
   }
+}
+
+function routeWaypoints({ start, end, net, viaPlan }) {
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  const prefers45 = ['USB_DIFF', 'ETHERNET_DIFF', 'CAN_DIFF', 'CRYSTAL', 'CLOCK'].includes(net.className)
+  const via = viaPlan?.viaStack !== 'avoid_vias' ? viaPlan?.candidates?.[0] : null
+  if (via) {
+    return [start, routeElbow(start, via, prefers45), via, routeElbow(via, end, prefers45), end].filter(uniqueConsecutivePoints)
+  }
+  return [start, routeElbow(start, end, prefers45 || Math.abs(dx) !== Math.abs(dy)), end].filter(uniqueConsecutivePoints)
+}
+
+function routeElbow(start, end, prefers45) {
+  if (prefers45 && Math.abs(end.x - start.x) > 2 && Math.abs(end.y - start.y) > 2) {
+    const step = Math.min(Math.abs(end.x - start.x), Math.abs(end.y - start.y))
+    return { x: start.x + Math.sign(end.x - start.x) * step, y: start.y + Math.sign(end.y - start.y) * step }
+  }
+  const horizontalFirst = Math.abs(end.x - start.x) >= Math.abs(end.y - start.y)
+  return horizontalFirst ? { x: end.x, y: start.y } : { x: start.x, y: end.y }
+}
+
+function uniqueConsecutivePoints(point, index, points) {
+  if (index === 0) return true
+  const previous = points[index - 1]
+  return previous.x !== point.x || previous.y !== point.y
+}
+
+function estimatePathLength(points = []) {
+  let length = 0
+  for (let index = 1; index < points.length; index += 1) {
+    length += Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y)
+  }
+  return Math.round(length * 100) / 100
 }
 
 function inferEndpoints(net, components) {

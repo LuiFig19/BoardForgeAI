@@ -18,8 +18,9 @@ import { buildComponentDatabase, enrichComponents } from './component-database.m
 import { generateSchematicModel, kicadSchematicFromModel } from './schematic-generator.mjs'
 import { applySafeDrcRepairs, planDrcRepairs } from './drc-repair.mjs'
 import { applyInteractiveEdits } from './interactive-edits.mjs'
+import { validateComponentBindings } from './component-compatibility.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'validate_component_bindings', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -54,6 +55,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'search_library_assets') return librarySearchJob(job, workspace)
   if (job.type === 'resolve_component_assets') return resolveAssetsJob(job, workspace)
   if (job.type === 'sync_component_database' || job.type === 'resolve_bom_parts') return componentDatabaseJob(job, workspace)
+  if (job.type === 'validate_component_bindings') return validateComponentBindingsJob(job, workspace)
   if (job.type === 'generate_schematic') return generateSchematicJob(job, workspace)
   if (job.type === 'plan_drc_repairs') return planDrcRepairsJob(job, workspace)
   if (job.type === 'apply_safe_drc_repairs') return applySafeDrcRepairsJob(job, workspace)
@@ -119,19 +121,22 @@ async function createKiCadProject(job, workspace, profile) {
     const resolved = library.components?.find((item) => item.ref === component.ref)
     return { ...component, symbol: resolved?.symbol || component.symbol || null, footprint: resolved?.footprint || component.footprint, model3d: resolved?.model3d || component.model3d || null, confidence: resolved?.confidence || 'needs_review' }
   })
-  const state = createProjectState({ job: { ...job, input: { ...job.input, designIntent } }, board, mode: 'full_project_scaffold', profile, components: resolvedComponents, library, review: { ...review, placementIssues, zoneIssues }, generatedFiles: [] })
+  const bindingReport = await validateComponentBindings(resolvedComponents)
+  const state = createProjectState({ job: { ...job, input: { ...job.input, designIntent } }, board, mode: 'full_project_scaffold', profile, components: resolvedComponents, library, componentBindings: bindingReport, review: { ...review, placementIssues, zoneIssues, bindingIssues: [...bindingReport.warnings, ...bindingReport.errors] }, generatedFiles: [] })
   const files = [
     { path: `${safeName}.kicad_pro`, content: kicadProjectFile(board, netClasses) },
     { path: `${safeName}.kicad_sch`, content: kicadSchematicFile(board, { components: resolvedComponents }) },
     { path: `${safeName}.kicad_pcb`, content: kicadPcbFile(board, { netClasses, footprints }) },
     { path: 'boardforge-components.json', content: JSON.stringify(resolvedComponents, null, 2) },
     { path: 'boardforge-library.json', content: JSON.stringify(library, null, 2) },
+    { path: 'boardforge-bindings.json', content: JSON.stringify(bindingReport, null, 2) },
     { path: 'boardforge-review.json', content: JSON.stringify({ ...review, components }, null, 2) },
     { path: stateFileName, content: JSON.stringify({ ...state, generatedFiles: [] }, null, 2) },
     { path: 'README.md', content: projectReadmeFile(job, board, review) },
   ]
   const generatedFiles = files.map((file) => path.join(projectDir, file.path))
-  files[6] = { path: stateFileName, content: JSON.stringify({ ...state, generatedFiles }, null, 2) }
+  const stateIndex = files.findIndex((file) => file.path === stateFileName)
+  files[stateIndex] = { path: stateFileName, content: JSON.stringify({ ...state, generatedFiles }, null, 2) }
   if (!job.dryRun) {
     await mkdir(projectDir, { recursive: true })
     for (const file of files) await writeFile(resolveInsideWorkspace(projectDir, file.path), file.content, 'utf8')
@@ -178,6 +183,36 @@ async function componentDatabaseJob(job, workspace) {
     }))
   }
   return result(job, output.status, output.riskSummary.missingAssets ? [{ severity: 'WARNING', code: 'COMPONENT_ASSETS_MISSING', message: `${output.riskSummary.missingAssets} components are missing complete symbol/footprint assets.` }] : [], [], output)
+}
+
+async function validateComponentBindingsJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const output = await validateComponentBindings(components)
+  if (projectDir) {
+    const outputFile = path.join(projectDir, 'boardforge-bindings.json')
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      componentBindings: output,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Validated ${output.checked} symbol/footprint/pin-map bindings.`,
+    }))
+    return result(job, output.status, output.warnings, output.errors, { ...output, generatedFiles: [outputFile] })
+  }
+  return result(job, output.status, output.warnings, output.errors, output)
+}
+
+async function readRichComponents(projectDir) {
+  if (!projectDir) return null
+  try {
+    return JSON.parse(await readFile(path.join(projectDir, 'boardforge-components.json'), 'utf8'))
+  } catch {
+    return null
+  }
 }
 
 async function generateSchematicJob(job, workspace) {
@@ -289,7 +324,7 @@ function validateNetClassesJob(job) {
 }
 
 function placementPlanJob(job, profile) {
-  const plan = generatePlacementPlan(boardFromJob(job), boardTemplates[job.input?.templateId], profile)
+  const plan = generatePlacementPlan(boardFromJob(job), boardTemplates[job.input?.templateId], profile, { components: job.input?.components || [], nets: job.input?.nets || [] })
   return result(job, plan.status, plan.issues.filter((item) => item.severity === 'WARNING'), plan.issues.filter((item) => ['BLOCKER', 'ERROR'].includes(item.severity)), { placementPlan: plan, humanReviewRequired: true })
 }
 

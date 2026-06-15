@@ -4,7 +4,7 @@ import path from 'node:path'
 
 export const stateFileName = 'boardforge-project.json'
 
-export function createProjectState({ job, board, mode, profile, components = [], library = null, review = null, generatedFiles = [] }) {
+export function createProjectState({ job, board, mode, profile, components = [], library = null, componentBindings = null, review = null, generatedFiles = [] }) {
   const now = new Date().toISOString()
   return {
     schemaVersion: 1,
@@ -26,6 +26,7 @@ export function createProjectState({ job, board, mode, profile, components = [],
     components: normalizeComponents(components),
     designIntent: job.input?.designIntent || null,
     library,
+    componentBindings,
     validation: {
       selfReview: review,
       outline: [],
@@ -149,6 +150,10 @@ export function normalizeComponents(components) {
     symbol: component.symbol?.libId || component.symbol || null,
     footprint: component.footprint?.libId || component.footprint || null,
     model3d: component.model3d?.path || component.model3d || null,
+    pinMap: component.pinMap || {},
+    package: component.package || null,
+    lcsc: component.lcsc || null,
+    mpn: component.mpn || null,
     libraryStatus: component.footprint && component.symbol ? 'resolved_needs_review' : 'needs_review',
   }))
 }

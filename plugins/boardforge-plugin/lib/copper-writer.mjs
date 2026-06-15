@@ -107,13 +107,14 @@ export function materializeRouteObjects(board, routingPlan) {
     const layer = route.layerPreference?.[0] || 'F.Cu'
     const via = route.viaPlan?.candidates?.[0]
     if (via && route.viaPlan?.viaStack !== 'avoid_vias') {
-      segments.push(routeSegment(route, route.start, via, layer))
+      const beforeVia = route.waypoints?.length ? route.waypoints.slice(0, Math.max(2, route.waypoints.findIndex((point) => point.x === via.x && point.y === via.y) + 1)) : [route.start, via]
+      appendPathSegments(segments, route, beforeVia, layer)
       vias.push({ net: route.net, x: via.x, y: via.y, diameterMm: via.diameterMm, drillMm: via.drillMm, layers: ['F.Cu', 'B.Cu'], reason: via.reason })
-      segments.push(routeSegment(route, via, route.end, 'B.Cu'))
+      const viaIndex = route.waypoints?.findIndex((point) => point.x === via.x && point.y === via.y) ?? -1
+      const afterVia = viaIndex >= 0 ? route.waypoints.slice(viaIndex) : [via, route.end]
+      appendPathSegments(segments, route, afterVia, 'B.Cu')
     } else {
-      const elbow = routeElbow(route.start, route.end)
-      segments.push(routeSegment(route, route.start, elbow, layer))
-      segments.push(routeSegment(route, elbow, route.end, layer))
+      appendPathSegments(segments, route, route.waypoints?.length ? route.waypoints : [route.start, routeElbow(route.start, route.end), route.end], layer)
     }
   }
   for (const pour of routingPlan.designIntent?.copperPours || []) {
@@ -128,6 +129,15 @@ export function materializeRouteObjects(board, routingPlan) {
     })
   }
   return { segments, vias, zones }
+}
+
+function appendPathSegments(segments, route, points, layer) {
+  for (let index = 1; index < points.length; index += 1) {
+    const start = points[index - 1]
+    const end = points[index]
+    if (start.x === end.x && start.y === end.y) continue
+    segments.push(routeSegment(route, start, end, layer))
+  }
 }
 
 function ensureNets(content, netNames) {

@@ -11,6 +11,8 @@ import { generateRoutingPlan } from '../lib/routing.mjs'
 import { executeJob } from '../lib/jobs.mjs'
 import { detectKiCadCli } from '../lib/kicad-cli.mjs'
 import { detectKiCadLibraryRoots } from '../lib/library-adapter.mjs'
+import { parseFootprintPadsFromText, parseSymbolPinsFromText } from '../lib/component-compatibility.mjs'
+import { scorePlacement } from '../lib/placement.mjs'
 
 test('validates a simple rectangular board outline', () => {
   const board = { outline: rectanglePoints(40, 30), mountingHoles: [{ id: 'MH1', x: 5, y: 5, diameterMm: 3 }] }
@@ -43,8 +45,29 @@ test('routing plan does not claim full autorouting', () => {
   assert.deepEqual(plan.routedNets, [])
   assert.equal(plan.unroutedNets.includes('USB_DP'), true)
   assert.equal(plan.designIntent.copperPours.some((pour) => pour.net === 'GND'), true)
-  assert.equal(plan.routes.find((route) => route.net === 'USB_DP').viaPlan.maxVias, 0)
-  assert.equal(plan.designIntent.viaRules.preferSameLayerFor.includes('USB_DIFF'), true)
+    assert.equal(plan.routes.find((route) => route.net === 'USB_DP').viaPlan.maxVias, 0)
+    assert.ok(Array.isArray(plan.routes.find((route) => route.net === 'USB_DP').waypoints))
+    assert.equal(plan.designIntent.viaRules.preferSameLayerFor.includes('USB_DIFF'), true)
+})
+
+test('parses KiCad symbol pins and footprint pads for compatibility checks', () => {
+  const symbolText = `(kicad_symbol_lib (version 20241209) (symbol "Device:R" (pin passive line (at 0 0 0) (length 2.54) (name "~") (number "1")) (pin passive line (at 0 2.54 0) (length 2.54) (name "~") (number "2"))))`
+  const footprintText = `(footprint "Resistor_SMD:R_0603_1608Metric" (pad "1" smd roundrect (at -0.8 0) (size 0.8 0.95) (layers "F.Cu")) (pad "2" smd roundrect (at 0.8 0) (size 0.8 0.95) (layers "F.Cu")))`
+  assert.deepEqual(parseSymbolPinsFromText(symbolText, 'Device:R').map((pin) => pin.number), ['1', '2'])
+  assert.deepEqual(parseFootprintPadsFromText(footprintText).map((pad) => pad.name), ['1', '2'])
+})
+
+test('placement scoring reports ratsnest and edge connector intent', () => {
+  const board = { outline: rectanglePoints(50, 30), mountingHoles: [] }
+  const components = [
+    { ref: 'J1', group: 'USB', x: 4, y: 15, width: 9, height: 7, pinMap: { A6: 'USB_DP' } },
+    { ref: 'U1', group: 'ESP32_S3', x: 27, y: 15, width: 18, height: 14, pinMap: { USB_DP: 'USB_DP' } },
+    { ref: 'C1', group: 'CAP', x: 25, y: 21, width: 1.6, height: 0.8, pinMap: { 1: '3V3', 2: 'GND' } },
+  ]
+  const scoring = scorePlacement(board, components, [{ name: 'USB_DP' }], getManufacturerProfile())
+  assert.ok(scoring.score > 0)
+  assert.ok(scoring.ratsnest.connectionCount >= 1)
+  assert.ok(scoring.edgeConnectorScore > 70)
 })
 
 test('routing jobs return keepout, via, and copper-pour logic for compact boards', async () => {
@@ -122,6 +145,9 @@ test('advanced jobs build component database, schematic model, interactive edits
     const db = await executeJob({ id: 'db', type: 'sync_component_database', input: { projectPath } }, workspace)
     assert.ok(['COMPONENT_DATABASE_READY_NEEDS_REVIEW', 'COMPONENT_DATABASE_PARTIAL_NEEDS_REVIEW'].includes(db.status))
     assert.ok(db.components.length >= 4)
+    const bindings = await executeJob({ id: 'bindings', type: 'validate_component_bindings', input: { projectPath } }, workspace)
+    assert.ok(['COMPONENT_BINDINGS_VALID_NEEDS_REVIEW', 'COMPONENT_BINDINGS_NEED_REVIEW', 'COMPONENT_BINDINGS_NEED_FIX'].includes(bindings.status))
+    assert.ok(bindings.checked >= 4)
     const schematic = await executeJob({ id: 'sch', type: 'generate_schematic', input: { projectPath } }, workspace)
     assert.ok(['SCHEMATIC_MODEL_READY_NEEDS_ERC', 'SCHEMATIC_MODEL_NEEDS_ASSET_REVIEW'].includes(schematic.status))
     assert.ok(schematic.schematicModel.symbols.length >= 4)
@@ -138,6 +164,7 @@ test('advanced jobs build component database, schematic model, interactive edits
     assert.ok(['DRC_REPAIR_PLAN_READY_NEEDS_REVIEW', 'DRC_REPAIR_NO_ACTIONS_FOUND'].includes(repair.status))
     const state = JSON.parse(await readFile(path.join(workspace, projectPath, 'boardforge-project.json'), 'utf8'))
     assert.ok(state.componentDatabase)
+    assert.ok(state.componentBindings)
     assert.ok(state.schematic)
     assert.ok(state.interactiveEdits.length > 0)
     assert.ok(state.drcRepair)
