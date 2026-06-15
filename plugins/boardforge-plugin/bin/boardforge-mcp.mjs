@@ -25,6 +25,7 @@ const toolToJobType = {
   validate_component_bindings: 'validate_component_bindings',
   validate_manufacturing_readiness: 'validate_manufacturing_readiness',
   generate_netlist: 'generate_netlist',
+  run_design_audit: 'run_design_audit',
   generate_schematic: 'generate_schematic',
   plan_drc_repairs: 'plan_drc_repairs',
   apply_safe_drc_repairs: 'apply_safe_drc_repairs',

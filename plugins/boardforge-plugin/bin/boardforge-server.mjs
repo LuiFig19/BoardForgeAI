@@ -21,6 +21,7 @@ const routes = {
   'POST /jobs/validate-bindings': 'validate_component_bindings',
   'POST /jobs/validate-manufacturing': 'validate_manufacturing_readiness',
   'POST /jobs/generate-netlist': 'generate_netlist',
+  'POST /jobs/design-audit': 'run_design_audit',
   'POST /jobs/find-missing-footprints': 'find_missing_footprints',
   'POST /jobs/link-3d-models': 'link_3d_models',
   'POST /jobs/validate-routing': 'validate_routing_geometry',

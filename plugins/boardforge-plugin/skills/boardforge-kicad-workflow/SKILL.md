@@ -45,6 +45,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `resolve_bom_parts`
 - `validate_component_bindings`
 - `generate_netlist`
+- `run_design_audit`
 - `validate_manufacturing_readiness`
 - `find_missing_footprints`
 - `link_3d_models`
@@ -122,6 +123,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `sync_component_database` and `resolve_bom_parts` enrich components with LCSC, MPN, package, pin-map, symbol, footprint, 3D model, and stock-risk candidates.
 - `validate_component_bindings` parses KiCad symbol pins and footprint pads, compares them to BoardForge pin maps, and writes compatibility results to `boardforge-bindings.json` when `projectPath` is provided.
 - `generate_netlist` writes `boardforge-netlist.json` from component pin maps so Codex can review schematic/PCB connectivity before routing.
+- `run_design_audit` writes `boardforge-design-report.json`, combining netlist coverage, PCB pad-net audit, placement score, route prechecks, binding issues, and recommended next BoardForge actions.
 - `validate_manufacturing_readiness` checks DRC/ERC reports plus BOM/CPL artifacts and reports blockers before export/package workflows.
 - `generate_schematic` writes review-required KiCad schematic objects into `.kicad_sch`, including symbols, footprint properties, wires, labels, global labels, and symbol instances. Run ERC after it.
 - `plan_drc_repairs` and `apply_safe_drc_repairs` create a DRC repair plan and apply only low-risk safe repairs; rerun DRC after any repair.
@@ -183,6 +185,7 @@ Supported endpoints:
 - `POST /jobs/validate-bindings`
 - `POST /jobs/validate-manufacturing`
 - `POST /jobs/generate-netlist`
+- `POST /jobs/design-audit`
 - `POST /jobs/validate-routing`
 - `POST /jobs/find-missing-footprints`
 - `POST /jobs/link-3d-models`

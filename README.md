@@ -95,6 +95,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - route geometry prechecks for off-board routes, bad vias, keepout violations, hole clearance, differential-pair mates, and power-route width review
 - manufacturing readiness validation that gates exports on DRC/ERC reports by default
 - BOM/CPL sanity checks for required columns, refs, coordinates, values, and placement rows
+- design-audit report generation that combines netlist, PCB pad-net audit, placement score, routing prechecks, and recommended next actions
 - self-review quality gates
 - existing `.kicad_pcb` project scanning
 - KiCad 10 CLI detection on Windows common install paths
@@ -137,6 +138,7 @@ Endpoints:
 - `POST /jobs/validate-bindings`
 - `POST /jobs/validate-manufacturing`
 - `POST /jobs/generate-netlist`
+- `POST /jobs/design-audit`
 - `POST /jobs/validate-routing`
 - `POST /jobs/find-missing-footprints`
 - `POST /jobs/link-3d-models`
@@ -160,6 +162,7 @@ This writes:
 - `boardforge-library.json` for project scaffolds
 - `boardforge-bindings.json` for project scaffolds and binding validation
 - `boardforge-netlist.json` when the netlist job runs
+- `boardforge-design-report.json` when the design audit job runs
 - `boardforge-review.json`
 - `README.md`
 
