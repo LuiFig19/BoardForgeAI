@@ -15,6 +15,8 @@ export function generateRoutingPlan(nets, options = {}) {
     return {
       net: net.name,
       className: net.className || 'DEFAULT',
+      start: net.start || null,
+      end: net.end || null,
       strategy: strategyForClass(net.className || 'DEFAULT', layerCount),
       widthMm: profile.traceWidthMm,
       clearanceMm: profile.clearanceMm,

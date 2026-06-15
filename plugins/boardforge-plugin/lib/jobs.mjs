@@ -13,8 +13,9 @@ import { generateTemplateComponents, renderPlacedFootprints } from './components
 import { findMissingFootprints, link3dModels, resolveComponentAssets, searchLibraryAssets, syncKiCadLibraries } from './library-adapter.mjs'
 import { createProjectState, normalizeComponents, readProjectState, stateFileName, summarizeProjectState, updateProjectState } from './project-state.mjs'
 import { createDesignIntent, validateZones } from './design-rules.mjs'
+import { applyRoutingPlanToPcb } from './copper-writer.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -53,6 +54,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'create_net_classes') return result(job, 'NET_CLASSES_CREATED', [], [], { netClasses: createNetClasses(profile), humanReviewRequired: true })
   if (job.type === 'validate_net_classes' || job.type === 'report_unclassified_nets') return validateNetClassesJob(job)
   if (job.type === 'generate_placement_plan') return placementPlanJob(job, profile)
+  if (job.type === 'apply_routing_plan') return applyRoutingPlanJob(job, workspace, profile)
   if (['generate_routing_plan', 'report_unrouted_nets', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes'].includes(job.type)) return routingPlanJob(job)
   if (job.type === 'run_full_self_review') return selfReviewJob(job, profile)
   if (job.type === 'scan_kicad_project' || job.type === 'summarize_project') return scanProjectJob(job, workspace)
@@ -199,6 +201,36 @@ function routingPlanJob(job) {
   }
   const status = statusByType[job.type] || plan.status
   return result(job, status, plan.warnings, [], { routingPlan: plan, copperPours: plan.designIntent.copperPours, viaRules: plan.designIntent.viaRules, keepouts: plan.designIntent.zones, humanReviewRequired: true })
+}
+
+async function applyRoutingPlanJob(job, workspace, profile) {
+  const context = await getKiCadContext(job, workspace, 'pcb')
+  if (context.blocked) return context.blocked
+  const state = await readProjectState(context.files.projectDir)
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const components = job.input?.components || state?.components || []
+  const nets = assignNetsToClasses(job.input?.nets || state?.requirements?.nets || [])
+  const routingPlan = job.input?.routingPlan || generateRoutingPlan(nets, { layerCount: board.layerCount, board, components, profile })
+  if (!routingPlan.routes?.some((route) => route.start && route.end) && !routingPlan.designIntent?.copperPours?.length) {
+    return result(job, 'ROUTING_PLAN_HAS_NO_WRITABLE_GEOMETRY', routingPlan.warnings || [], [{ severity: 'ERROR', code: 'NO_WRITABLE_ROUTE_GEOMETRY', message: 'Provide nets with start/end points or a routingPlan with writable routes/zones.' }], { routingPlan, generatedFiles: [], humanReviewRequired: true })
+  }
+  const output = await applyRoutingPlanToPcb({ pcbFile: context.files.pcbFile, board, routingPlan })
+  await updateProjectState(context.files.projectDir, async (current) => ({
+    ...current,
+    status: output.status,
+    routing: {
+      status: output.status,
+      routes: output.routes,
+      vias: output.vias,
+      zones: output.zones,
+      generatedObjects: output.generatedObjects,
+      drcRequired: true,
+    },
+    generatedFiles: [...new Set([...(current.generatedFiles || []), context.files.pcbFile])],
+    lastJobType: job.type,
+    lastHistoryMessage: `Applied ${output.generatedObjects.segments} segments, ${output.generatedObjects.vias} vias, and ${output.generatedObjects.zones} zones to PCB. DRC required.`,
+  }))
+  return result(job, output.status, [{ severity: 'WARNING', code: 'DRC_REQUIRED', message: 'Copper was written to KiCad PCB. Run run_kicad_drc before export or manufacturing.' }], [], { ...output, generatedFiles: [context.files.pcbFile] })
 }
 
 function selfReviewJob(job, profile) {

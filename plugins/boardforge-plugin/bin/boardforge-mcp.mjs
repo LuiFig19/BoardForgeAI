@@ -26,6 +26,7 @@ const toolToJobType = {
   run_kicad_drc: 'run_kicad_drc',
   run_kicad_erc: 'run_kicad_erc',
   generate_routing_plan: 'generate_routing_plan',
+  apply_routing_plan: 'apply_routing_plan',
   route_critical_nets: 'route_critical_nets',
   route_power_nets: 'route_power_nets',
   route_diff_pair: 'route_diff_pair',
@@ -102,8 +103,9 @@ async function handleRequest(request) {
       capabilities: { tools: {} },
       instructions: [
         'Use BoardForge tools with structured JSON only.',
-        'Do not run arbitrary KiCad shell commands.',
-        'Treat generated KiCad output as review-required until DRC/ERC/export results prove otherwise.',
+      'Do not run arbitrary KiCad shell commands.',
+      'After apply_routing_plan, run run_kicad_drc before any export or manufacturing claim.',
+      'Treat generated KiCad output as review-required until DRC/ERC/export results prove otherwise.',
       ].join(' '),
     }
   }

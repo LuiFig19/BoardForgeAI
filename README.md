@@ -167,13 +167,14 @@ Real today:
 - local MCP tool calls for Codex
 - project state tracking across create, resolve, link, validate, export, and package jobs
 - compact-board routing policy with via rules, layer-change logic, copper pour planning, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions
+- controlled `apply_routing_plan` writer for review-required KiCad `segment`, `via`, and `zone` objects
 - test coverage for geometry, net classes, placement, routing-plan honesty, outline generation, library resolution, MCP calls, KiCad CLI validation/export, and blocked packaging
 
 Not complete yet:
 
 - full native schematic symbol/wire generation
 - schematic-to-PCB net assignment
-- complete autorouting
+- complete autorouting and DRC-clean route repair
 - schematic-derived BOM rows until schematic symbols exist
 - clean DRC on component projects until nets/clearances/routing are solved
 - native KiCad plugin UI

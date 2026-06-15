@@ -68,6 +68,52 @@ test('routing jobs return keepout, via, and copper-pour logic for compact boards
   assert.equal(result.viaRules.compactBoardPolicy.includes('midpoint vias'), true)
 })
 
+test('apply_routing_plan writes review-required KiCad copper, vias, and zones', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-copper-test-'))
+  try {
+    await executeJob({
+      id: 'project',
+      type: 'create_outline_board',
+      allowOverwrite: true,
+      input: {
+        projectName: 'Copper Test',
+        widthMm: 42,
+        heightMm: 28,
+        layerCount: 4,
+        nets: [{ name: 'GND' }, { name: 'VIN' }, { name: 'SCL' }],
+      },
+    }, workspace)
+    const input = {
+      projectPath: 'copper-test',
+      board: { widthMm: 42, heightMm: 28, layerCount: 4, outline: rectanglePoints(42, 28) },
+      nets: [
+        { name: 'GND', start: { x: 6, y: 6 }, end: { x: 36, y: 22 } },
+        { name: 'VIN', start: { x: 8, y: 20 }, end: { x: 32, y: 8 } },
+        { name: 'SCL', start: { x: 10, y: 10 }, end: { x: 30, y: 18 } },
+      ],
+    }
+    const applied = await executeJob({ id: 'apply_routes', type: 'apply_routing_plan', input }, workspace)
+    assert.equal(applied.status, 'COPPER_APPLIED_NEEDS_DRC')
+    assert.ok(applied.generatedObjects.segments > 0)
+    assert.ok(applied.generatedObjects.vias > 0)
+    assert.ok(applied.generatedObjects.zones > 0)
+    const pcb = await readFile(path.join(workspace, 'copper-test', 'copper-test.kicad_pcb'), 'utf8')
+    assert.match(pcb, /\(segment /)
+    assert.match(pcb, /\(via /)
+    assert.match(pcb, /\(zone /)
+    assert.match(pcb, /BoardForge review-required copper/)
+    const scan = await executeJob({ id: 'scan_copper', type: 'scan_kicad_project', input: { projectPath: 'copper-test' } }, workspace)
+    assert.ok(scan.scan.tracks.length > 0)
+    assert.ok(scan.scan.vias.length > 0)
+    assert.ok(scan.scan.zones.length > 0)
+    const state = JSON.parse(await readFile(path.join(workspace, 'copper-test', 'boardforge-project.json'), 'utf8'))
+    assert.equal(state.routing.status, 'COPPER_APPLIED_NEEDS_DRC')
+    assert.equal(state.routing.drcRequired, true)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
 test('create_outline_board writes real KiCad files and review JSON only', async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-test-'))
   try {
