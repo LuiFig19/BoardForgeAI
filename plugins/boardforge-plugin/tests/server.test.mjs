@@ -37,6 +37,11 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { projectPath: 'server-project' },
     })
     assert.ok(['COMPONENT_LIBRARY_AUDIT_NEEDS_FIX', 'COMPONENT_LIBRARY_AUDIT_NEEDS_REVIEW', 'COMPONENT_LIBRARY_AUDIT_READY_NEEDS_REVIEW'].includes(audit.status))
+    const preflight = await postJson(`http://127.0.0.1:${port}/jobs/preflight`, {
+      id: 'server_preflight',
+      input: { projectPath: 'server-project' },
+    })
+    assert.ok(['PROJECT_PREFLIGHT_BLOCKED', 'PROJECT_PREFLIGHT_NEEDS_REVIEW', 'PROJECT_PREFLIGHT_READY_NEEDS_REVIEW'].includes(preflight.status))
     const snapshot = await postJson(`http://127.0.0.1:${port}/jobs/snapshot`, {
       id: 'server_snapshot',
       input: { projectPath: 'server-project', label: 'server-smoke' },
