@@ -22,8 +22,9 @@ import { validateComponentBindings } from './component-compatibility.mjs'
 import { validateExportGate, validateManufacturingReadiness } from './manufacturing-readiness.mjs'
 import { validateRoutingGeometry } from './routing-validation.mjs'
 import { runDesignAudit } from './design-audit.mjs'
+import { createProjectSnapshot, listProjectSnapshots, restoreProjectSnapshot } from './project-snapshots.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'restore_project_snapshot', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -54,6 +55,9 @@ export async function executeJob(job, workspace) {
   if (job.type === 'create_outline_board') return createOutlineBoard(job, workspace, profile)
   if (job.type === 'create_kicad_project') return createKiCadProject(job, workspace, profile)
   if (job.type === 'validate_board_outline') return validateOutlineJob(job, profile)
+  if (job.type === 'snapshot_project') return snapshotProjectJob(job, workspace)
+  if (job.type === 'list_project_snapshots') return listProjectSnapshotsJob(job, workspace)
+  if (job.type === 'restore_project_snapshot') return restoreProjectSnapshotJob(job, workspace)
   if (job.type === 'sync_kicad_libraries') return librarySyncJob(job, workspace)
   if (job.type === 'search_library_assets') return librarySearchJob(job, workspace)
   if (job.type === 'resolve_component_assets') return resolveAssetsJob(job, workspace)
@@ -154,6 +158,38 @@ async function createKiCadProject(job, workspace, profile) {
 async function librarySyncJob(job, workspace) {
   const output = await syncKiCadLibraries({ workspace, input: job.input || {} })
   return result(job, output.status, output.warnings || [], [], output)
+}
+
+async function snapshotProjectJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : workspace
+  const output = await createProjectSnapshot(projectDir, job.input || {})
+  await updateProjectState(projectDir, async (state) => ({
+    ...state,
+    status: output.status,
+    snapshots: [...(state.snapshots || []), output.snapshot],
+    lastJobType: job.type,
+    lastHistoryMessage: `Snapshot ${output.snapshot.id} created with ${output.snapshot.fileCount} files.`,
+  }))
+  return result(job, output.status, [], [], { ...output, humanReviewRequired: false })
+}
+
+async function listProjectSnapshotsJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : workspace
+  const snapshots = await listProjectSnapshots(projectDir)
+  return result(job, 'PROJECT_SNAPSHOTS_LISTED', [], [], { snapshots, count: snapshots.length, humanReviewRequired: false })
+}
+
+async function restoreProjectSnapshotJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : workspace
+  const output = await restoreProjectSnapshot(projectDir, job.input?.snapshotId)
+  await updateProjectState(projectDir, async (state) => ({
+    ...state,
+    status: output.status,
+    restoredSnapshot: output.snapshot,
+    lastJobType: job.type,
+    lastHistoryMessage: `Restored snapshot ${output.snapshot.id}; KiCad review required.`,
+  }))
+  return result(job, output.status, [{ severity: 'WARNING', code: 'REVIEW_AFTER_RESTORE', message: 'Project files were restored from a snapshot. Re-run scan, ERC, and DRC before export.' }], [], output)
 }
 
 async function librarySearchJob(job, workspace) {

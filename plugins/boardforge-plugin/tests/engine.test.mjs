@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { rectanglePoints } from '../lib/geometry.mjs'
@@ -10,7 +10,7 @@ import { validateBoardOutline, validatePlacement } from '../lib/validation.mjs'
 import { generateRoutingPlan } from '../lib/routing.mjs'
 import { executeJob } from '../lib/jobs.mjs'
 import { detectKiCadCli } from '../lib/kicad-cli.mjs'
-import { detectKiCadLibraryRoots } from '../lib/library-adapter.mjs'
+import { detectKiCadLibraryRoots, normalize3dModelPath } from '../lib/library-adapter.mjs'
 import { parseFootprintCourtyardFromText, parseFootprintPadsFromText, parseSymbolPinsFromText } from '../lib/component-compatibility.mjs'
 import { scorePlacement } from '../lib/placement.mjs'
 import { validateRoutingGeometry } from '../lib/routing-validation.mjs'
@@ -113,6 +113,63 @@ test('routing jobs return keepout, via, and copper-pour logic for compact boards
   assert.ok(result.keepouts.some((zone) => zone.kind === 'antenna_keepout'))
   assert.ok(result.keepouts.some((zone) => zone.kind === 'thermal_keepout'))
   assert.equal(result.viaRules.compactBoardPolicy.includes('midpoint vias'), true)
+})
+
+test('component database enriches advanced board blocks with default pin intent', async () => {
+  const result = await executeJob({
+    id: 'advanced_parts',
+    type: 'sync_component_database',
+    input: {
+      components: [
+        { ref: 'U2', group: 'IMU', value: 'ICM-42688-P' },
+        { ref: 'U3', group: 'ETHERNET_PHY', value: 'LAN8720A' },
+        { ref: 'L1', group: 'INDUCTOR', value: '2.2uH shielded inductor' },
+        { ref: 'JTAG1', group: 'SWD', value: 'SWD header' },
+      ],
+    },
+  }, process.cwd())
+  assert.ok(['COMPONENT_DATABASE_READY_NEEDS_REVIEW', 'COMPONENT_DATABASE_PARTIAL_NEEDS_REVIEW'].includes(result.status))
+  assert.equal(result.components.find((component) => component.ref === 'U2').pinMap.SCL, 'I2C_SCL')
+  assert.equal(result.components.find((component) => component.ref === 'U3').pinMap.TXP, 'ETH_TX_P')
+  assert.equal(result.components.find((component) => component.ref === 'L1').pinMap[1], 'SW')
+  assert.equal(result.components.find((component) => component.ref === 'JTAG1').pinMap.SWDIO, 'SWDIO')
+})
+
+test('3D model paths normalize to KiCad model variables when possible', () => {
+  const normalized = normalize3dModelPath('C:\\Program Files\\KiCad\\10.0\\share\\kicad\\3dmodels\\Connector_USB.3dshapes\\USB_C.step', {
+    version: '10',
+    models3d: 'C:\\Program Files\\KiCad\\10.0\\share\\kicad\\3dmodels',
+  })
+  assert.equal(normalized, '${KICAD10_3DMODEL_DIR}/Connector_USB.3dshapes/USB_C.step')
+  assert.equal(normalize3dModelPath('${KICAD10_3DMODEL_DIR}/Package.step', { version: '10' }), '${KICAD10_3DMODEL_DIR}/Package.step')
+})
+
+test('project snapshots can be listed and restored without touching arbitrary files', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-snapshot-test-'))
+  try {
+    await executeJob({
+      id: 'snapshot_project_seed',
+      type: 'create_outline_board',
+      allowOverwrite: true,
+      input: { projectName: 'Snapshot Project', widthMm: 40, heightMm: 24, shape: 'rounded_rectangle' },
+    }, workspace)
+    const projectPath = 'snapshot-project'
+    const pcbPath = path.join(workspace, projectPath, 'snapshot-project.kicad_pcb')
+    const originalPcb = await readFile(pcbPath, 'utf8')
+    const snapshot = await executeJob({ id: 'snapshot', type: 'snapshot_project', input: { projectPath, label: 'before-edit' } }, workspace)
+    assert.equal(snapshot.status, 'PROJECT_SNAPSHOT_CREATED')
+    assert.equal(snapshot.snapshot.fileCount >= 4, true)
+    await writeFile(pcbPath, '(kicad_pcb (version 20241229) (generator "broken"))\n', 'utf8')
+    const listed = await executeJob({ id: 'list_snapshots', type: 'list_project_snapshots', input: { projectPath } }, workspace)
+    assert.equal(listed.status, 'PROJECT_SNAPSHOTS_LISTED')
+    assert.equal(listed.count, 1)
+    const restored = await executeJob({ id: 'restore_snapshot', type: 'restore_project_snapshot', input: { projectPath, snapshotId: snapshot.snapshot.id } }, workspace)
+    assert.equal(restored.status, 'PROJECT_SNAPSHOT_RESTORED_NEEDS_REVIEW')
+    assert.equal(restored.restoredFiles.includes('snapshot-project.kicad_pcb'), true)
+    assert.equal(await readFile(pcbPath, 'utf8'), originalPcb)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
 })
 
 test('apply_routing_plan writes review-required KiCad copper, vias, and zones', async () => {

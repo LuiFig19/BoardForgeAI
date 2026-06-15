@@ -8,6 +8,16 @@ const catalog = [
   { group: 'CAP', value: '100nF capacitor', lcsc: 'C14663', mpn: 'CL10B104KB8NNNC', package: '0603', stockRisk: 'low', assembly: 'basic', pins: ['1', '2'] },
   { group: 'CAP', value: '10uF capacitor', lcsc: 'C19702', mpn: 'CL10A106KP8NNNC', package: '0603', stockRisk: 'low', assembly: 'basic', pins: ['1', '2'] },
   { group: 'RJ45', value: 'RJ45 MagJack', lcsc: 'C2933619', mpn: 'HR911105A', package: 'RJ45-MagJack', stockRisk: 'medium', assembly: 'extended review', pins: ['TX+', 'TX-', 'RX+', 'RX-', 'LED', 'SHIELD'] },
+  { group: 'INDUCTOR', value: '2.2uH shielded inductor', lcsc: 'C167943', mpn: 'SWPA3015S2R2MT', package: '3015', stockRisk: 'low', assembly: 'power review', pins: ['1', '2'] },
+  { group: 'IMU', value: '6-axis IMU', lcsc: 'C2687302', mpn: 'ICM-42688-P', package: 'LGA-14', stockRisk: 'medium', assembly: 'orientation review', pins: ['VDD', 'VDDIO', 'GND', 'SCL', 'SDA', 'INT1', 'INT2'] },
+  { group: 'BAROMETER', value: 'barometric pressure sensor', lcsc: 'C91365', mpn: 'BMP280', package: 'LGA-8', stockRisk: 'medium', assembly: 'orientation review', pins: ['VDD', 'GND', 'SCL', 'SDA', 'CSB', 'SDO'] },
+  { group: 'BLACKBOX', value: 'SPI flash memory', lcsc: 'C82317', mpn: 'W25Q128JVSIQ', package: 'SOIC-8', stockRisk: 'low', assembly: 'basic', pins: ['CS', 'MISO', 'WP', 'GND', 'MOSI', 'SCK', 'HOLD', 'VCC'] },
+  { group: 'ETHERNET_PHY', value: '10/100 Ethernet PHY', lcsc: 'C18743', mpn: 'LAN8720A-CP-TR', package: 'QFN-24', stockRisk: 'medium', assembly: 'impedance review', pins: ['VDDA', 'VDDIO', 'GND', 'TXP', 'TXN', 'RXP', 'RXN', 'MDC', 'MDIO', 'REFCLK'] },
+  { group: 'POE_FRONT_END', value: '802.3af PoE PD front end', lcsc: 'C265873', mpn: 'TPS2375', package: 'SOIC-8', stockRisk: 'medium', assembly: 'high-voltage clearance review', pins: ['VDD', 'VSS', 'RTN', 'DEN', 'CLS', 'UVLO', 'PG', 'AUX'] },
+  { group: 'POWER_INPUT', value: 'power input connector', lcsc: 'C160404', mpn: 'KF301-2P', package: 'TerminalBlock-2P', stockRisk: 'low', assembly: 'edge placement review', pins: ['VIN', 'GND'] },
+  { group: 'SENSOR_CONNECTOR', value: 'I2C sensor connector', lcsc: 'C492405', mpn: 'PinHeader-1x04', package: 'PinHeader-1x04', stockRisk: 'low', assembly: 'edge/access review', pins: ['GND', '3V3', 'SCL', 'SDA'] },
+  { group: 'ESC_CONNECTOR', value: 'ESC signal connector', lcsc: 'C492411', mpn: 'PinHeader-1x08', package: 'PinHeader-1x08', stockRisk: 'low', assembly: 'edge/access review', pins: ['GND', 'VBAT', 'M1', 'M2', 'M3', 'M4', 'CURR', 'TEL'] },
+  { group: 'SWD', value: 'SWD programming header', lcsc: 'C492404', mpn: 'PinHeader-1x05', package: 'PinHeader-1x05', stockRisk: 'low', assembly: 'debug access review', pins: ['3V3', 'SWDIO', 'SWCLK', 'NRST', 'GND'] },
 ]
 
 export async function buildComponentDatabase({ workspace, input = {} }) {
@@ -60,6 +70,17 @@ function defaultPinMap(component, base) {
   if (component.group === 'CAP') return { 1: component.netA || '3V3', 2: component.netB || 'GND' }
   if (component.group === 'USB') return { VBUS: 'VUSB', GND: 'GND', 'D+': 'USB_DP', 'D-': 'USB_DN', CC1: 'CC1', CC2: 'CC2' }
   if (component.group === 'ESP32_S3') return { '3V3': '3V3', GND: 'GND', USB_DP: 'USB_DP', USB_DN: 'USB_DN', SCL: 'I2C_SCL', SDA: 'I2C_SDA' }
+  if (component.group === 'RJ45') return { 'TX+': 'ETH_TX_P', 'TX-': 'ETH_TX_N', 'RX+': 'ETH_RX_P', 'RX-': 'ETH_RX_N', LED: '3V3', SHIELD: 'CHASSIS_GND' }
+  if (component.group === 'INDUCTOR') return { 1: component.netA || 'SW', 2: component.netB || 'VOUT' }
+  if (component.group === 'IMU') return { VDD: '3V3', VDDIO: '3V3', GND: 'GND', SCL: 'I2C_SCL', SDA: 'I2C_SDA', INT1: 'IMU_INT1', INT2: 'IMU_INT2' }
+  if (component.group === 'BAROMETER') return { VDD: '3V3', GND: 'GND', SCL: 'I2C_SCL', SDA: 'I2C_SDA', CSB: '3V3', SDO: 'GND' }
+  if (component.group === 'BLACKBOX') return { CS: 'FLASH_CS', MISO: 'SPI_MISO', WP: '3V3', GND: 'GND', MOSI: 'SPI_MOSI', SCK: 'SPI_SCK', HOLD: '3V3', VCC: '3V3' }
+  if (component.group === 'ETHERNET_PHY') return { VDDA: '3V3', VDDIO: '3V3', GND: 'GND', TXP: 'ETH_TX_P', TXN: 'ETH_TX_N', RXP: 'ETH_RX_P', RXN: 'ETH_RX_N', MDC: 'ETH_MDC', MDIO: 'ETH_MDIO', REFCLK: 'ETH_REFCLK' }
+  if (component.group === 'POE_FRONT_END') return { VDD: 'POE_VDD', VSS: 'POE_VSS', RTN: 'POE_RTN', DEN: 'POE_DEN', CLS: 'POE_CLS', UVLO: 'POE_UVLO', PG: 'POE_PG', AUX: 'POE_AUX' }
+  if (component.group === 'POWER_INPUT') return { VIN: component.netA || 'VIN', GND: 'GND' }
+  if (component.group === 'SENSOR_CONNECTOR') return { GND: 'GND', '3V3': '3V3', SCL: 'I2C_SCL', SDA: 'I2C_SDA' }
+  if (component.group === 'ESC_CONNECTOR') return { GND: 'GND', VBAT: 'VBAT', M1: 'MOTOR_1', M2: 'MOTOR_2', M3: 'MOTOR_3', M4: 'MOTOR_4', CURR: 'CURRENT_SENSE', TEL: 'ESC_TELEMETRY' }
+  if (component.group === 'SWD') return { '3V3': '3V3', SWDIO: 'SWDIO', SWCLK: 'SWCLK', NRST: 'NRST', GND: 'GND' }
   return Object.fromEntries(pins.map((pin) => [pin, null]))
 }
 

@@ -34,6 +34,12 @@ const defaultAliases = {
   CAP: ['c_0603', 'capacitor_smd'],
   RES: ['r_0603', 'resistor_smd'],
   INDUCTOR: ['l_0603', 'inductor_smd'],
+  IMU: ['lga', 'qfn', 'sensor_motion', 'inertial', 'mems'],
+  BAROMETER: ['lga', 'sensor_pressure', 'bmp280', 'barometer'],
+  ETHERNET_PHY: ['qfn', 'ethernet', 'lan8720', 'phy'],
+  POE_FRONT_END: ['soic-8', 'poe', 'power_management'],
+  POWER_INPUT: ['terminalblock', 'connector', 'conn_01x02'],
+  SWD: ['pinheader_1x05', 'tag-connect', 'programming', 'connector_pinheader'],
 }
 
 const preferredAssetIds = {
@@ -72,6 +78,34 @@ const preferredAssetIds = {
   ESC_CONNECTOR: {
     symbols: ['Connector_Generic:Conn_01x08'],
     footprints: ['Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical'],
+  },
+  IMU: {
+    symbols: ['Sensor_Motion:ICM-42688-P', 'Sensor_Motion:MPU-6050'],
+    footprints: ['Package_LGA:LGA-14_2.5x3mm_P0.5mm'],
+  },
+  BAROMETER: {
+    symbols: ['Sensor_Pressure:BMP280'],
+    footprints: ['Package_LGA:LGA-8_2x2.5mm_P0.65mm'],
+  },
+  BLACKBOX: {
+    symbols: ['Memory_Flash:W25Q128JVSS', 'Memory_Flash:W25Q32JVSS'],
+    footprints: ['Package_SO:SOIC-8_3.9x4.9mm_P1.27mm'],
+  },
+  ETHERNET_PHY: {
+    symbols: ['Interface_Ethernet:LAN8720A'],
+    footprints: ['Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.7x2.7mm'],
+  },
+  POE_FRONT_END: {
+    symbols: ['Power_Management:TPS2375'],
+    footprints: ['Package_SO:SOIC-8_3.9x4.9mm_P1.27mm'],
+  },
+  POWER_INPUT: {
+    symbols: ['Connector_Generic:Conn_01x02'],
+    footprints: ['TerminalBlock:TerminalBlock_bornier-2_P5.08mm'],
+  },
+  SWD: {
+    symbols: ['Connector_Generic:Conn_01x05'],
+    footprints: ['Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical'],
   },
 }
 
@@ -207,13 +241,15 @@ export async function findMissingFootprints({ workspace, input = {} }) {
 
 export async function link3dModels({ workspace, input = {} }) {
   const manifest = await loadOrBuildManifest(workspace, input)
+  const roots = detectKiCadLibraryRoots(input)
   const components = input.components || []
   const linked = components.map((component) => {
     const resolved = resolveSingleComponent(component, manifest, input)
+    const modelPath = component.model3d || resolved.footprint?.models3d?.[0] || resolved.model3d?.path || null
     return {
       ...component,
       footprint: component.footprint || resolved.footprint?.libId || null,
-      model3d: component.model3d || resolved.footprint?.models3d?.[0] || resolved.model3d?.path || null,
+      model3d: normalize3dModelPath(modelPath, roots),
       modelStatus: component.model3d || resolved.footprint?.models3d?.length || resolved.model3d ? 'linked_needs_review' : 'missing',
     }
   })
@@ -227,6 +263,7 @@ export async function link3dModels({ workspace, input = {} }) {
 export async function renderPlacedFootprintsFromLibraries(components = [], options = {}) {
   const workspace = options.workspace || process.cwd()
   const manifest = await loadOrBuildManifest(workspace, options)
+  const roots = detectKiCadLibraryRoots(options)
   const rendered = []
   const missing = []
   for (const component of components) {
@@ -243,8 +280,9 @@ export async function renderPlacedFootprintsFromLibraries(components = [], optio
       content = content.replace(/(\(layer\s+"F\.Cu"\)\s*)/, `$1\n\t(at ${Number(component.x).toFixed(3)} ${Number(component.y).toFixed(3)} ${component.rotation || 0})\n`)
       content = content.replace(/REF\*\*/g, component.ref)
       content = content.replace(/\(property\s+"Value"\s+"[^"]+"/, `(property "Value" "${safeText(component.value)}"`)
-      if (resolved.model3d?.path && !content.includes('(model ')) {
-        content = content.replace(/\)\s*$/, `\n\t(model "${resolved.model3d.path.replace(/\\/g, '/')}"\n\t\t(offset (xyz 0 0 0))\n\t\t(scale (xyz 1 1 1))\n\t\t(rotate (xyz 0 0 0))\n\t)\n)\n`)
+      const modelPath = normalize3dModelPath(resolved.model3d?.path, roots)
+      if (modelPath && !content.includes('(model ')) {
+        content = content.replace(/\)\s*$/, `\n\t(model "${modelPath}"\n\t\t(offset (xyz 0 0 0))\n\t\t(scale (xyz 1 1 1))\n\t\t(rotate (xyz 0 0 0))\n\t)\n)\n`)
       }
       content = content.replace(/\(uuid\s+"[^"]+"\)/g, () => `(uuid "${cryptoRandomUuid()}")`)
       rendered.push(content)
@@ -474,6 +512,19 @@ function runCommand(command, args) {
 
 function firstExisting(values) {
   return values.filter(Boolean).map((value) => path.resolve(String(value))).find((value) => existsSync(value)) || null
+}
+
+export function normalize3dModelPath(modelPath, roots = {}) {
+  if (!modelPath) return null
+  const raw = String(modelPath).replace(/\\/g, '/')
+  if (/^\$\{KICAD\d*_3DMODEL_DIR\}\//.test(raw)) return raw
+  const version = String(roots.version || process.env.KICAD_VERSION_MAJOR || '10').replace(/[^\d]/g, '') || '10'
+  const root = roots.models3d ? path.resolve(roots.models3d).replace(/\\/g, '/') : null
+  const absolute = path.isAbsolute(modelPath) ? path.resolve(modelPath).replace(/\\/g, '/') : null
+  if (root && absolute && (absolute === root || absolute.startsWith(`${root}/`))) {
+    return `\${KICAD${version}_3DMODEL_DIR}/${absolute.slice(root.length).replace(/^\/+/, '')}`
+  }
+  return raw
 }
 
 function windowsKiCadShare(version, child) {

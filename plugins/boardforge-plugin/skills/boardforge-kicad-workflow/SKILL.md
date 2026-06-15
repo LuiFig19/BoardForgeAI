@@ -38,6 +38,9 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `create_kicad_project`
 - `apply_edge_cuts`
 - `scan_kicad_project`
+- `snapshot_project`
+- `list_project_snapshots`
+- `restore_project_snapshot`
 - `sync_kicad_libraries`
 - `search_library_assets`
 - `resolve_component_assets`
@@ -93,6 +96,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Do not overwrite existing project folders unless the job explicitly allows it.
 - Prefer dry run before destructive edits.
 - Snapshot existing projects before edits when supported.
+- Restore only through `restore_project_snapshot`, then rerun scan, ERC, and DRC before export.
 - Treat all AI plans as proposals until validated.
 - Require human review before manufacturing.
 - Never claim `DRC pass`, `ERC pass`, `routed`, `JLCPCB ready`, or `manufacturable` unless the local tool result proves it.
@@ -113,14 +117,15 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `create_outline_board` writes real `.kicad_pro`, `.kicad_pcb`, `README.md`, and `boardforge-review.json`.
 - `create_kicad_project` writes real `.kicad_pro`, `.kicad_sch`, `.kicad_pcb`, `README.md`, `boardforge-components.json`, `boardforge-bindings.json`, and `boardforge-review.json`.
 - Project creation writes persistent `boardforge-project.json` state with requirements, board geometry, component/library decisions, validation results, exports, generated files, and history.
+- `snapshot_project`, `list_project_snapshots`, and `restore_project_snapshot` provide controlled rollback for KiCad project files and BoardForge metadata before risky edits.
 - `create_kicad_project` places real KiCad footprints from installed footprint libraries for template components.
 - `sync_kicad_libraries` detects installed KiCad 10/9/8 library roots, optionally syncs allowlisted official KiCad symbol/footprint/3D repos, and writes `.boardforge/library-cache/boardforge-library-index.json`.
 - `search_library_assets` searches indexed symbols, footprints, and 3D models.
 - `resolve_component_assets` maps component refs/groups/values/MPNs to review-required symbol, footprint, and 3D model candidates.
 - `find_missing_footprints` reports which component footprints cannot be found in the indexed allowlisted libraries.
-- `link_3d_models` attaches available 3D model references from indexed KiCad footprints/packages.
+- `link_3d_models` attaches available 3D model references from indexed KiCad footprints/packages and normalizes model paths to KiCad variables when possible.
 - `resolve_component_assets` and `link_3d_models` update `boardforge-project.json` when `projectPath` is provided.
-- `sync_component_database` and `resolve_bom_parts` enrich components with LCSC, MPN, package, pin-map, symbol, footprint, 3D model, and stock-risk candidates.
+- `sync_component_database` and `resolve_bom_parts` enrich components with LCSC, MPN, package, pin-map, symbol, footprint, 3D model, and stock-risk candidates for common USB, MCU, IMU, barometer, flash, Ethernet, PoE, SWD, power, connector, passive, and inductor blocks.
 - `validate_component_bindings` parses KiCad symbol pins and footprint pads, compares them to BoardForge pin maps, and writes compatibility results to `boardforge-bindings.json` when `projectPath` is provided.
 - `generate_netlist` writes `boardforge-netlist.json` from component pin maps so Codex can review schematic/PCB connectivity before routing.
 - `run_design_audit` writes `boardforge-design-report.json`, combining netlist coverage, PCB pad-net audit, placement score, route prechecks, binding issues, and recommended next BoardForge actions.
@@ -179,6 +184,9 @@ Supported endpoints:
 - `GET /jobs/:id`
 - `POST /jobs/create-outline`
 - `POST /jobs/create-project`
+- `POST /jobs/snapshot`
+- `POST /jobs/list-snapshots`
+- `POST /jobs/restore-snapshot`
 - `POST /jobs/sync-libraries`
 - `POST /jobs/search-library`
 - `POST /jobs/resolve-assets`

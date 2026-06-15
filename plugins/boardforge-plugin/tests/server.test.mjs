@@ -32,6 +32,16 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { query: '0603 resistor', maxAssets: 2000, limit: 5 },
     })
     assert.equal(search.status, 'LIBRARY_SEARCH_COMPLETE_NEEDS_REVIEW')
+    const snapshot = await postJson(`http://127.0.0.1:${port}/jobs/snapshot`, {
+      id: 'server_snapshot',
+      input: { projectPath: 'server-project', label: 'server-smoke' },
+    })
+    assert.equal(snapshot.status, 'PROJECT_SNAPSHOT_CREATED')
+    const listed = await postJson(`http://127.0.0.1:${port}/jobs/list-snapshots`, {
+      id: 'server_snapshots',
+      input: { projectPath: 'server-project' },
+    })
+    assert.equal(listed.count, 1)
   } finally {
     child.kill('SIGTERM')
     await rm(workspace, { recursive: true, force: true })

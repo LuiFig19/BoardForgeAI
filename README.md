@@ -74,12 +74,14 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - outline-only KiCad project generation
 - KiCad project scaffolds with `.kicad_sch`, `.kicad_pcb`, and `.kicad_pro`
 - persistent `boardforge-project.json` state for requirements, board outline, components, library matches, validation reports, exports, generated files, and job history
+- controlled project snapshots, snapshot listing, and restore-before-review rollback for generated KiCad work
 - deterministic placement of real KiCad footprints from installed libraries
 - KiCad library indexing for installed KiCad symbols, footprints, and 3D models
 - component asset resolution for symbols, footprints, and 3D model candidates
+- richer built-in component database defaults for ESP32, USB-C, RJ45, IMU, barometer, SPI flash, Ethernet PHY, PoE front end, power input, SWD, ESC headers, passives, inductors, packages, LCSC/MPN candidates, and pin-map intent
 - symbol/footprint/pin-map compatibility validation from parsed KiCad symbol pins and footprint pads
 - BoardForge netlist generation from component pin maps for schematic/PCB sync review
-- 3D model linking from indexed KiCad footprint/model libraries
+- portable 3D model linking from indexed KiCad footprint/model libraries with KiCad environment-variable model paths where possible
 - review-required BOM generation from the placed component manifest when the schematic BOM is empty
 - Edge.Cuts geometry validation
 - mounting-hole inside/edge-clearance checks
@@ -132,6 +134,9 @@ Endpoints:
 - `GET /jobs/:id`
 - `POST /jobs/create-outline`
 - `POST /jobs/create-project`
+- `POST /jobs/snapshot`
+- `POST /jobs/list-snapshots`
+- `POST /jobs/restore-snapshot`
 - `POST /jobs/sync-libraries`
 - `POST /jobs/search-library`
 - `POST /jobs/resolve-assets`
@@ -158,6 +163,7 @@ This writes:
 - `.kicad_sch` for project scaffolds
 - `.kicad_pcb`
 - `boardforge-project.json`
+- `.boardforge/snapshots/*` when snapshot jobs are run
 - `boardforge-components.json` for project scaffolds
 - `boardforge-library.json` for project scaffolds
 - `boardforge-bindings.json` for project scaffolds and binding validation
@@ -191,6 +197,7 @@ Real today:
 - parsed symbol/footprint compatibility reports written to `boardforge-bindings.json`
 - local MCP tool calls for Codex
 - project state tracking across create, resolve, link, validate, export, and package jobs
+- project snapshots and restore jobs for safe rollback before/after AI-assisted edits
 - compact-board routing policy with via rules, layer-change logic, copper pour planning, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions
 - controlled `apply_routing_plan` writer for review-required KiCad `segment`, `via`, and `zone` objects
 - BoardForge component database enrichment with LCSC/MPN/package/pin-map candidates

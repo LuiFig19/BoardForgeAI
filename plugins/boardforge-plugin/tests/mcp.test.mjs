@@ -25,6 +25,7 @@ test('MCP server exposes BoardForge tools and runs controlled jobs', async () =>
     assert.equal(listed.tools.some((tool) => tool.name === 'interactive_edit'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'add_ground_zone'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'apply_routing_plan'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'snapshot_project'), true)
 
     const status = await client.request('tools/call', { name: 'status', arguments: {} })
     const statusPayload = JSON.parse(status.content[0].text)
@@ -41,6 +42,12 @@ test('MCP server exposes BoardForge tools and runs controlled jobs', async () =>
     const outlinePayload = JSON.parse(outline.content[0].text)
     assert.equal(outlinePayload.status, 'OUTLINE_GENERATED_NEEDS_REVIEW')
     assert.equal(outlinePayload.generatedFiles.some((file) => file.endsWith('.kicad_pcb')), true)
+    const snapshot = await client.request('tools/call', {
+      name: 'snapshot_project',
+      arguments: { id: 'mcp_snapshot', input: { projectPath: 'mcp-outline', label: 'mcp-smoke' } },
+    })
+    const snapshotPayload = JSON.parse(snapshot.content[0].text)
+    assert.equal(snapshotPayload.status, 'PROJECT_SNAPSHOT_CREATED')
   } finally {
     child.kill('SIGTERM')
     await rm(workspace, { recursive: true, force: true })
