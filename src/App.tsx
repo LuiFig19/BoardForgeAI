@@ -99,6 +99,7 @@ const pluginCommands = [
   'plan_power_tree',
   'plan_stackup',
   'plan_fanout',
+  'run_dfm_checks',
   'compare_manufacturers',
   'plan_complex_board',
   'generate_design_constraints',

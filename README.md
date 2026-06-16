@@ -82,6 +82,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - requirements planner that expands constrained prompts into reusable circuit blocks, BOM components, nets, and design constraints
 - power-tree planner that budgets input rails, regulators, current draw, decoupling, sequencing, thermal review, and rail-specific routing constraints
 - fanout planner for dense IC escape, connector escape, via transition policy, decoupling preconditions, and low-layer blocker detection
+- DFM checker for board outline, component placement, route dimensions, power thermal risk, fanout blockers, assembly, silkscreen, and advanced-fab gates
 - stackup and complex-board planner for 2/4/6/8+ layer boards, HDI review, blind/buried/microvia policy, impedance intent, copper strategy, and thermal/RF keepouts
 - deterministic placement of real KiCad footprints from installed libraries
 - KiCad library indexing for installed KiCad symbols, footprints, and 3D models
@@ -160,6 +161,7 @@ Endpoints:
 - `POST /jobs/plan-power-tree`
 - `POST /jobs/plan-stackup`
 - `POST /jobs/plan-fanout`
+- `POST /jobs/dfm-checks`
 - `POST /jobs/compare-manufacturers`
 - `POST /jobs/plan-complex-board`
 - `POST /jobs/design-constraints`
@@ -205,6 +207,7 @@ This writes:
 - `boardforge-power-tree.json` when power-tree planning runs or full project scaffolding creates rail intent
 - `boardforge-stackup-plan.json` when stackup planning runs
 - `boardforge-fanout-plan.json` when fanout planning runs or full project scaffolding creates package escape intent
+- `boardforge-dfm-report.json` when DFM checks run or full project scaffolding creates manufacturing review intent
 - `boardforge-assembly-plan.json` for component-side, connector-access, service-access, and panelization hints
 - `boardforge-constraints.json` for reusable placement/routing/manufacturing constraints
 - `boardforge.kicad_dru` for review-required KiCad custom rules derived from BoardForge constraints
@@ -251,6 +254,7 @@ Real today:
 - requirements-to-circuit planning for USB-C, ESP32-S3 core, 3V3 regulation, I2C headers, SWD, PoE/Ethernet, and drone FC core blocks
 - power-tree planning for input source, rail current margin, regulator topology, decoupling placement, sequencing, thermal risk, and route-width constraints
 - fanout planning for dense packages, connector escape, BGA/QFN/QFP strategy, allowed via transitions, and routing preconditions
+- DFM checks for board outline, component placement, route dimensions, power thermal risk, fanout feasibility, assembly, silkscreen, and advanced fab approval
 - schematic object generation with symbols, wires, labels, power/global labels, component footprint properties, and symbol instances written into `.kicad_sch`
 - schematic-to-PCB net propagation that writes net declarations and assigns component pad nets from BoardForge pin maps
 - routing endpoint inference from matching component pins so route plans start from actual component connectivity

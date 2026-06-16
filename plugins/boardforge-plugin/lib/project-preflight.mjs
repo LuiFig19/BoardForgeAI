@@ -1,9 +1,10 @@
-export function buildProjectPreflight({ scan = null, componentAudit = null, bindingReport = null, netlist = null, readiness = null, snapshotDiff = null }) {
+export function buildProjectPreflight({ scan = null, componentAudit = null, bindingReport = null, netlist = null, readiness = null, dfm = null, snapshotDiff = null }) {
   const gates = [
     gate('project_files', scan && !scan.errors?.length, scan?.errors || [], scan?.warnings || []),
     gate('component_library', componentAudit && !componentAudit.errors?.length, componentAudit?.errors || [], componentAudit?.warnings || []),
     gate('component_bindings', bindingReport && !bindingReport.errors?.length, bindingReport?.errors || [], bindingReport?.warnings || []),
     gate('netlist', netlist && netlist.nets?.length > 0, netlist?.issues || [], []),
+    gate('dfm', dfm && !dfm.errors?.length, dfm?.errors || [], dfm?.warnings || []),
     gate('manufacturing_readiness', readiness && !readiness.errors?.length, readiness?.errors || [], readiness?.warnings || []),
     snapshotDiff ? gate('snapshot_diff', snapshotDiff.changedFiles === 0, [], snapshotDiff.changedFiles ? [{ severity: 'WARNING', code: 'SNAPSHOT_DIFF_HAS_CHANGES', message: `${snapshotDiff.changedFiles} files changed since snapshot ${snapshotDiff.snapshot.id}.` }] : []) : null,
   ].filter(Boolean)
@@ -41,6 +42,7 @@ function nextActions(gates) {
   if (gateStatus(gates, 'component_library') !== 'passed') actions.push('Run resolve_component_assets, link_3d_models, and audit_component_library until footprint/model blockers are resolved.')
   if (gateStatus(gates, 'component_bindings') !== 'passed') actions.push('Run validate_component_bindings and fix symbol/pad/pin-map mismatches.')
   if (gateStatus(gates, 'netlist') !== 'passed') actions.push('Run generate_netlist and review unconnected or unmapped pins before routing.')
+  if (gateStatus(gates, 'dfm') !== 'passed') actions.push('Run run_dfm_checks and resolve board outline, placement, fanout, thermal, and manufacturing blockers.')
   if (gateStatus(gates, 'manufacturing_readiness') !== 'passed') actions.push('Run ERC/DRC and generate BOM/CPL/Gerbers/drill before packaging.')
   if (gateStatus(gates, 'snapshot_diff') !== 'passed' && gateStatus(gates, 'snapshot_diff') !== 'missing') actions.push('Review diff_project_snapshot output before restore, export, or package operations.')
   return [...new Set(actions)]

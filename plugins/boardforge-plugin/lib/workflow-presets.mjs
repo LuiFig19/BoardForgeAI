@@ -21,6 +21,7 @@ export function buildWorkflowPreset(input = {}) {
     step('apply_placement_plan', { projectPath: slug(base.projectName) }, 'Apply reviewed placement into KiCad PCB footprint coordinates.'),
     step('plan_fanout', { projectPath: slug(base.projectName) }, 'Plan package escape, via strategy, and routing preconditions before copper.'),
     step('generate_routing_plan', { projectPath: slug(base.projectName) }, 'Generate partial route plan with via/copper/keepout policy.'),
+    step('run_dfm_checks', { projectPath: slug(base.projectName) }, 'Run board, placement, fanout, power, assembly, and fab DFM checks.'),
     step('run_project_preflight', { projectPath: slug(base.projectName) }, 'Aggregate scan, component, binding, netlist, and manufacturing gates.'),
     step('run_kicad_erc', { projectPath: slug(base.projectName) }, 'Run local KiCad ERC.'),
     step('run_kicad_drc', { projectPath: slug(base.projectName) }, 'Run local KiCad DRC.'),

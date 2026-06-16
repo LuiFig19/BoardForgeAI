@@ -48,6 +48,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `plan_power_tree`
 - `plan_stackup`
 - `plan_fanout`
+- `run_dfm_checks`
 - `compare_manufacturers`
 - `plan_complex_board`
 - `generate_design_constraints`
@@ -118,6 +119,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `plan_power_tree` before stackup, schematic, placement, or routing so rails, regulators, current budget, decoupling, sequencing, and thermal blockers are explicit.
 - Run `plan_stackup` before dense, high-speed, high-current, RF, or HDI boards so BoardForge can decide layer roles, blind/buried/microvia policy, impedance intent, copper strategy, and advanced fab blockers.
 - Run `plan_fanout` after placement/stackup and before routing so dense IC escape, connector escape, via layer transitions, decoupling preconditions, and HDI blockers are explicit.
+- Run `run_dfm_checks` before preflight/export/package to catch board outline, placement, fanout, power thermal, route, assembly, silkscreen, and advanced-fab issues.
 - Run `plan_complex_board` for serious boards before project generation or routing. Treat its output as the main engineering plan for requirements, stackup, keepouts, vias, copper pours, and export gates.
 - Run `generate_design_constraints` after requirements/stackup/placement changes so Codex has one current constraints artifact before routing/export.
 - Run `generate_kicad_rules` after design constraints so KiCad has a reviewable custom-rules file for net classes, differential pairs, keepouts, route widths, and clearance policy.
@@ -149,6 +151,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `plan_power_tree` writes or returns `boardforge-power-tree.json` with input sources, rails, regulator topology, rail current budget, decoupling requirements, sequencing rules, thermal review, and manufacturing gates.
 - `plan_stackup` writes or returns a stackup plan with layer roles, manufacturer HDI capability, blind/buried/microvia rules, impedance intent, copper strategy, and thermal strategy.
 - `plan_fanout` writes or returns `boardforge-fanout-plan.json` with dense-package escape method, connector fanout, via transition policy, routing preconditions, and blockers for impossible low-layer dense packages.
+- `run_dfm_checks` writes or returns `boardforge-dfm-report.json` with board, placement, route, power, fanout, assembly, silkscreen, and advanced-fab manufacturing checks.
 - `plan_complex_board` writes or returns a combined complex-board plan with requirements, stackup, complexity score, placement/routing strategy, keepouts, copper pours, and manufacturing gates.
 - `generate_design_constraints` writes `boardforge-constraints.json` for reusable board, manufacturer, placement, routing, keepout, net-class, HDI, and manufacturing-gate constraints.
 - `generate_kicad_rules` writes `boardforge.kicad_dru` with review-required KiCad custom rules for BoardForge net classes, trace widths, clearances, differential pairs, antenna keepouts, and thermal spacing.
@@ -233,6 +236,7 @@ Supported endpoints:
 - `POST /jobs/plan-power-tree`
 - `POST /jobs/plan-stackup`
 - `POST /jobs/plan-fanout`
+- `POST /jobs/dfm-checks`
 - `POST /jobs/compare-manufacturers`
 - `POST /jobs/plan-complex-board`
 - `POST /jobs/design-constraints`

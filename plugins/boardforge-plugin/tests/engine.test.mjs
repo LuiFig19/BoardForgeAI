@@ -350,6 +350,27 @@ test('fanout planner blocks dense packages on too few layers', async () => {
   assert.ok(plan.fanoutPlan.viaPolicy.allowedTransitions.some((pair) => pair.includes('B.Cu')))
 })
 
+test('DFM checker catches component and route manufacturing blockers', async () => {
+  const dfm = await executeJob({
+    id: 'dfm',
+    type: 'run_dfm_checks',
+    input: {
+      board: { widthMm: 30, heightMm: 20, outline: rectanglePoints(30, 20), layerCount: 2 },
+      components: [
+        { ref: 'U1', group: 'MCU', value: 'QFN MCU', x: 15, y: 10, width: 8, height: 8, footprint: 'Package_DFN_QFN:QFN-32' },
+        { ref: 'U2', group: 'SENSOR', value: 'sensor', x: 18, y: 10, width: 8, height: 8, footprint: 'Package_SO:SOIC-8' },
+      ],
+      routes: [{ net: '3V3', widthMm: 0.05, vias: [{ diameterMm: 0.2, drillMm: 0.1 }] }],
+      powerTree: { errors: [], thermalReview: [] },
+      fanoutPlan: { errors: [], viaPolicy: { blindViasAllowed: false, microviasAllowed: false } },
+    },
+  }, process.cwd())
+  assert.equal(dfm.status, 'DFM_CHECKS_BLOCKED')
+  assert.ok(dfm.dfm.errors.some((issue) => issue.code === 'COMPONENT_SPACING_VIOLATION'))
+  assert.ok(dfm.dfm.errors.some((issue) => issue.code === 'TRACE_WIDTH_BELOW_PROFILE'))
+  assert.ok(dfm.dfm.actions.some((action) => action.includes('optimize_placement')))
+})
+
 test('workflow preset produces ordered controlled Codex plugin steps', async () => {
   const preset = await executeJob({
     id: 'workflow_preset',
@@ -363,6 +384,7 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_design_constraints'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_kicad_rules'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_fanout'))
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'run_dfm_checks'))
   assert.ok(preset.workflowPreset.exportStepsAfterValidation.some((step) => step.type === 'package_jlcpcb'))
 })
 
@@ -560,6 +582,7 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-power-tree.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-stackup-plan.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-fanout-plan.json')), true)
+    assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-dfm-report.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-assembly-plan.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-constraints.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge.kicad_dru')), true)
@@ -574,6 +597,7 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     assert.ok(state.stackup.layerCount >= 2)
     assert.ok(state.powerTree.rails.some((rail) => rail.name === '3V3'))
     assert.ok(state.fanoutPlan.denseComponents.length >= 1)
+    assert.ok(state.dfmReport.status.startsWith('DFM_CHECKS_'))
     assert.ok(state.assemblyPlan.sidePlan.length >= 4)
     assert.equal(state.designConstraints.status, 'CONSTRAINTS_READY_NEEDS_REVIEW')
     assert.ok(state.components.length >= 4)

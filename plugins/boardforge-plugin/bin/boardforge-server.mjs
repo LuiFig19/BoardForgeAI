@@ -25,6 +25,7 @@ const routes = {
   'POST /jobs/plan-power-tree': 'plan_power_tree',
   'POST /jobs/plan-stackup': 'plan_stackup',
   'POST /jobs/plan-fanout': 'plan_fanout',
+  'POST /jobs/dfm-checks': 'run_dfm_checks',
   'POST /jobs/compare-manufacturers': 'compare_manufacturers',
   'POST /jobs/plan-complex-board': 'plan_complex_board',
   'POST /jobs/design-constraints': 'generate_design_constraints',
