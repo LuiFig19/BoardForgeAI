@@ -1,4 +1,4 @@
-import { distance, polygonBounds, round } from './geometry.mjs'
+import { distance, pointInPolygon, polygonBounds, rectCorners, rectsOverlap, round } from './geometry.mjs'
 import { validatePlacement } from './validation.mjs'
 import { compilePlacementConstraints } from './placement-constraints.mjs'
 
@@ -40,9 +40,145 @@ export function generatePlacementPlan(board, template, profile, options = {}) {
   return { status: allIssues.some((item) => ['BLOCKER', 'ERROR'].includes(item.severity)) ? 'NEEDS_FIX' : 'PLACEMENT_PLAN_READY', components: selectedComponents, rulesApplied: ['components fully inside outline', 'edge connectors placed on board edge intent', 'mounting hole clearance checked', 'component overlap checked', 'ratsnest length scored', 'passive proximity scored', 'mechanical/RF/thermal/service constraints compiled'], constraints, scoring, issues: allIssues }
 }
 
+export function optimizePlacementPlan(board, template, profile, options = {}) {
+  const original = generatePlacementPlan(board, template, profile, options)
+  let components = original.components.map((component) => ({ ...component }))
+  const actions = []
+  for (let pass = 0; pass < 3; pass += 1) {
+    components = components.map((component, index) => {
+      const moved = repairConstraintPosition(board, component, components, index, profile, options)
+      if (moved.x !== component.x || moved.y !== component.y || moved.rotation !== component.rotation) {
+        actions.push({ ref: component.ref, kind: 'constraint_repair', from: pickPlacement(component), to: pickPlacement(moved) })
+      }
+      return moved
+    })
+    components = resolvePlacementOverlaps(board, components, profile, actions, options)
+  }
+  const optimized = generatePlacementPlan(board, template, profile, { ...options, components })
+  const fixedErrors = original.issues.filter((issue) => ['BLOCKER', 'ERROR'].includes(issue.severity)).length - optimized.issues.filter((issue) => ['BLOCKER', 'ERROR'].includes(issue.severity)).length
+  return {
+    ...optimized,
+    status: optimized.status === 'PLACEMENT_PLAN_READY' ? 'OPTIMIZED_PLACEMENT_READY_NEEDS_REVIEW' : 'OPTIMIZED_PLACEMENT_NEEDS_REVIEW',
+    originalScore: original.scoring.score,
+    optimizedScore: optimized.scoring.score,
+    fixedErrorCount: Math.max(0, fixedErrors),
+    actions: dedupeActions(actions),
+    originalIssues: original.issues,
+  }
+}
+
 export function fixComponentOffBoard(board, component, profile) {
   const bounds = polygonBounds(board.outline)
   return { ...component, x: round(Math.max(bounds.minX + component.width / 2 + profile.componentToEdgeClearanceMm, Math.min(bounds.maxX - component.width / 2 - profile.componentToEdgeClearanceMm, component.x))), y: round(Math.max(bounds.minY + component.height / 2 + profile.componentToEdgeClearanceMm, Math.min(bounds.maxY - component.height / 2 - profile.componentToEdgeClearanceMm, component.y))) }
+}
+
+function repairConstraintPosition(board, component, components, index, profile, options) {
+  const candidates = candidatePositionsFor(board, component, profile, options)
+  return bestCandidate(board, component, components, index, candidates, profile, options)
+}
+
+function candidatePositionsFor(board, component, profile, options) {
+  const bounds = polygonBounds(board.outline)
+  const clearance = profile.componentToEdgeClearanceMm || 1
+  const halfW = (component.width || 1) / 2
+  const halfH = (component.height || 1) / 2
+  const edgeInsetX = clearance + halfW + 0.2
+  const edgeInsetY = clearance + halfH + 0.2
+  const grid = Math.max(2.5, Number(options.gridMm || 3))
+  const centerCandidates = []
+  for (let x = bounds.minX + edgeInsetX; x <= bounds.maxX - edgeInsetX; x += grid) {
+    for (let y = bounds.minY + edgeInsetY; y <= bounds.maxY - edgeInsetY; y += grid) centerCandidates.push({ x: round(x), y: round(y), rotation: component.rotation || 0 })
+  }
+  const edgeCandidates = [
+    { x: bounds.minX + edgeInsetX, y: component.y, rotation: 90 },
+    { x: bounds.maxX - edgeInsetX, y: component.y, rotation: 270 },
+    { x: component.x, y: bounds.minY + edgeInsetY, rotation: 180 },
+    { x: component.x, y: bounds.maxY - edgeInsetY, rotation: 0 },
+    { x: bounds.minX + edgeInsetX, y: bounds.minY + edgeInsetY, rotation: 90 },
+    { x: bounds.maxX - edgeInsetX, y: bounds.minY + edgeInsetY, rotation: 270 },
+    { x: bounds.minX + edgeInsetX, y: bounds.maxY - edgeInsetY, rotation: 90 },
+    { x: bounds.maxX - edgeInsetX, y: bounds.maxY - edgeInsetY, rotation: 270 },
+  ].map((candidate) => ({
+    ...candidate,
+    x: round(clamp(candidate.x, bounds.minX + edgeInsetX, bounds.maxX - edgeInsetX)),
+    y: round(clamp(candidate.y, bounds.minY + edgeInsetY, bounds.maxY - edgeInsetY)),
+  }))
+  if (/^(USB|RJ45|POWER_INPUT|SENSOR_CONNECTOR|ESC_CONNECTOR|SWD)$/i.test(component.group || '')) return [...edgeCandidates, ...centerCandidates]
+  if (/(ESP32|RF|ANT|WROOM|BLE|WIFI|WI-FI)/i.test(`${component.group || ''} ${component.value || ''}`)) return [...edgeCandidates.slice(2), ...centerCandidates]
+  return [{ x: component.x, y: component.y, rotation: component.rotation || 0 }, ...centerCandidates]
+}
+
+function bestCandidate(board, component, components, index, candidates, profile, options) {
+  const ranked = candidates
+    .map((candidate) => ({ ...component, ...candidate }))
+    .filter((candidate) => componentFits(board, candidate, profile))
+    .map((candidate) => ({ candidate, score: placementCandidateScore(board, candidate, components, index, profile, options) }))
+    .sort((a, b) => a.score - b.score)
+  return ranked[0]?.candidate || fixComponentOffBoard(board, component, profile)
+}
+
+function placementCandidateScore(board, candidate, components, index, profile, options) {
+  const bounds = polygonBounds(board.outline)
+  const others = components.filter((_, otherIndex) => otherIndex !== index)
+  const overlapPenalty = others.filter((other) => rectsOverlap(candidate, other, profile.componentToComponentClearanceMm || 0)).length * 1000
+  const holePenalty = (board.mountingHoles || []).filter((hole) => rectsOverlap(candidate, { x: hole.x, y: hole.y, width: hole.diameterMm + 2, height: hole.diameterMm + 2 })).length * 1000
+  const nearestEdge = Math.min(Math.abs(candidate.x - bounds.minX), Math.abs(bounds.maxX - candidate.x), Math.abs(candidate.y - bounds.minY), Math.abs(bounds.maxY - candidate.y))
+  const edgePenalty = /^(USB|RJ45|POWER_INPUT)$/i.test(candidate.group || '') ? nearestEdge * 30 : 0
+  const rfPenalty = /(ESP32|RF|ANT|WROOM|BLE|WIFI|WI-FI)/i.test(`${candidate.group || ''} ${candidate.value || ''}`) ? nearestEdge * 12 : 0
+  const ratsnestPenalty = localRatsnestPenalty(candidate, others, options.nets || [])
+  return round(overlapPenalty + holePenalty + edgePenalty + rfPenalty + ratsnestPenalty + distance(candidate, components[index] || candidate) * 0.5)
+}
+
+function localRatsnestPenalty(candidate, others, nets) {
+  const connectedRefs = new Set()
+  for (const net of nets || []) {
+    if (Array.isArray(net.refs) && net.refs.includes(candidate.ref)) net.refs.forEach((ref) => connectedRefs.add(ref))
+  }
+  for (const [pin, net] of Object.entries(candidate.pinMap || {})) {
+    if (!pin || !net) continue
+    for (const other of others) {
+      if (Object.values(other.pinMap || {}).includes(net)) connectedRefs.add(other.ref)
+    }
+  }
+  return others.filter((other) => connectedRefs.has(other.ref)).reduce((sum, other) => sum + distance(candidate, other) * 0.12, 0)
+}
+
+function resolvePlacementOverlaps(board, components, profile, actions, options) {
+  let next = [...components]
+  for (let index = 0; index < next.length; index += 1) {
+    const component = next[index]
+    const overlaps = next.some((other, otherIndex) => otherIndex !== index && rectsOverlap(component, other, profile.componentToComponentClearanceMm || 0))
+    if (!overlaps) continue
+    const repaired = bestCandidate(board, component, next, index, candidatePositionsFor(board, component, profile, options), profile, options)
+    if (repaired.x !== component.x || repaired.y !== component.y || repaired.rotation !== component.rotation) {
+      actions.push({ ref: component.ref, kind: 'overlap_repair', from: pickPlacement(component), to: pickPlacement(repaired) })
+      next = next.map((item, itemIndex) => (itemIndex === index ? repaired : item))
+    }
+  }
+  return next
+}
+
+function componentFits(board, component, profile) {
+  const polygon = board.outline || []
+  return rectCorners(component, profile.componentToEdgeClearanceMm || 0).every((corner) => pointInPolygon(corner, polygon))
+}
+
+function pickPlacement(component) {
+  return { x: round(component.x), y: round(component.y), rotation: component.rotation || 0 }
+}
+
+function dedupeActions(actions) {
+  const seen = new Set()
+  return actions.filter((action) => {
+    const key = `${action.ref}:${action.kind}:${action.to.x}:${action.to.y}:${action.to.rotation}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value))
 }
 
 export function scorePlacement(board, components = [], nets = [], profile = {}) {

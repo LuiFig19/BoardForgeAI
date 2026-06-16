@@ -5,7 +5,7 @@ import { createNetClasses, assignNetsToClasses, validateNetClasses } from './net
 import { getManufacturerProfile } from './manufacturers.mjs'
 import { pointInPolygon, rectCorners, rectsOverlap } from './geometry.mjs'
 import { createBoardShape, createTemplateBoard, boardTemplates } from './templates.mjs'
-import { generatePlacementPlan } from './placement.mjs'
+import { generatePlacementPlan, optimizePlacementPlan } from './placement.mjs'
 import { generateRoutingPlan } from './routing.mjs'
 import { kicadPcbFile, kicadProjectFile, kicadSchematicFile, projectReadmeFile, readmeFile, scanKiCadProject } from './kicad.mjs'
 import { runFullSelfReview, validateBoardOutline, validatePlacement } from './validation.mjs'
@@ -841,7 +841,11 @@ function validateNetClassesJob(job) {
 }
 
 function placementPlanJob(job, profile) {
-  const plan = generatePlacementPlan(boardFromJob(job), boardTemplates[job.input?.templateId], profile, { components: job.input?.components || [], nets: job.input?.nets || [] })
+  const board = boardFromJob(job)
+  const options = { components: job.input?.components || [], nets: job.input?.nets || [], gridMm: job.input?.gridMm }
+  const plan = job.type === 'optimize_placement'
+    ? optimizePlacementPlan(board, boardTemplates[job.input?.templateId], profile, options)
+    : generatePlacementPlan(board, boardTemplates[job.input?.templateId], profile, options)
   return result(job, plan.status, plan.issues.filter((item) => item.severity === 'WARNING'), plan.issues.filter((item) => ['BLOCKER', 'ERROR'].includes(item.severity)), { placementPlan: plan, constraints: plan.constraints, humanReviewRequired: true })
 }
 

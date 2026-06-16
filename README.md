@@ -96,6 +96,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - PCB net-class profiles and net classification
 - deterministic placement planning with off-board/overlap checks
 - placement scoring for density, edge connector intent, passive proximity, and estimated ratsnest length
+- placement optimization proposals that move edge connectors/RF modules, reduce overlaps, and report fixed error counts before routing
 - partial routing plans that report unrouted nets
 - native KiCad schematic object generation for symbols, wires, labels, global labels, and symbol instances
 - PCB net synchronization from component pin maps to footprint pads
@@ -233,6 +234,7 @@ Real today:
 - schematic-to-PCB net propagation that writes net declarations and assigns component pad nets from BoardForge pin maps
 - routing endpoint inference from matching component pins so route plans start from actual component connectivity
 - placement scoring with ratsnest, edge-connector, passive-proximity, and density metrics
+- optimize-placement proposals that repair overlap, edge-access, and RF-edge constraint problems before routing is attempted
 - route waypoint generation for sane review-required copper legs before DRC
 - DRC repair planning plus safe repair application for low-risk cleanup actions
 - plain-English interactive edit parsing for board resize, rounded corners, edge placement, keepouts, and route-width intents

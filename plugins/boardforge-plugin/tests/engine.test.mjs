@@ -114,6 +114,27 @@ test('placement plan enforces edge connector and RF keepout constraints', async 
   assert.ok(result.constraints.violations.some((rule) => rule.kind === 'edge_connector'))
 })
 
+test('optimize_placement repairs overlap and edge-access constraint proposals', async () => {
+  const result = await executeJob({
+    id: 'placement_optimizer',
+    type: 'optimize_placement',
+    input: {
+      board: { widthMm: 70, heightMm: 42, outline: rectanglePoints(70, 42), mountingHoles: [] },
+      components: [
+        { ref: 'J1', group: 'USB', value: 'USB-C receptacle', x: 35, y: 21, width: 9, height: 7, pinMap: { A6: 'USB_DP', A7: 'USB_DN', A1: 'GND', A4: 'VBUS' } },
+        { ref: 'U1', group: 'ESP32_S3', value: 'ESP32-S3-WROOM', x: 35, y: 21, width: 18, height: 14, pinMap: { '3V3': '3V3', GND: 'GND', USB_DP: 'USB_DP', USB_DN: 'USB_DN' } },
+        { ref: 'U2', group: 'REGULATOR', value: '3V3 regulator', x: 36, y: 21, width: 5, height: 5, pinMap: { VIN: '5V', GND: 'GND', OUT: '3V3' } },
+      ],
+      nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }, { name: 'GND' }, { name: '3V3' }],
+      gridMm: 4,
+    },
+  }, process.cwd())
+  assert.ok(['OPTIMIZED_PLACEMENT_READY_NEEDS_REVIEW', 'OPTIMIZED_PLACEMENT_NEEDS_REVIEW'].includes(result.status))
+  assert.ok(result.placementPlan.actions.length > 0)
+  assert.ok(result.placementPlan.optimizedScore >= result.placementPlan.originalScore)
+  assert.ok(result.placementPlan.fixedErrorCount >= 1)
+})
+
 test('routing geometry precheck blocks bad vias and off-board routes', () => {
   const board = { outline: rectanglePoints(30, 20), mountingHoles: [{ id: 'MH1', x: 15, y: 10, diameterMm: 3 }] }
   const routingPlan = {
