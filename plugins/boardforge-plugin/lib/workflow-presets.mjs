@@ -10,6 +10,7 @@ export function buildWorkflowPreset(input = {}) {
   }
   const steps = [
     step('plan_requirements', base, 'Convert user intent into components, nets, and assumptions.'),
+    step('plan_power_tree', base, 'Budget input rails, regulators, decoupling, sequencing, and thermal constraints.'),
     step('plan_stackup', base, 'Select layer roles, via policy, impedance intent, and HDI gates.'),
     step('create_kicad_project', base, 'Create review-required KiCad project, schematic scaffold, PCB, and metadata.'),
     step('sync_component_database', { projectPath: slug(base.projectName) }, 'Enrich BOM parts with pin maps, LCSC/MPN, footprints, models, and alternates.'),

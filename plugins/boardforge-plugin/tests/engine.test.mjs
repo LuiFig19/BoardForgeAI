@@ -309,6 +309,28 @@ test('requirements planner expands prompts into circuit components and nets', as
   assert.ok(plan.nets.some((net) => net.name === 'ETH_TX_P'))
 })
 
+test('power tree planner budgets rails and thermal review', async () => {
+  const plan = await executeJob({
+    id: 'power_tree',
+    type: 'plan_power_tree',
+    input: {
+      projectName: 'ESP32 PoE sensor',
+      powerInput: 'POE_VDD',
+      components: [
+        { ref: 'U1', group: 'ESP32_S3', value: 'ESP32-S3-WROOM' },
+        { ref: 'U10', group: 'REGULATOR', value: '3V3 buck regulator' },
+        { ref: 'U40', group: 'ETHERNET_PHY', value: 'LAN8720A PHY' },
+      ],
+      nets: [{ name: 'POE_VDD' }, { name: '3V3' }, { name: 'GND' }],
+    },
+  }, process.cwd())
+  assert.ok(['POWER_TREE_READY_NEEDS_REVIEW', 'POWER_TREE_BLOCKED'].includes(plan.status))
+  assert.ok(plan.powerTree.rails.some((rail) => rail.name === '3V3' && rail.requiredCurrentMa > 400))
+  assert.ok(plan.powerTree.regulators.some((regulator) => regulator.rail === '3V3'))
+  assert.ok(plan.powerTree.decoupling.some((item) => item.ref === 'U1'))
+  assert.ok(plan.powerTree.constraints.railClasses.some((item) => item.net === '3V3'))
+})
+
 test('workflow preset produces ordered controlled Codex plugin steps', async () => {
   const preset = await executeJob({
     id: 'workflow_preset',
@@ -318,6 +340,7 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
   assert.equal(preset.status, 'WORKFLOW_PRESET_READY_NEEDS_REVIEW')
   assert.equal(preset.workflowPreset.preset, 'poe_esp32_sensor')
   assert.equal(preset.workflowPreset.steps[0].type, 'plan_requirements')
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_power_tree'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_design_constraints'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_kicad_rules'))
   assert.ok(preset.workflowPreset.exportStepsAfterValidation.some((step) => step.type === 'package_jlcpcb'))
@@ -514,6 +537,7 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     const result = await executeJob({ id: 'project', type: 'create_kicad_project', input: { projectName: 'Sensor Project', templateId: 'ESP32_S3_SENSOR' } }, workspace)
     assert.equal(result.status, 'KICAD_PROJECT_CREATED_NEEDS_REVIEW')
     assert.equal(result.generatedFiles.some((file) => file.endsWith('.kicad_sch')), true)
+    assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-power-tree.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-stackup-plan.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-assembly-plan.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-constraints.json')), true)
@@ -527,6 +551,7 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     const state = JSON.parse(await readFile(path.join(result.projectPath, 'boardforge-project.json'), 'utf8'))
     assert.equal(state.mode, 'full_project_scaffold')
     assert.ok(state.stackup.layerCount >= 2)
+    assert.ok(state.powerTree.rails.some((rail) => rail.name === '3V3'))
     assert.ok(state.assemblyPlan.sidePlan.length >= 4)
     assert.equal(state.designConstraints.status, 'CONSTRAINTS_READY_NEEDS_REVIEW')
     assert.ok(state.components.length >= 4)

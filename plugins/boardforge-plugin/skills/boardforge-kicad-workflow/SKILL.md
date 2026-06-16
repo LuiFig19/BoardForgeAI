@@ -45,6 +45,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `run_project_preflight`
 - `build_workflow_preset`
 - `plan_requirements`
+- `plan_power_tree`
 - `plan_stackup`
 - `compare_manufacturers`
 - `plan_complex_board`
@@ -113,6 +114,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `build_workflow_preset` when the user asks Codex to build a common board type and needs an ordered sequence of safe BoardForge jobs.
 - Run `generate_manufacturing_manifest` before Gerber/drill/BOM/CPL handoff or JLCPCB packaging so Codex has one explicit artifact list and blocker list.
 - Run `plan_requirements` when the user gives a hardware description and Codex needs a structured BOM/net/circuit plan before KiCad generation.
+- Run `plan_power_tree` before stackup, schematic, placement, or routing so rails, regulators, current budget, decoupling, sequencing, and thermal blockers are explicit.
 - Run `plan_stackup` before dense, high-speed, high-current, RF, or HDI boards so BoardForge can decide layer roles, blind/buried/microvia policy, impedance intent, copper strategy, and advanced fab blockers.
 - Run `plan_complex_board` for serious boards before project generation or routing. Treat its output as the main engineering plan for requirements, stackup, keepouts, vias, copper pours, and export gates.
 - Run `generate_design_constraints` after requirements/stackup/placement changes so Codex has one current constraints artifact before routing/export.
@@ -142,6 +144,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `run_project_preflight` writes `boardforge-preflight.json` and aggregates scan, component audit, binding validation, netlist, manufacturing readiness, and optional snapshot diff gates.
 - `build_workflow_preset` returns ordered controlled job steps for ESP32 sensor, PoE/Ethernet sensor, and drone flight-controller workflows, with export steps separated behind validation gates.
 - `plan_requirements` writes or returns a requirements plan with reusable circuit blocks, components, nets, constraints, and assumptions for constrained board families.
+- `plan_power_tree` writes or returns `boardforge-power-tree.json` with input sources, rails, regulator topology, rail current budget, decoupling requirements, sequencing rules, thermal review, and manufacturing gates.
 - `plan_stackup` writes or returns a stackup plan with layer roles, manufacturer HDI capability, blind/buried/microvia rules, impedance intent, copper strategy, and thermal strategy.
 - `plan_complex_board` writes or returns a combined complex-board plan with requirements, stackup, complexity score, placement/routing strategy, keepouts, copper pours, and manufacturing gates.
 - `generate_design_constraints` writes `boardforge-constraints.json` for reusable board, manufacturer, placement, routing, keepout, net-class, HDI, and manufacturing-gate constraints.
@@ -224,6 +227,7 @@ Supported endpoints:
 - `POST /jobs/preflight`
 - `POST /jobs/workflow-preset`
 - `POST /jobs/plan-requirements`
+- `POST /jobs/plan-power-tree`
 - `POST /jobs/plan-stackup`
 - `POST /jobs/compare-manufacturers`
 - `POST /jobs/plan-complex-board`

@@ -22,6 +22,7 @@ const routes = {
   'POST /jobs/preflight': 'run_project_preflight',
   'POST /jobs/workflow-preset': 'build_workflow_preset',
   'POST /jobs/plan-requirements': 'plan_requirements',
+  'POST /jobs/plan-power-tree': 'plan_power_tree',
   'POST /jobs/plan-stackup': 'plan_stackup',
   'POST /jobs/compare-manufacturers': 'compare_manufacturers',
   'POST /jobs/plan-complex-board': 'plan_complex_board',

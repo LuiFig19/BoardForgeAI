@@ -80,6 +80,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - workflow presets that give Codex ordered BoardForge-controlled steps for common ESP32, PoE, and drone controller boards
 - manufacturing manifest generation that collects required KiCad, BoardForge, validation, BOM, CPL, and fab artifacts before handoff
 - requirements planner that expands constrained prompts into reusable circuit blocks, BOM components, nets, and design constraints
+- power-tree planner that budgets input rails, regulators, current draw, decoupling, sequencing, thermal review, and rail-specific routing constraints
 - stackup and complex-board planner for 2/4/6/8+ layer boards, HDI review, blind/buried/microvia policy, impedance intent, copper strategy, and thermal/RF keepouts
 - deterministic placement of real KiCad footprints from installed libraries
 - KiCad library indexing for installed KiCad symbols, footprints, and 3D models
@@ -155,6 +156,7 @@ Endpoints:
 - `POST /jobs/preflight`
 - `POST /jobs/workflow-preset`
 - `POST /jobs/plan-requirements`
+- `POST /jobs/plan-power-tree`
 - `POST /jobs/plan-stackup`
 - `POST /jobs/compare-manufacturers`
 - `POST /jobs/plan-complex-board`
@@ -198,6 +200,7 @@ This writes:
 - `boardforge-workflow-preset.json` when workflow preset planning runs inside an existing project
 - `boardforge-manufacturing-manifest.json` when the manufacturing handoff manifest runs
 - `boardforge-requirements-plan.json` when requirement planning runs
+- `boardforge-power-tree.json` when power-tree planning runs or full project scaffolding creates rail intent
 - `boardforge-stackup-plan.json` when stackup planning runs
 - `boardforge-assembly-plan.json` for component-side, connector-access, service-access, and panelization hints
 - `boardforge-constraints.json` for reusable placement/routing/manufacturing constraints
@@ -243,6 +246,7 @@ Real today:
 - component library coverage auditing for symbol, footprint, 3D model, pin-map, and supplier readiness
 - project preflight gate reports before risky edits, routing, restore, export, or JLCPCB packaging
 - requirements-to-circuit planning for USB-C, ESP32-S3 core, 3V3 regulation, I2C headers, SWD, PoE/Ethernet, and drone FC core blocks
+- power-tree planning for input source, rail current margin, regulator topology, decoupling placement, sequencing, thermal risk, and route-width constraints
 - schematic object generation with symbols, wires, labels, power/global labels, component footprint properties, and symbol instances written into `.kicad_sch`
 - schematic-to-PCB net propagation that writes net declarations and assigns component pad nets from BoardForge pin maps
 - routing endpoint inference from matching component pins so route plans start from actual component connectivity
