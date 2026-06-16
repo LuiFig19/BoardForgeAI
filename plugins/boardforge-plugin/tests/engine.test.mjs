@@ -59,6 +59,29 @@ test('parses KiCad symbol pins and footprint pads for compatibility checks', () 
   assert.equal(parseFootprintCourtyardFromText(footprintText).width, 2)
 })
 
+test('component binding validation reports critical pin coverage and repair actions', async () => {
+  const result = await executeJob({
+    id: 'binding_quality',
+    type: 'validate_component_bindings',
+    input: {
+      components: [
+        {
+          ref: 'J1',
+          group: 'USB',
+          value: 'USB-C receptacle',
+          footprint: 'Connector_USB:USB_C_Receptacle',
+          pinMap: { A6: 'USB_DP' },
+        },
+      ],
+    },
+  }, process.cwd())
+  assert.equal(result.status, 'COMPONENT_BINDINGS_NEED_FIX')
+  assert.ok(result.results[0].missingCriticalPins.includes('GND'))
+  assert.equal(result.results[0].netCoverage.differentialPins, 1)
+  assert.ok(result.results[0].recommendedActions.some((action) => /critical pin intent/i.test(action)))
+  assert.ok(result.warnings.some((issue) => issue.code === 'GROUND_PIN_MAPPING_MISSING'))
+})
+
 test('placement scoring reports ratsnest and edge connector intent', () => {
   const board = { outline: rectanglePoints(50, 30), mountingHoles: [] }
   const components = [
@@ -70,6 +93,25 @@ test('placement scoring reports ratsnest and edge connector intent', () => {
   assert.ok(scoring.score > 0)
   assert.ok(scoring.ratsnest.connectionCount >= 1)
   assert.ok(scoring.edgeConnectorScore > 70)
+})
+
+test('placement plan enforces edge connector and RF keepout constraints', async () => {
+  const result = await executeJob({
+    id: 'placement_constraints',
+    type: 'generate_placement_plan',
+    input: {
+      board: { widthMm: 60, heightMm: 36, outline: rectanglePoints(60, 36), mountingHoles: [] },
+      components: [
+        { ref: 'J1', group: 'USB', value: 'USB-C receptacle', x: 30, y: 18, width: 9, height: 7, pinMap: { A6: 'USB_DP', A7: 'USB_DN', A1: 'GND', A4: 'VBUS' } },
+        { ref: 'U1', group: 'ESP32_S3', value: 'ESP32-S3-WROOM', x: 30, y: 18, width: 18, height: 14, pinMap: { '3V3': '3V3', GND: 'GND', USB_DP: 'USB_DP', USB_DN: 'USB_DN' } },
+      ],
+      nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }, { name: 'GND' }],
+    },
+  }, process.cwd())
+  assert.equal(result.status, 'NEEDS_FIX')
+  assert.equal(result.constraints.status, 'PLACEMENT_CONSTRAINTS_NEED_FIX')
+  assert.ok(result.errors.some((issue) => issue.code === 'PLACEMENT_CONSTRAINT_VIOLATION'))
+  assert.ok(result.constraints.violations.some((rule) => rule.kind === 'edge_connector'))
 })
 
 test('routing geometry precheck blocks bad vias and off-board routes', () => {
@@ -449,6 +491,12 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     const scan = await executeJob({ id: 'scan', type: 'scan_kicad_project', input: { projectPath: 'sensor-project' } }, workspace)
     assert.equal(scan.status, 'SCAN_COMPLETE_NEEDS_REVIEW')
     assert.ok(scan.scan.footprints.length >= 4)
+    const preflight = await executeJob({ id: 'project_preflight_manifest', type: 'run_project_preflight', input: { projectPath: 'sensor-project' } }, workspace)
+    assert.ok(['PROJECT_PREFLIGHT_BLOCKED', 'PROJECT_PREFLIGHT_NEEDS_REVIEW', 'PROJECT_PREFLIGHT_READY_NEEDS_REVIEW'].includes(preflight.status))
+    const manifest = await executeJob({ id: 'manifest', type: 'generate_manufacturing_manifest', input: { projectPath: 'sensor-project' } }, workspace)
+    assert.ok(['MANUFACTURING_MANIFEST_BLOCKED', 'MANUFACTURING_MANIFEST_NEEDS_REVIEW', 'MANUFACTURING_MANIFEST_READY_NEEDS_REVIEW'].includes(manifest.status))
+    assert.equal(manifest.generatedFiles.some((file) => file.endsWith('boardforge-manufacturing-manifest.json')), true)
+    assert.ok(manifest.manifest.files.some((file) => file.label === 'KiCad PCB' && file.exists))
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

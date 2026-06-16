@@ -57,6 +57,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `generate_netlist`
 - `run_design_audit`
 - `validate_manufacturing_readiness`
+- `generate_manufacturing_manifest`
 - `find_missing_footprints`
 - `link_3d_models`
 - `create_net_classes`
@@ -106,6 +107,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Restore only through `restore_project_snapshot`, then rerun scan, ERC, and DRC before export.
 - Run `diff_project_snapshot` before restore or export when a snapshot exists so the user can review changed files.
 - Run `run_project_preflight` before risky edits, routing, manufacturing export, package generation, or project handoff.
+- Run `generate_manufacturing_manifest` before Gerber/drill/BOM/CPL handoff or JLCPCB packaging so Codex has one explicit artifact list and blocker list.
 - Run `plan_requirements` when the user gives a hardware description and Codex needs a structured BOM/net/circuit plan before KiCad generation.
 - Run `plan_stackup` before dense, high-speed, high-current, RF, or HDI boards so BoardForge can decide layer roles, blind/buried/microvia policy, impedance intent, copper strategy, and advanced fab blockers.
 - Run `plan_complex_board` for serious boards before project generation or routing. Treat its output as the main engineering plan for requirements, stackup, keepouts, vias, copper pours, and export gates.
@@ -148,6 +150,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `generate_netlist` writes `boardforge-netlist.json` from component pin maps so Codex can review schematic/PCB connectivity before routing.
 - `run_design_audit` writes `boardforge-design-report.json`, combining netlist coverage, PCB pad-net audit, placement score, route prechecks, binding issues, and recommended next BoardForge actions.
 - `validate_manufacturing_readiness` checks DRC/ERC reports plus BOM/CPL artifacts and reports blockers before export/package workflows.
+- `generate_manufacturing_manifest` writes `boardforge-manufacturing-manifest.json`, collecting required project files, stackup, assembly, binding, preflight, DRC/ERC, BOM, CPL, advanced-fab approval, blockers, and warnings.
 - `generate_schematic` writes review-required KiCad schematic objects into `.kicad_sch`, including symbols, footprint properties, wires, labels, global labels, and symbol instances. Run ERC after it.
 - `plan_drc_repairs` and `apply_safe_drc_repairs` create a DRC repair plan and apply only low-risk safe repairs; rerun DRC after any repair.
 - `interactive_edit` parses plain-English edits such as resizing the board, rounding corners, moving USB to an edge, enforcing antenna keepout, or increasing power route width.
@@ -217,6 +220,7 @@ Supported endpoints:
 - `POST /jobs/audit-component-library`
 - `POST /jobs/validate-bindings`
 - `POST /jobs/validate-manufacturing`
+- `POST /jobs/manufacturing-manifest`
 - `POST /jobs/generate-netlist`
 - `POST /jobs/design-audit`
 - `POST /jobs/validate-routing`

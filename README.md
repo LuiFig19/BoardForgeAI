@@ -77,6 +77,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - controlled project snapshots, snapshot listing, and restore-before-review rollback for generated KiCad work
 - snapshot diff reports that show added/modified/deleted KiCad and BoardForge files before restore/export decisions
 - project preflight reports that aggregate scan, component audit, binding validation, netlist, manufacturing readiness, and optional snapshot diff gates
+- manufacturing manifest generation that collects required KiCad, BoardForge, validation, BOM, CPL, and fab artifacts before handoff
 - requirements planner that expands constrained prompts into reusable circuit blocks, BOM components, nets, and design constraints
 - stackup and complex-board planner for 2/4/6/8+ layer boards, HDI review, blind/buried/microvia policy, impedance intent, copper strategy, and thermal/RF keepouts
 - deterministic placement of real KiCad footprints from installed libraries
@@ -156,6 +157,7 @@ Endpoints:
 - `POST /jobs/audit-component-library`
 - `POST /jobs/validate-bindings`
 - `POST /jobs/validate-manufacturing`
+- `POST /jobs/manufacturing-manifest`
 - `POST /jobs/generate-netlist`
 - `POST /jobs/design-audit`
 - `POST /jobs/validate-routing`
@@ -183,6 +185,7 @@ This writes:
 - `boardforge-schematic-model.json` for generated schematic intent
 - `boardforge-component-audit.json` when component coverage audit runs
 - `boardforge-preflight.json` when project preflight runs
+- `boardforge-manufacturing-manifest.json` when the manufacturing handoff manifest runs
 - `boardforge-requirements-plan.json` when requirement planning runs
 - `boardforge-stackup-plan.json` when stackup planning runs
 - `boardforge-assembly-plan.json` for component-side, connector-access, service-access, and panelization hints

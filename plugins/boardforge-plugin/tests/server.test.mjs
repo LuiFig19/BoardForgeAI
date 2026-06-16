@@ -54,6 +54,12 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { projectPath: 'server-project' },
     })
     assert.ok(['PROJECT_PREFLIGHT_BLOCKED', 'PROJECT_PREFLIGHT_NEEDS_REVIEW', 'PROJECT_PREFLIGHT_READY_NEEDS_REVIEW'].includes(preflight.status))
+    const manifest = await postJson(`http://127.0.0.1:${port}/jobs/manufacturing-manifest`, {
+      id: 'server_manifest',
+      input: { projectPath: 'server-project' },
+    })
+    assert.ok(['MANUFACTURING_MANIFEST_BLOCKED', 'MANUFACTURING_MANIFEST_NEEDS_REVIEW', 'MANUFACTURING_MANIFEST_READY_NEEDS_REVIEW'].includes(manifest.status))
+    assert.equal(manifest.generatedFiles.some((file) => file.endsWith('boardforge-manufacturing-manifest.json')), true)
     const snapshot = await postJson(`http://127.0.0.1:${port}/jobs/snapshot`, {
       id: 'server_snapshot',
       input: { projectPath: 'server-project', label: 'server-smoke' },

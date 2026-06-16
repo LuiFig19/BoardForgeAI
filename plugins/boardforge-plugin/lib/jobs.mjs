@@ -21,6 +21,7 @@ import { applySafeDrcRepairs, planDrcRepairs } from './drc-repair.mjs'
 import { applyInteractiveEdits } from './interactive-edits.mjs'
 import { validateComponentBindings } from './component-compatibility.mjs'
 import { validateExportGate, validateManufacturingReadiness } from './manufacturing-readiness.mjs'
+import { buildManufacturingManifest } from './manufacturing-manifest.mjs'
 import { validateRoutingGeometry } from './routing-validation.mjs'
 import { runDesignAudit } from './design-audit.mjs'
 import { createProjectSnapshot, diffProjectSnapshot, listProjectSnapshots, restoreProjectSnapshot } from './project-snapshots.mjs'
@@ -30,7 +31,7 @@ import { planRequirements } from './requirements-planner.mjs'
 import { compareManufacturerCapabilities, planStackup, scoreBoardComplexity } from './stackup-planner.mjs'
 import { planAssemblyAndMechanical } from './assembly-planner.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'plan_requirements', 'plan_stackup', 'compare_manufacturers', 'plan_complex_board', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'plan_requirements', 'plan_stackup', 'compare_manufacturers', 'plan_complex_board', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -77,6 +78,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'audit_component_library') return componentLibraryAuditJob(job, workspace)
   if (job.type === 'validate_component_bindings') return validateComponentBindingsJob(job, workspace)
   if (job.type === 'validate_manufacturing_readiness') return manufacturingReadinessJob(job, workspace)
+  if (job.type === 'generate_manufacturing_manifest') return manufacturingManifestJob(job, workspace)
   if (job.type === 'generate_netlist') return generateNetlistJob(job, workspace)
   if (job.type === 'run_design_audit') return designAuditJob(job, workspace, profile)
   if (job.type === 'generate_schematic') return generateSchematicJob(job, workspace)
@@ -658,6 +660,20 @@ async function manufacturingReadinessJob(job, workspace) {
   return result(job, readiness.status, readiness.warnings, readiness.errors, { readiness, humanReviewRequired: true })
 }
 
+async function manufacturingManifestJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : workspace
+  const manifest = await buildManufacturingManifest(projectDir, job.input || {})
+  await updateProjectState(projectDir, async (current) => ({
+    ...current,
+    status: manifest.status,
+    manufacturingManifest: { status: manifest.status, outputFile: manifest.outputFile, blockers: manifest.blockers.length, warnings: manifest.warnings.length },
+    generatedFiles: [...new Set([...(current.generatedFiles || []), manifest.outputFile].filter(Boolean))],
+    lastJobType: job.type,
+    lastHistoryMessage: `Manufacturing manifest generated with ${manifest.blockers.length} blockers and ${manifest.warnings.length} warnings.`,
+  }))
+  return result(job, manifest.status, manifest.warnings, manifest.blockers, { manifest, generatedFiles: [manifest.outputFile].filter(Boolean), humanReviewRequired: true })
+}
+
 async function generateNetlistJob(job, workspace) {
   const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
   const state = projectDir ? await readProjectState(projectDir) : null
@@ -826,7 +842,7 @@ function validateNetClassesJob(job) {
 
 function placementPlanJob(job, profile) {
   const plan = generatePlacementPlan(boardFromJob(job), boardTemplates[job.input?.templateId], profile, { components: job.input?.components || [], nets: job.input?.nets || [] })
-  return result(job, plan.status, plan.issues.filter((item) => item.severity === 'WARNING'), plan.issues.filter((item) => ['BLOCKER', 'ERROR'].includes(item.severity)), { placementPlan: plan, humanReviewRequired: true })
+  return result(job, plan.status, plan.issues.filter((item) => item.severity === 'WARNING'), plan.issues.filter((item) => ['BLOCKER', 'ERROR'].includes(item.severity)), { placementPlan: plan, constraints: plan.constraints, humanReviewRequired: true })
 }
 
 function routingPlanJob(job) {

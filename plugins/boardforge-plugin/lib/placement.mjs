@@ -1,5 +1,6 @@
 import { distance, polygonBounds, round } from './geometry.mjs'
 import { validatePlacement } from './validation.mjs'
+import { compilePlacementConstraints } from './placement-constraints.mjs'
 
 const sizes = {
   MCU: [10, 10], ESP32_S3: [18, 14], IMU: [3, 3], USB: [9, 7], RJ45: [16, 16], REGULATOR: [5, 5],
@@ -29,8 +30,14 @@ export function generatePlacementPlan(board, template, profile, options = {}) {
   }
   const selectedComponents = options.components?.length ? options.components : components
   const issues = validatePlacement(board, selectedComponents, profile)
+  const constraints = compilePlacementConstraints(board, selectedComponents, options)
   const scoring = scorePlacement(board, selectedComponents, options.nets || [], profile)
-  return { status: issues.some((item) => ['BLOCKER', 'ERROR'].includes(item.severity)) ? 'NEEDS_FIX' : 'PLACEMENT_PLAN_READY', components: selectedComponents, rulesApplied: ['components fully inside outline', 'edge connectors placed on board edge intent', 'mounting hole clearance checked', 'component overlap checked', 'ratsnest length scored', 'passive proximity scored'], scoring, issues: [...issues, ...scoring.issues] }
+  const constraintIssues = [
+    ...constraints.violations.map((rule) => ({ severity: 'ERROR', code: 'PLACEMENT_CONSTRAINT_VIOLATION', message: `${rule.ref} violates ${rule.kind}: ${rule.requirement}`, details: rule })),
+    ...constraints.warnings.map((rule) => ({ severity: 'WARNING', code: 'PLACEMENT_CONSTRAINT_REVIEW', message: `${rule.ref} needs ${rule.kind} review: ${rule.requirement}`, details: rule })),
+  ]
+  const allIssues = [...issues, ...scoring.issues, ...constraintIssues]
+  return { status: allIssues.some((item) => ['BLOCKER', 'ERROR'].includes(item.severity)) ? 'NEEDS_FIX' : 'PLACEMENT_PLAN_READY', components: selectedComponents, rulesApplied: ['components fully inside outline', 'edge connectors placed on board edge intent', 'mounting hole clearance checked', 'component overlap checked', 'ratsnest length scored', 'passive proximity scored', 'mechanical/RF/thermal/service constraints compiled'], constraints, scoring, issues: allIssues }
 }
 
 export function fixComponentOffBoard(board, component, profile) {

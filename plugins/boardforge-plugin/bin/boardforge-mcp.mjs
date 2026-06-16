@@ -34,6 +34,7 @@ const toolToJobType = {
   audit_component_library: 'audit_component_library',
   validate_component_bindings: 'validate_component_bindings',
   validate_manufacturing_readiness: 'validate_manufacturing_readiness',
+  generate_manufacturing_manifest: 'generate_manufacturing_manifest',
   generate_netlist: 'generate_netlist',
   run_design_audit: 'run_design_audit',
   generate_schematic: 'generate_schematic',

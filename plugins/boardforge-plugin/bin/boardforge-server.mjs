@@ -30,6 +30,7 @@ const routes = {
   'POST /jobs/audit-component-library': 'audit_component_library',
   'POST /jobs/validate-bindings': 'validate_component_bindings',
   'POST /jobs/validate-manufacturing': 'validate_manufacturing_readiness',
+  'POST /jobs/manufacturing-manifest': 'generate_manufacturing_manifest',
   'POST /jobs/generate-netlist': 'generate_netlist',
   'POST /jobs/design-audit': 'run_design_audit',
   'POST /jobs/find-missing-footprints': 'find_missing_footprints',
