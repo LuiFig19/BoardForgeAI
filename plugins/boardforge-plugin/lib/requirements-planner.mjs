@@ -105,7 +105,7 @@ function selectCircuits(text, input) {
   if (/i2c|sensor|sht|scd|bme|bmp|barometer/.test(text) || input.interfaces?.includes('I2C')) add('i2c_sensor_header')
   if (/swd|program|debug/.test(text)) add('swd_debug')
   if (/poe|ethernet|rj45|802\.3/.test(text) || input.templateId === 'ESP32_S3_POE_SENSOR' || input.interfaces?.includes('Ethernet')) add('poe_ethernet')
-  if (/drone|flight controller|imu|esc|blackbox/.test(text) || input.templateId === 'DRONE_FC_30X30' || input.templateId === 'DRONE_AIO_WHOOP') add('drone_fc_core')
+  if (/drone|flight controller|robotics controller|motor driver|motor drivers|imu|esc|blackbox/.test(text) || input.templateId === 'DRONE_FC_30X30' || input.templateId === 'DRONE_AIO_WHOOP') add('drone_fc_core')
   if (!selected.length) {
     add('esp32_s3_core')
     add('usb_c_device')

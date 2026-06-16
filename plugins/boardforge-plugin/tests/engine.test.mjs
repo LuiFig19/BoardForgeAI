@@ -385,6 +385,29 @@ test('requirements planner expands prompts into circuit components and nets', as
   assert.ok(plan.nets.some((net) => net.name === 'ETH_TX_P'))
 })
 
+test('pin assignment planner maps MCU interfaces and peripheral pins', async () => {
+  const result = await executeJob({
+    id: 'pin_assignments',
+    type: 'plan_pin_assignments',
+    input: {
+      interfaces: ['USB', 'I2C', 'SPI', 'SWD'],
+      components: [
+        { ref: 'U1', group: 'ESP32_S3', value: 'ESP32-S3-WROOM-1-N8R8' },
+        { ref: 'J1', group: 'USB', value: 'USB-C receptacle' },
+        { ref: 'J20', group: 'SENSOR_CONNECTOR', value: 'I2C sensor connector' },
+        { ref: 'J30', group: 'SWD', value: 'SWD programming header' },
+      ],
+      nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }, { name: 'I2C_SCL' }, { name: 'I2C_SDA' }, { name: 'SWDIO' }, { name: 'SWCLK' }, { name: '3V3' }, { name: 'GND' }],
+    },
+  }, process.cwd())
+  assert.ok(['PIN_ASSIGNMENT_NEEDS_REVIEW', 'PIN_ASSIGNMENT_READY_NEEDS_REVIEW'].includes(result.status))
+  assert.equal(result.pinAssignments.controller.ref, 'U1')
+  assert.equal(result.pinAssignments.controllerPinMap.GPIO20, 'USB_DP')
+  assert.equal(result.pinAssignments.controllerPinMap.GPIO8, 'I2C_SDA')
+  assert.ok(result.pinAssignments.peripheralPinMaps.some((item) => item.ref === 'J1' && item.pinMap['D+'] === 'USB_DP'))
+  assert.ok(result.pinAssignments.actions.some((action) => action.command === 'generate_schematic'))
+})
+
 test('power tree planner budgets rails and thermal review', async () => {
   const plan = await executeJob({
     id: 'power_tree',

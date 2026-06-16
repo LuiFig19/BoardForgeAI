@@ -97,6 +97,7 @@ const pluginCommands = [
   'build_workflow_preset',
   'run_boardforge_workflow',
   'plan_requirements',
+  'plan_pin_assignments',
   'plan_power_tree',
   'plan_stackup',
   'plan_fanout',

@@ -40,8 +40,9 @@ import { planPowerTree } from './power-tree-planner.mjs'
 import { planFanout } from './fanout-planner.mjs'
 import { runDfmChecks } from './dfm-checker.mjs'
 import { planSignalIntegrity } from './signal-integrity-planner.mjs'
+import { planPinAssignments } from './pin-assignment-planner.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_requirements', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -80,6 +81,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'build_workflow_preset') return workflowPresetJob(job, workspace)
   if (job.type === 'run_boardforge_workflow') return runBoardForgeWorkflowJob(job, workspace)
   if (job.type === 'plan_requirements') return planRequirementsJob(job, workspace)
+  if (job.type === 'plan_pin_assignments') return pinAssignmentsJob(job, workspace)
   if (job.type === 'plan_power_tree') return powerTreePlanJob(job, workspace)
   if (job.type === 'plan_stackup') return stackupPlanJob(job, workspace, profile)
   if (job.type === 'plan_fanout') return fanoutPlanJob(job, workspace)
@@ -175,6 +177,7 @@ async function createKiCadProject(job, workspace, profile) {
   })
   const bindingReport = await validateComponentBindings(resolvedComponents)
   const plannedNets = assignNetsToClasses(requirementsPlan?.nets || job.input?.nets || [])
+  const pinAssignments = planPinAssignments({ components: resolvedComponents, nets: plannedNets, interfaces: job.input?.interfaces || [], input: job.input || {} })
   const netlist = boardforgeNetlistFromComponents(resolvedComponents, plannedNets)
   const schematicModel = generateSchematicModel(board, resolvedComponents, { ...job.input, nets: plannedNets })
   const powerTree = planPowerTree({ ...job.input, board, components: resolvedComponents, nets: plannedNets })
@@ -188,6 +191,7 @@ async function createKiCadProject(job, workspace, profile) {
   const state = {
     ...createProjectState({ job: { ...job, input: { ...job.input, designIntent, requirementsPlan, nets: plannedNets } }, board, mode: 'full_project_scaffold', profile, components: resolvedComponents, library, componentBindings: bindingReport, review: { ...review, placementIssues, zoneIssues, bindingIssues: [...bindingReport.warnings, ...bindingReport.errors] }, generatedFiles: [] }),
     requirementsPlan,
+    pinAssignments,
     powerTree,
     stackup,
     fanoutPlan,
@@ -202,6 +206,7 @@ async function createKiCadProject(job, workspace, profile) {
     { path: `${safeName}.kicad_sch`, content: kicadSchematicFile(board, { components: resolvedComponents }) },
     { path: `${safeName}.kicad_pcb`, content: kicadPcbFile(board, { netClasses, footprints }) },
     { path: 'boardforge-components.json', content: JSON.stringify(resolvedComponents, null, 2) },
+    { path: 'boardforge-pin-assignments.json', content: JSON.stringify(pinAssignments, null, 2) },
     { path: 'boardforge-netlist.json', content: JSON.stringify(netlist, null, 2) },
     { path: 'boardforge-schematic-model.json', content: JSON.stringify(schematicModel, null, 2) },
     { path: 'boardforge-power-tree.json', content: JSON.stringify(powerTree, null, 2) },
@@ -637,6 +642,27 @@ async function planRequirementsJob(job, workspace) {
   return result(job, output.status, [], [], { ...output, generatedFiles: outputFile ? [outputFile] : [] })
 }
 
+async function pinAssignmentsJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const nets = job.input?.nets || state?.requirements?.nets || state?.requirementsPlan?.nets || []
+  const output = planPinAssignments({ components, nets, interfaces: job.input?.interfaces || state?.requirementsPlan?.interfaces || [], input: job.input || {} })
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-pin-assignments.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      pinAssignments: output,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Planned pin assignments for ${output.assignments.length} components and ${output.interfaces.length} inferred interfaces.`,
+    }))
+  }
+  return result(job, output.status, output.warnings, output.errors, { pinAssignments: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
+}
+
 async function powerTreePlanJob(job, workspace) {
   const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
   const state = projectDir ? await readProjectState(projectDir) : null
@@ -771,6 +797,7 @@ async function complexBoardPlanJob(job, workspace, profile) {
   const requirementsPlan = planRequirements({ ...job.input, templateId: job.input?.templateId || board.id })
   const components = job.input?.components?.length ? job.input.components : applyPlannedPlacement(board, requirementsPlan.components || [])
   const nets = assignNetsToClasses(requirementsPlan.nets || job.input?.nets || [])
+  const pinAssignments = planPinAssignments({ components, nets, interfaces: job.input?.interfaces || [], input: job.input || {} })
   const powerTree = planPowerTree({ ...job.input, board, components, nets })
   const stackup = planStackup({ ...job.input, board, components, nets, manufacturerProfile: profile.id })
   const fanoutPlan = planFanout({ ...job.input, board, components, nets, stackup })
@@ -781,12 +808,14 @@ async function complexBoardPlanJob(job, workspace, profile) {
   const assemblyPlan = planAssemblyAndMechanical(board, components, job.input || {})
   const blockers = [
     ...stackup.errors,
+    ...pinAssignments.errors,
     ...fanoutPlan.errors,
     ...signalIntegrity.errors,
     ...validateZones(board, designIntent.zones).filter((item) => ['ERROR', 'BLOCKER'].includes(item.severity)),
   ]
   const warnings = [
     ...stackup.warnings,
+    ...pinAssignments.warnings,
     ...fanoutPlan.warnings,
     ...signalIntegrity.warnings,
     ...assemblyPlan.warnings,
@@ -797,6 +826,7 @@ async function complexBoardPlanJob(job, workspace, profile) {
     status: blockers.length ? 'COMPLEX_BOARD_PLAN_BLOCKED' : 'COMPLEX_BOARD_PLAN_READY_NEEDS_REVIEW',
     requirementsPlan,
     powerTree,
+    pinAssignments,
     complexity,
     stackup,
     fanoutPlan,
@@ -812,6 +842,7 @@ async function complexBoardPlanJob(job, workspace, profile) {
       requireErcBeforeBomPackage: true,
       requireHumanStackupApproval: stackup.hdi.requiresAdvancedReview || complexity.level !== 'low',
       requirePowerRailReview: true,
+      requirePinAssignmentReview: true,
       requireFanoutReview: fanoutPlan.denseComponents.length > 0,
       requireSignalIntegrityReview: signalIntegrity.highSpeedNetCount > 0,
     },
@@ -826,6 +857,7 @@ async function complexBoardPlanJob(job, workspace, profile) {
       ...current,
       status: output.status,
       requirementsPlan,
+      pinAssignments,
       stackup,
       powerTree,
       fanoutPlan,

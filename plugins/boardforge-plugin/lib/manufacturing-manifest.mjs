@@ -7,6 +7,7 @@ export async function buildManufacturingManifest(projectDir, options = {}) {
   const state = await readJson(path.join(projectDir, stateFileName))
   const stackup = await readJson(path.join(projectDir, 'boardforge-stackup-plan.json'))
   const assembly = await readJson(path.join(projectDir, 'boardforge-assembly-plan.json'))
+  const pinAssignments = await readJson(path.join(projectDir, 'boardforge-pin-assignments.json'))
   const bindings = await readJson(path.join(projectDir, 'boardforge-bindings.json'))
   const signalIntegrity = await readJson(path.join(projectDir, 'boardforge-signal-integrity.json'))
   const dfm = await readJson(path.join(projectDir, 'boardforge-dfm-report.json'))
@@ -17,6 +18,7 @@ export async function buildManufacturingManifest(projectDir, options = {}) {
   const blockers = [
     ...missing.map((file) => ({ severity: 'ERROR', code: 'MANIFEST_REQUIRED_FILE_MISSING', message: `${file.label} is missing.`, path: file.path })),
     ...(advancedFab && !options.approveAdvancedFab ? [{ severity: 'ERROR', code: 'ADVANCED_FAB_APPROVAL_REQUIRED', message: 'Advanced stackup/via review must be approved before manufacturing package release.' }] : []),
+    ...(pinAssignments?.errors || []),
     ...(bindings?.errors || []),
     ...(signalIntegrity?.errors || []),
     ...(dfm?.errors || []),
@@ -25,6 +27,7 @@ export async function buildManufacturingManifest(projectDir, options = {}) {
   const warnings = [
     ...(stackup?.warnings || []),
     ...(assembly?.warnings || []),
+    ...(pinAssignments?.warnings || []),
     ...(bindings?.warnings || []),
     ...(signalIntegrity?.warnings || []),
     ...(dfm?.warnings || []),
@@ -39,6 +42,7 @@ export async function buildManufacturingManifest(projectDir, options = {}) {
     componentCount: state?.components?.length || 0,
     stackup: stackup ? { status: stackup.status, layerCount: stackup.layerCount, hdi: stackup.hdi, impedanceIntent: stackup.impedanceIntent } : null,
     assembly: assembly ? { status: assembly.status, assemblyMode: assembly.assemblyMode, connectorAccess: assembly.connectorAccess, serviceAccess: assembly.serviceAccess } : null,
+    pinAssignments: pinAssignments ? { status: pinAssignments.status, controller: pinAssignments.controller, interfaces: pinAssignments.interfaces, conflicts: pinAssignments.conflicts?.length || 0 } : null,
     signalIntegrity: signalIntegrity ? { status: signalIntegrity.status, highSpeedNetCount: signalIntegrity.highSpeedNetCount, gates: signalIntegrity.gates, actions: signalIntegrity.actions || [] } : null,
     dfm: dfm ? { status: dfm.status, errors: dfm.errors?.length || 0, warnings: dfm.warnings?.length || 0, actions: dfm.actions || [] } : null,
     files: files.map((file) => ({ ...file, exists: existsSync(file.path) })),
@@ -69,6 +73,7 @@ function expectedFiles(projectDir) {
     { label: 'KiCad PCB', path: firstExisting(projectDir, '.kicad_pcb'), required: true },
     { label: 'BoardForge project state', path: path.join(projectDir, stateFileName), required: true },
     { label: 'Component manifest', path: path.join(projectDir, 'boardforge-components.json'), required: true },
+    { label: 'Pin assignment plan', path: path.join(projectDir, 'boardforge-pin-assignments.json'), required: true },
     { label: 'Binding report', path: path.join(projectDir, 'boardforge-bindings.json'), required: true },
     { label: 'Stackup plan', path: path.join(projectDir, 'boardforge-stackup-plan.json'), required: true },
     { label: 'Signal integrity report', path: path.join(projectDir, 'boardforge-signal-integrity.json'), required: true },

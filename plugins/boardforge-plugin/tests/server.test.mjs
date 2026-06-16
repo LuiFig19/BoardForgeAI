@@ -38,6 +38,12 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.equal(plan.status, 'REQUIREMENTS_PLAN_READY_NEEDS_REVIEW')
     assert.ok(plan.components.length > 0)
+    const pins = await postJson(`http://127.0.0.1:${port}/jobs/plan-pin-assignments`, {
+      id: 'server_pins',
+      input: { components: plan.components, nets: plan.nets, interfaces: ['USB', 'I2C', 'SWD'] },
+    })
+    assert.ok(['PIN_ASSIGNMENT_NEEDS_REVIEW', 'PIN_ASSIGNMENT_READY_NEEDS_REVIEW'].includes(pins.status))
+    assert.equal(pins.pinAssignments.controller.ref, 'U1')
     const stackup = await postJson(`http://127.0.0.1:${port}/jobs/plan-stackup`, {
       id: 'server_stackup',
       input: { projectName: 'Server HDI sensor', prompt: 'compact USB sensor with blind vias', layerCount: 6, manufacturerProfile: 'ADVANCED_HDI_REVIEW', allowBlindVias: true },

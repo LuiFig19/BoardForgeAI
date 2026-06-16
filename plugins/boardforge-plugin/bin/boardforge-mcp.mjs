@@ -25,6 +25,7 @@ const toolToJobType = {
   build_workflow_preset: 'build_workflow_preset',
   run_boardforge_workflow: 'run_boardforge_workflow',
   plan_requirements: 'plan_requirements',
+  plan_pin_assignments: 'plan_pin_assignments',
   plan_power_tree: 'plan_power_tree',
   plan_stackup: 'plan_stackup',
   plan_fanout: 'plan_fanout',
