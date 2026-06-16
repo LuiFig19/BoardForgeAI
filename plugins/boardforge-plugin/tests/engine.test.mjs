@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { rectanglePoints } from '../lib/geometry.mjs'
+import { pointInPolygon, rectanglePoints } from '../lib/geometry.mjs'
 import { getManufacturerProfile } from '../lib/manufacturers.mjs'
 import { assignNetsToClasses } from '../lib/net-classes.mjs'
 import { validateBoardOutline, validatePlacement } from '../lib/validation.mjs'
@@ -735,6 +735,25 @@ test('autoroute_board routes simple nets around component obstacles', async () =
   assert.ok(route.estimatedLengthMm > 0)
 })
 
+test('autoroute_board avoids generated antenna copper keepouts', async () => {
+  const board = { widthMm: 50, heightMm: 30, layerCount: 2, outline: rectanglePoints(50, 30), mountingHoles: [] }
+  const components = [
+    { ref: 'J1', group: 'connector', x: 8, y: 4, width: 3, height: 3, pinMap: { '1': 'SIG' } },
+    { ref: 'U1', group: 'mcu', x: 42, y: 4, width: 3, height: 3, pinMap: { '1': 'SIG' } },
+    { ref: 'U2', group: 'ESP32_WROOM_RF', value: 'ESP32-S3-WROOM antenna', x: 25, y: 6, width: 12, height: 8, pinMap: {} },
+  ]
+  const routed = await executeJob({
+    id: 'autoroute_keepout',
+    type: 'autoroute_board',
+    input: { board, components, nets: [{ name: 'SIG' }], gridMm: 1 },
+  }, tmpdir())
+  assert.equal(routed.status, 'AUTOROUTE_READY_NEEDS_DRC')
+  const keepout = routed.routingPlan.designIntent.zones.find((zone) => zone.id === 'ANT_KEEP_U2')
+  assert.equal(Boolean(keepout), true)
+  const route = routed.routingPlan.routes.find((item) => item.net === 'SIG')
+  assert.equal(route.waypoints.some((point) => pointInPolygon(point, keepout.polygon)), false)
+})
+
 test('autoroute_and_apply writes controlled KiCad copper and marks DRC required', async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-autoroute-test-'))
   try {
@@ -764,6 +783,36 @@ test('autoroute_and_apply writes controlled KiCad copper and marks DRC required'
     assert.equal(state.routing.status, 'AUTOROUTE_COPPER_APPLIED_NEEDS_DRC')
     assert.equal(state.routing.drcRequired, true)
     assert.equal(state.routing.autoroute.routedNets.includes('SIG'), true)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('autoroute_drc_iteration applies copper and returns a KiCad DRC report', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-autoroute-drc-test-'))
+  try {
+    await executeJob({
+      id: 'project',
+      type: 'create_outline_board',
+      allowOverwrite: true,
+      input: { projectName: 'Autoroute DRC Test', widthMm: 50, heightMm: 30, layerCount: 2 },
+    }, workspace)
+    const board = { widthMm: 50, heightMm: 30, layerCount: 2, outline: rectanglePoints(50, 30), mountingHoles: [] }
+    const components = [
+      { ref: 'J1', group: 'connector', x: 6, y: 8, width: 3, height: 3, pinMap: { '1': 'SIG' } },
+      { ref: 'U1', group: 'mcu', x: 44, y: 22, width: 3, height: 3, pinMap: { '1': 'SIG' } },
+      { ref: 'KEEP1', group: 'mechanical', x: 25, y: 15, width: 10, height: 14, pinMap: {} },
+    ]
+    const iteration = await executeJob({
+      id: 'autoroute_drc',
+      type: 'autoroute_drc_iteration',
+      input: { projectPath: 'autoroute-drc-test', board, components, nets: [{ name: 'SIG' }], gridMm: 1 },
+    }, workspace)
+    assert.ok(['AUTOROUTE_DRC_ITERATION_COMPLETE_NEEDS_REVIEW', 'AUTOROUTE_DRC_ITERATION_NEEDS_FIX'].includes(iteration.status))
+    assert.equal(iteration.generatedFiles.some((file) => file.endsWith('autoroute-drc.json')), true)
+    assert.equal(typeof iteration.report.issueCounts.errors, 'number')
+    const state = JSON.parse(await readFile(path.join(workspace, 'autoroute-drc-test', 'boardforge-project.json'), 'utf8'))
+    assert.equal(Boolean(state.validation.autorouteDrc), true)
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

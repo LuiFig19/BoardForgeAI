@@ -10,7 +10,7 @@ export function autorouteBoard({ board, components = [], nets = [], profile = {}
   const layerCount = Number(options.layerCount || board.layerCount || 2)
   const classified = assignNetsToClasses(nets).sort((a, b) => priority(a) - priority(b))
   const designIntent = createDesignIntent({ ...board, layerCount }, components, classified, profile)
-  const obstacles = componentObstacles(components, profile, options)
+  const obstacles = [...componentObstacles(components, profile, options), ...zoneTraceObstacles(designIntent.zones || [])]
   const occupied = new Set()
   const routes = []
   const warnings = []
@@ -115,6 +115,12 @@ function componentObstacles(components, profile, options) {
   return components
     .filter((component) => component.x !== undefined && component.y !== undefined && component.width && component.height)
     .map((component) => ({ ref: component.ref, polygon: rectCorners(component, clearance), clearance }))
+}
+
+function zoneTraceObstacles(zones) {
+  return zones
+    .filter((zone) => zone.allowCopper === false || zone.allowTraces === false)
+    .map((zone) => ({ ref: zone.id, kind: zone.kind, polygon: zone.polygon || [], clearance: 0 }))
 }
 
 function inferEndpoints(net, components) {

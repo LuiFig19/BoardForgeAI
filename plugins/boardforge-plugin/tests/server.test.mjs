@@ -84,6 +84,20 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.ok(['ROUTING_QUALITY_NEEDS_FIX', 'ROUTING_QUALITY_NEEDS_REVIEW', 'ROUTING_QUALITY_READY_NEEDS_DRC'].includes(routeScore.status))
     assert.equal(typeof routeScore.routeQuality.score, 'number')
+    const autoroute = await postJson(`http://127.0.0.1:${port}/jobs/autoroute`, {
+      id: 'server_autoroute',
+      input: {
+        board: { widthMm: 50, heightMm: 30, layerCount: 2, outline: [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 30 }, { x: 0, y: 30 }] },
+        components: [
+          { ref: 'J1', x: 6, y: 8, width: 3, height: 3, pinMap: { '1': 'SIG' } },
+          { ref: 'U1', x: 44, y: 22, width: 3, height: 3, pinMap: { '1': 'SIG' } },
+          { ref: 'KEEP1', x: 25, y: 15, width: 10, height: 14, pinMap: {} },
+        ],
+        nets: [{ name: 'SIG' }],
+      },
+    })
+    assert.equal(autoroute.status, 'AUTOROUTE_READY_NEEDS_DRC')
+    assert.equal(autoroute.routingPlan.routedNets.includes('SIG'), true)
     const snapshot = await postJson(`http://127.0.0.1:${port}/jobs/snapshot`, {
       id: 'server_snapshot',
       input: { projectPath: 'server-project', label: 'server-smoke' },
