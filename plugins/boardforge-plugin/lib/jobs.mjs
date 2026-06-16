@@ -1067,7 +1067,8 @@ async function planDrcRepairsJob(job, workspace) {
   const context = await getKiCadContext(job, workspace, 'pcb')
   if (context.blocked) return context.blocked
   const reportFile = job.input?.reportFile ? resolveInsideWorkspace(workspace, job.input.reportFile) : path.join(context.files.projectDir, 'reports', 'drc.json')
-  const repairPlan = await planDrcRepairs({ reportFile, pcbFile: context.files.pcbFile })
+  const state = await readProjectState(context.files.projectDir)
+  const repairPlan = await planDrcRepairs({ reportFile, pcbFile: context.files.pcbFile, profile: getManufacturerProfile(state?.manufacturer?.id || job.input?.manufacturerProfile || 'JLCPCB_STANDARD'), state })
   await updateProjectState(context.files.projectDir, async (current) => ({
     ...current,
     status: repairPlan.status,

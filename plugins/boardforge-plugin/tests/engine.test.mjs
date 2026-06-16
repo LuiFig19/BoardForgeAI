@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { rectanglePoints } from '../lib/geometry.mjs'
@@ -409,6 +409,40 @@ test('controlled workflow runner executes preset steps and writes a report', asy
     const report = JSON.parse(await readFile(path.join(workspace, 'workflow-run-project', 'boardforge-workflow-run.json'), 'utf8'))
     assert.equal(report.humanReviewRequired, true)
     assert.ok(Array.isArray(report.nextActions))
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('DRC repair planner classifies reports and applies safe cleanup only', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-drc-repair-test-'))
+  try {
+    await executeJob({
+      id: 'project',
+      type: 'create_outline_board',
+      allowOverwrite: true,
+      input: { projectName: 'DRC Repair Project', widthMm: 40, heightMm: 24 },
+    }, workspace)
+    const projectDir = path.join(workspace, 'drc-repair-project')
+    const reportsDir = path.join(projectDir, 'reports')
+    await mkdir(reportsDir, { recursive: true })
+    await writeFile(path.join(reportsDir, 'drc.json'), JSON.stringify({
+      violations: [
+        { severity: 'error', type: 'clearance', description: 'clearance violation between tracks' },
+        { severity: 'error', type: 'zone', description: 'copper pour zone fill issue' },
+        { severity: 'warning', type: 'edge', description: 'item near board edge' },
+      ],
+    }), 'utf8')
+    const pcbFile = path.join(projectDir, 'drc-repair-project.kicad_pcb')
+    await writeFile(pcbFile, `${await readFile(pcbFile, 'utf8')}\n  (segment (start 1 1) (end 1 1) (width 0.1) (layer "F.Cu") (net 0) (uuid "00000000-0000-0000-0000-000000000001"))\n`, 'utf8')
+    const plan = await executeJob({ id: 'repair_plan', type: 'plan_drc_repairs', input: { projectPath: 'drc-repair-project' } }, workspace)
+    assert.equal(plan.status, 'DRC_REPAIR_PLAN_READY_NEEDS_REVIEW')
+    assert.ok(plan.repairPlan.repairs.some((item) => item.category === 'clearance'))
+    assert.ok(plan.repairPlan.blockers.some((item) => item.category === 'mechanical'))
+    assert.ok(plan.repairPlan.autoApplicable.some((item) => item.action === 'remove_zero_length_segments'))
+    const applied = await executeJob({ id: 'repair_apply', type: 'apply_safe_drc_repairs', input: { projectPath: 'drc-repair-project' } }, workspace)
+    assert.equal(applied.status, 'SAFE_DRC_REPAIRS_APPLIED_RERUN_DRC')
+    assert.doesNotMatch(await readFile(pcbFile, 'utf8'), /\(segment \(start 1 1\) \(end 1 1\)/)
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }
