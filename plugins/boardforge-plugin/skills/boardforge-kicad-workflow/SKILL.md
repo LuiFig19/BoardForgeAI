@@ -44,6 +44,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `restore_project_snapshot`
 - `run_project_preflight`
 - `build_workflow_preset`
+- `run_boardforge_workflow`
 - `plan_requirements`
 - `plan_power_tree`
 - `plan_stackup`
@@ -114,6 +115,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `diff_project_snapshot` before restore or export when a snapshot exists so the user can review changed files.
 - Run `run_project_preflight` before risky edits, routing, manufacturing export, package generation, or project handoff.
 - Run `build_workflow_preset` when the user asks Codex to build a common board type and needs an ordered sequence of safe BoardForge jobs.
+- Run `run_boardforge_workflow` when the user wants BoardForge to execute the full controlled preset sequence and produce one workflow report. Do not include exports unless validation and human review gates are acceptable.
 - Run `generate_manufacturing_manifest` before Gerber/drill/BOM/CPL handoff or JLCPCB packaging so Codex has one explicit artifact list and blocker list.
 - Run `plan_requirements` when the user gives a hardware description and Codex needs a structured BOM/net/circuit plan before KiCad generation.
 - Run `plan_power_tree` before stackup, schematic, placement, or routing so rails, regulators, current budget, decoupling, sequencing, and thermal blockers are explicit.
@@ -147,6 +149,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `diff_project_snapshot` compares current project files to a saved snapshot and reports added, modified, deleted, and unchanged files with line-delta summaries.
 - `run_project_preflight` writes `boardforge-preflight.json` and aggregates scan, component audit, binding validation, netlist, manufacturing readiness, and optional snapshot diff gates.
 - `build_workflow_preset` returns ordered controlled job steps for ESP32 sensor, PoE/Ethernet sensor, and drone flight-controller workflows, with export steps separated behind validation gates.
+- `run_boardforge_workflow` executes the controlled preset steps, stops on blockers by default, writes `boardforge-workflow-run.json`, and summarizes next actions.
 - `plan_requirements` writes or returns a requirements plan with reusable circuit blocks, components, nets, constraints, and assumptions for constrained board families.
 - `plan_power_tree` writes or returns `boardforge-power-tree.json` with input sources, rails, regulator topology, rail current budget, decoupling requirements, sequencing rules, thermal review, and manufacturing gates.
 - `plan_stackup` writes or returns a stackup plan with layer roles, manufacturer HDI capability, blind/buried/microvia rules, impedance intent, copper strategy, and thermal strategy.
@@ -232,6 +235,7 @@ Supported endpoints:
 - `POST /jobs/restore-snapshot`
 - `POST /jobs/preflight`
 - `POST /jobs/workflow-preset`
+- `POST /jobs/run-workflow`
 - `POST /jobs/plan-requirements`
 - `POST /jobs/plan-power-tree`
 - `POST /jobs/plan-stackup`

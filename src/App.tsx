@@ -95,6 +95,7 @@ const pluginCommands = [
   'restore_project_snapshot',
   'run_project_preflight',
   'build_workflow_preset',
+  'run_boardforge_workflow',
   'plan_requirements',
   'plan_power_tree',
   'plan_stackup',

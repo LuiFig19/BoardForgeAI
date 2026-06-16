@@ -78,6 +78,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - snapshot diff reports that show added/modified/deleted KiCad and BoardForge files before restore/export decisions
 - project preflight reports that aggregate scan, component audit, binding validation, netlist, manufacturing readiness, and optional snapshot diff gates
 - workflow presets that give Codex ordered BoardForge-controlled steps for common ESP32, PoE, and drone controller boards
+- one-command controlled workflow execution that runs preset steps, stops on blockers, writes `boardforge-workflow-run.json`, and gives Codex next actions
 - manufacturing manifest generation that collects required KiCad, BoardForge, validation, BOM, CPL, and fab artifacts before handoff
 - requirements planner that expands constrained prompts into reusable circuit blocks, BOM components, nets, and design constraints
 - power-tree planner that budgets input rails, regulators, current draw, decoupling, sequencing, thermal review, and rail-specific routing constraints
@@ -157,6 +158,7 @@ Endpoints:
 - `POST /jobs/restore-snapshot`
 - `POST /jobs/preflight`
 - `POST /jobs/workflow-preset`
+- `POST /jobs/run-workflow`
 - `POST /jobs/plan-requirements`
 - `POST /jobs/plan-power-tree`
 - `POST /jobs/plan-stackup`
@@ -202,6 +204,7 @@ This writes:
 - `boardforge-component-audit.json` when component coverage audit runs
 - `boardforge-preflight.json` when project preflight runs
 - `boardforge-workflow-preset.json` when workflow preset planning runs inside an existing project
+- `boardforge-workflow-run.json` when the controlled BoardForge workflow runner executes a preset
 - `boardforge-manufacturing-manifest.json` when the manufacturing handoff manifest runs
 - `boardforge-requirements-plan.json` when requirement planning runs
 - `boardforge-power-tree.json` when power-tree planning runs or full project scaffolding creates rail intent
@@ -251,6 +254,7 @@ Real today:
 - BoardForge component database enrichment with LCSC/MPN/package/pin-map candidates
 - component library coverage auditing for symbol, footprint, 3D model, pin-map, and supplier readiness
 - project preflight gate reports before risky edits, routing, restore, export, or JLCPCB packaging
+- controlled workflow runs that execute the BoardForge preset sequence and stop on blocker statuses by default
 - requirements-to-circuit planning for USB-C, ESP32-S3 core, 3V3 regulation, I2C headers, SWD, PoE/Ethernet, and drone FC core blocks
 - power-tree planning for input source, rail current margin, regulator topology, decoupling placement, sequencing, thermal risk, and route-width constraints
 - fanout planning for dense packages, connector escape, BGA/QFN/QFP strategy, allowed via transitions, and routing preconditions

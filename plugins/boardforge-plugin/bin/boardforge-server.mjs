@@ -21,6 +21,7 @@ const routes = {
   'POST /jobs/restore-snapshot': 'restore_project_snapshot',
   'POST /jobs/preflight': 'run_project_preflight',
   'POST /jobs/workflow-preset': 'build_workflow_preset',
+  'POST /jobs/run-workflow': 'run_boardforge_workflow',
   'POST /jobs/plan-requirements': 'plan_requirements',
   'POST /jobs/plan-power-tree': 'plan_power_tree',
   'POST /jobs/plan-stackup': 'plan_stackup',

@@ -38,7 +38,7 @@ import { planPowerTree } from './power-tree-planner.mjs'
 import { planFanout } from './fanout-planner.mjs'
 import { runDfmChecks } from './dfm-checker.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'build_workflow_preset', 'plan_requirements', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_requirements', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -75,6 +75,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'restore_project_snapshot') return restoreProjectSnapshotJob(job, workspace)
   if (job.type === 'run_project_preflight') return projectPreflightJob(job, workspace)
   if (job.type === 'build_workflow_preset') return workflowPresetJob(job, workspace)
+  if (job.type === 'run_boardforge_workflow') return runBoardForgeWorkflowJob(job, workspace)
   if (job.type === 'plan_requirements') return planRequirementsJob(job, workspace)
   if (job.type === 'plan_power_tree') return powerTreePlanJob(job, workspace)
   if (job.type === 'plan_stackup') return stackupPlanJob(job, workspace, profile)
@@ -516,6 +517,96 @@ async function workflowPresetJob(job, workspace) {
     }))
   }
   return result(job, preset.status, [], [], { workflowPreset: preset, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
+}
+
+async function runBoardForgeWorkflowJob(job, workspace) {
+  const preset = buildWorkflowPreset(job.input || {})
+  const steps = job.input?.includeExports ? [...preset.steps, ...preset.exportStepsAfterValidation] : preset.steps
+  const executed = []
+  const generatedFiles = []
+  let stoppedAt = null
+  let projectPath = preset.projectPath
+  for (const [index, step] of steps.entries()) {
+    const stepJob = {
+      id: `${job.id || 'workflow'}_${index + 1}_${step.type}`,
+      type: step.type,
+      input: {
+        ...step.input,
+        ...(step.type === 'create_kicad_project' ? { allowUnvalidatedExport: false } : {}),
+      },
+      allowOverwrite: step.type === 'create_kicad_project' ? Boolean(job.allowOverwrite || job.input?.allowOverwrite) : undefined,
+      dryRun: Boolean(job.input?.dryRunSteps?.includes(step.type)),
+    }
+    const output = await executeJob(stepJob, workspace)
+    const summary = summarizeStepResult(step, output)
+    executed.push(summary)
+    if (output.projectPath) projectPath = path.basename(output.projectPath)
+    if (Array.isArray(output.generatedFiles)) generatedFiles.push(...output.generatedFiles)
+    const blocked = output.errors?.length || /BLOCKED|FAILED|NEEDS_FIX|PLACEMENT_NEEDS_FIX/.test(output.status || '')
+    if (blocked && !job.input?.continueOnBlocked) {
+      stoppedAt = { step: step.type, index: index + 1, status: output.status }
+      break
+    }
+  }
+  const status = stoppedAt ? 'BOARDFORGE_WORKFLOW_BLOCKED' : 'BOARDFORGE_WORKFLOW_COMPLETE_NEEDS_REVIEW'
+  const report = {
+    schemaVersion: 1,
+    status,
+    preset: preset.preset,
+    projectPath,
+    stepsExecuted: executed.length,
+    stepsPlanned: steps.length,
+    stoppedAt,
+    results: executed,
+    blockers: executed.flatMap((item) => item.errors),
+    warnings: executed.flatMap((item) => item.warnings),
+    nextActions: workflowNextActions(executed, stoppedAt, job.input || {}),
+    generatedFiles: [...new Set(generatedFiles)],
+    humanReviewRequired: true,
+  }
+  const projectDir = projectPath ? resolveInsideWorkspace(workspace, projectPath) : null
+  const outputFile = projectDir && existsSync(projectDir) ? path.join(projectDir, 'boardforge-workflow-run.json') : null
+  if (outputFile && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(report, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status,
+      workflowRun: report,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile, ...report.generatedFiles])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Workflow ran ${report.stepsExecuted}/${report.stepsPlanned} steps with ${report.blockers.length} blockers.`,
+    }))
+  }
+  const finalFiles = outputFile ? [...new Set([...report.generatedFiles, outputFile])] : report.generatedFiles
+  return result(job, status, report.warnings, report.blockers, { workflowRun: { ...report, generatedFiles: finalFiles }, generatedFiles: finalFiles, humanReviewRequired: true })
+}
+
+function summarizeStepResult(step, output) {
+  return {
+    step: step.type,
+    why: step.why,
+    status: output.status,
+    warnings: output.warnings || [],
+    errors: output.errors || [],
+    generatedFiles: output.generatedFiles || [],
+    projectPath: output.projectPath || null,
+    humanReviewRequired: output.humanReviewRequired !== false,
+  }
+}
+
+function workflowNextActions(results, stoppedAt, input) {
+  if (stoppedAt) {
+    const current = results[results.length - 1]
+    return [
+      `Fix blockers from ${stoppedAt.step}.`,
+      ...(current?.errors || []).map((issue) => issue.message).filter(Boolean).slice(0, 4),
+      'Rerun run_boardforge_workflow with continueOnBlocked only for diagnostic reports, not manufacturing export.',
+    ]
+  }
+  return [
+    'Review boardforge-workflow-run.json, boardforge-preflight.json, boardforge-dfm-report.json, ERC, and DRC reports.',
+    ...(input.includeExports ? ['Inspect generated Gerbers, drill, BOM, CPL, and JLCPCB ZIP before ordering.'] : ['Run export jobs only after ERC/DRC and human review are acceptable.']),
+  ]
 }
 
 async function planRequirementsJob(job, workspace) {

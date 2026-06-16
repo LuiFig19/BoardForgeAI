@@ -388,6 +388,32 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
   assert.ok(preset.workflowPreset.exportStepsAfterValidation.some((step) => step.type === 'package_jlcpcb'))
 })
 
+test('controlled workflow runner executes preset steps and writes a report', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-workflow-run-test-'))
+  try {
+    const output = await executeJob({
+      id: 'workflow_run',
+      type: 'run_boardforge_workflow',
+      allowOverwrite: true,
+      input: {
+        projectName: 'Workflow Run Project',
+        templateId: 'ESP32_S3_SENSOR',
+        prompt: 'ESP32-S3 USB-C I2C sensor board with 3V3 regulator',
+        allowOverwrite: true,
+      },
+    }, workspace)
+    assert.ok(['BOARDFORGE_WORKFLOW_COMPLETE_NEEDS_REVIEW', 'BOARDFORGE_WORKFLOW_BLOCKED'].includes(output.status))
+    assert.ok(output.workflowRun.stepsExecuted >= 4)
+    assert.equal(output.generatedFiles.some((file) => file.endsWith('boardforge-workflow-run.json')), true)
+    assert.ok(output.workflowRun.results.some((step) => step.step === 'create_kicad_project'))
+    const report = JSON.parse(await readFile(path.join(workspace, 'workflow-run-project', 'boardforge-workflow-run.json'), 'utf8'))
+    assert.equal(report.humanReviewRequired, true)
+    assert.ok(Array.isArray(report.nextActions))
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
 test('project snapshots can be listed and restored without touching arbitrary files', async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-snapshot-test-'))
   try {
