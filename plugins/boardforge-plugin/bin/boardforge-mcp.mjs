@@ -30,6 +30,7 @@ const toolToJobType = {
   plan_stackup: 'plan_stackup',
   plan_fanout: 'plan_fanout',
   plan_signal_integrity: 'plan_signal_integrity',
+  plan_test_strategy: 'plan_test_strategy',
   run_dfm_checks: 'run_dfm_checks',
   compare_manufacturers: 'compare_manufacturers',
   plan_complex_board: 'plan_complex_board',

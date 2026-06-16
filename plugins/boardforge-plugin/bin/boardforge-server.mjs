@@ -28,6 +28,7 @@ const routes = {
   'POST /jobs/plan-stackup': 'plan_stackup',
   'POST /jobs/plan-fanout': 'plan_fanout',
   'POST /jobs/plan-signal-integrity': 'plan_signal_integrity',
+  'POST /jobs/plan-test-strategy': 'plan_test_strategy',
   'POST /jobs/dfm-checks': 'run_dfm_checks',
   'POST /jobs/compare-manufacturers': 'compare_manufacturers',
   'POST /jobs/plan-complex-board': 'plan_complex_board',

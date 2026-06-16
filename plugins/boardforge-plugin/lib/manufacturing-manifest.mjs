@@ -10,6 +10,7 @@ export async function buildManufacturingManifest(projectDir, options = {}) {
   const pinAssignments = await readJson(path.join(projectDir, 'boardforge-pin-assignments.json'))
   const bindings = await readJson(path.join(projectDir, 'boardforge-bindings.json'))
   const signalIntegrity = await readJson(path.join(projectDir, 'boardforge-signal-integrity.json'))
+  const testStrategy = await readJson(path.join(projectDir, 'boardforge-test-strategy.json'))
   const dfm = await readJson(path.join(projectDir, 'boardforge-dfm-report.json'))
   const preflight = await readJson(path.join(projectDir, 'boardforge-preflight.json'))
   const files = expectedFiles(projectDir)
@@ -21,6 +22,7 @@ export async function buildManufacturingManifest(projectDir, options = {}) {
     ...(pinAssignments?.errors || []),
     ...(bindings?.errors || []),
     ...(signalIntegrity?.errors || []),
+    ...(testStrategy?.errors || []),
     ...(dfm?.errors || []),
     ...(preflight?.blockers || []),
   ]
@@ -30,6 +32,7 @@ export async function buildManufacturingManifest(projectDir, options = {}) {
     ...(pinAssignments?.warnings || []),
     ...(bindings?.warnings || []),
     ...(signalIntegrity?.warnings || []),
+    ...(testStrategy?.warnings || []),
     ...(dfm?.warnings || []),
     ...(preflight?.warnings || []),
   ]
@@ -44,6 +47,7 @@ export async function buildManufacturingManifest(projectDir, options = {}) {
     assembly: assembly ? { status: assembly.status, assemblyMode: assembly.assemblyMode, connectorAccess: assembly.connectorAccess, serviceAccess: assembly.serviceAccess } : null,
     pinAssignments: pinAssignments ? { status: pinAssignments.status, controller: pinAssignments.controller, interfaces: pinAssignments.interfaces, conflicts: pinAssignments.conflicts?.length || 0 } : null,
     signalIntegrity: signalIntegrity ? { status: signalIntegrity.status, highSpeedNetCount: signalIntegrity.highSpeedNetCount, gates: signalIntegrity.gates, actions: signalIntegrity.actions || [] } : null,
+    testStrategy: testStrategy ? { status: testStrategy.status, requiredTestPoints: testStrategy.requiredTestPoints?.length || 0, programming: testStrategy.programming } : null,
     dfm: dfm ? { status: dfm.status, errors: dfm.errors?.length || 0, warnings: dfm.warnings?.length || 0, actions: dfm.actions || [] } : null,
     files: files.map((file) => ({ ...file, exists: existsSync(file.path) })),
     gates: {
@@ -77,6 +81,7 @@ function expectedFiles(projectDir) {
     { label: 'Binding report', path: path.join(projectDir, 'boardforge-bindings.json'), required: true },
     { label: 'Stackup plan', path: path.join(projectDir, 'boardforge-stackup-plan.json'), required: true },
     { label: 'Signal integrity report', path: path.join(projectDir, 'boardforge-signal-integrity.json'), required: true },
+    { label: 'Test strategy report', path: path.join(projectDir, 'boardforge-test-strategy.json'), required: true },
     { label: 'DFM report', path: path.join(projectDir, 'boardforge-dfm-report.json'), required: false },
     { label: 'Assembly plan', path: path.join(projectDir, 'boardforge-assembly-plan.json'), required: false },
     { label: 'DRC report', path: path.join(projectDir, 'reports', 'drc.json'), required: false },

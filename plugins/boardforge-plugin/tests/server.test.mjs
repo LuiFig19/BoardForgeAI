@@ -56,6 +56,12 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.ok(['SIGNAL_INTEGRITY_NEEDS_REVIEW', 'SIGNAL_INTEGRITY_READY'].includes(si.status))
     assert.equal(si.signalIntegrity.highSpeedNetCount, 2)
+    const testStrategy = await postJson(`http://127.0.0.1:${port}/jobs/plan-test-strategy`, {
+      id: 'server_test_strategy',
+      input: { projectPath: 'server-project' },
+    })
+    assert.ok(['TEST_STRATEGY_BLOCKED', 'TEST_STRATEGY_NEEDS_REVIEW', 'TEST_STRATEGY_READY_NEEDS_REVIEW'].includes(testStrategy.status))
+    assert.ok(Array.isArray(testStrategy.testStrategy.requiredTestPoints))
     const audit = await postJson(`http://127.0.0.1:${port}/jobs/audit-component-library`, {
       id: 'server_component_audit',
       input: { projectPath: 'server-project' },

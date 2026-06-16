@@ -488,6 +488,25 @@ test('signal integrity planner creates high-speed routing gates', async () => {
   assert.ok(result.warnings.some((issue) => issue.code === 'RF_COMPONENT_KEEP_OUT_REQUIRED'))
 })
 
+test('test strategy planner emits test points and bring-up sequence', async () => {
+  const result = await executeJob({
+    id: 'test_strategy',
+    type: 'plan_test_strategy',
+    input: {
+      board: { widthMm: 55, heightMm: 35, outline: rectanglePoints(55, 35), mountingHoles: [{ id: 'MH1', x: 5, y: 5, diameterMm: 3 }, { id: 'MH2', x: 50, y: 30, diameterMm: 3 }] },
+      components: [{ ref: 'J30', group: 'SWD', value: 'SWD programming header' }],
+      nets: [{ name: '3V3' }, { name: 'GND' }, { name: 'VUSB' }, { name: 'SWDIO' }, { name: 'SWCLK' }, { name: 'NRST' }],
+      pinAssignments: { controllerPinMap: { PA13: 'SWDIO', PA14: 'SWCLK', NRST: 'NRST' } },
+      powerTree: { rails: [{ name: '3V3' }, { name: 'VUSB' }] },
+    },
+  }, process.cwd())
+  assert.ok(['TEST_STRATEGY_NEEDS_REVIEW', 'TEST_STRATEGY_READY_NEEDS_REVIEW'].includes(result.status))
+  assert.ok(result.testStrategy.requiredTestPoints.some((item) => item.net === 'GND'))
+  assert.equal(result.testStrategy.programming.available, true)
+  assert.ok(result.testStrategy.bringup.some((step) => step.name === 'current-limited power'))
+  assert.equal(result.testStrategy.fixture.boardSupport, 'use mounting holes for fixture location')
+})
+
 test('DFM checker catches component and route manufacturing blockers', async () => {
   const dfm = await executeJob({
     id: 'dfm',
