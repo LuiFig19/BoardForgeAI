@@ -15,6 +15,8 @@ import { findMissingFootprints, link3dModels, resolveComponentAssets, searchLibr
 import { createProjectState, normalizeComponents, readProjectState, stateFileName, summarizeProjectState, updateProjectState } from './project-state.mjs'
 import { createDesignIntent, validateZones } from './design-rules.mjs'
 import { applyRoutingPlanToPcb } from './copper-writer.mjs'
+import { applyPlacementPlanToPcb } from './placement-writer.mjs'
+import { buildDesignConstraints } from './design-constraints.mjs'
 import { buildComponentDatabase, enrichComponents } from './component-database.mjs'
 import { boardforgeNetlistFromComponents, generateSchematicModel, kicadSchematicFromModel } from './schematic-generator.mjs'
 import { applySafeDrcRepairs, planDrcRepairs } from './drc-repair.mjs'
@@ -31,7 +33,7 @@ import { planRequirements } from './requirements-planner.mjs'
 import { compareManufacturerCapabilities, planStackup, scoreBoardComplexity } from './stackup-planner.mjs'
 import { planAssemblyAndMechanical } from './assembly-planner.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'plan_requirements', 'plan_stackup', 'compare_manufacturers', 'plan_complex_board', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'plan_requirements', 'plan_stackup', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -71,6 +73,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'plan_stackup') return stackupPlanJob(job, workspace, profile)
   if (job.type === 'compare_manufacturers') return manufacturerCompareJob(job)
   if (job.type === 'plan_complex_board') return complexBoardPlanJob(job, workspace, profile)
+  if (job.type === 'generate_design_constraints') return designConstraintsJob(job, workspace, profile)
   if (job.type === 'sync_kicad_libraries') return librarySyncJob(job, workspace)
   if (job.type === 'search_library_assets') return librarySearchJob(job, workspace)
   if (job.type === 'resolve_component_assets') return resolveAssetsJob(job, workspace)
@@ -90,6 +93,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'create_net_classes') return result(job, 'NET_CLASSES_CREATED', [], [], { netClasses: createNetClasses(profile), humanReviewRequired: true })
   if (job.type === 'validate_net_classes' || job.type === 'report_unclassified_nets') return validateNetClassesJob(job)
   if (job.type === 'generate_placement_plan' || job.type === 'optimize_placement') return placementPlanJob(job, profile)
+  if (job.type === 'apply_placement_plan' || job.type === 'move_component' || job.type === 'fix_component_overlap' || job.type === 'fix_component_off_board') return applyPlacementJob(job, workspace, profile)
   if (job.type === 'apply_routing_plan') return applyRoutingPlanJob(job, workspace, profile)
   if (job.type === 'validate_routing_geometry') return routingGeometryJob(job, profile)
   if (['generate_routing_plan', 'report_unrouted_nets', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes'].includes(job.type)) return routingPlanJob(job)
@@ -157,11 +161,13 @@ async function createKiCadProject(job, workspace, profile) {
   const schematicModel = generateSchematicModel(board, resolvedComponents, { ...job.input, nets: plannedNets })
   const stackup = planStackup({ ...job.input, board, components: resolvedComponents, nets: plannedNets, manufacturerProfile: profile.id })
   const assemblyPlan = planAssemblyAndMechanical(board, resolvedComponents, job.input || {})
+  const designConstraints = buildDesignConstraints(board, resolvedComponents, plannedNets, profile, { requirementsPlan, stackup, assemblyPlan, designIntent })
   const state = {
     ...createProjectState({ job: { ...job, input: { ...job.input, designIntent, requirementsPlan, nets: plannedNets } }, board, mode: 'full_project_scaffold', profile, components: resolvedComponents, library, componentBindings: bindingReport, review: { ...review, placementIssues, zoneIssues, bindingIssues: [...bindingReport.warnings, ...bindingReport.errors] }, generatedFiles: [] }),
     requirementsPlan,
     stackup,
     assemblyPlan,
+    designConstraints,
   }
   const files = [
     { path: `${safeName}.kicad_pro`, content: kicadProjectFile(board, netClasses) },
@@ -172,6 +178,7 @@ async function createKiCadProject(job, workspace, profile) {
     { path: 'boardforge-schematic-model.json', content: JSON.stringify(schematicModel, null, 2) },
     { path: 'boardforge-stackup-plan.json', content: JSON.stringify(stackup, null, 2) },
     { path: 'boardforge-assembly-plan.json', content: JSON.stringify(assemblyPlan, null, 2) },
+    { path: 'boardforge-constraints.json', content: JSON.stringify(designConstraints, null, 2) },
     { path: 'boardforge-library.json', content: JSON.stringify(library, null, 2) },
     ...(requirementsPlan ? [{ path: 'boardforge-requirements-plan.json', content: JSON.stringify(requirementsPlan, null, 2) }] : []),
     { path: 'boardforge-bindings.json', content: JSON.stringify(bindingReport, null, 2) },
@@ -564,6 +571,34 @@ async function complexBoardPlanJob(job, workspace, profile) {
   return result(job, output.status, warnings, blockers, { ...output, generatedFiles: outputFile ? [outputFile] : [] })
 }
 
+async function designConstraintsJob(job, workspace, profile) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const nets = job.input?.nets || state?.requirements?.nets || []
+  const constraints = buildDesignConstraints(board, components, nets, profile, {
+    requirementsPlan: state?.requirementsPlan || null,
+    stackup: state?.stackup || null,
+    assemblyPlan: state?.assemblyPlan || null,
+    designIntent: state?.designIntent || null,
+    routingPlan: state?.routing?.plan || null,
+  })
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-constraints.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(constraints, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: constraints.status,
+      designConstraints: constraints,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: 'Generated reusable BoardForge design constraints.',
+    }))
+  }
+  return result(job, constraints.status, [], [], { constraints, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
+}
+
 async function librarySearchJob(job, workspace) {
   const output = await searchLibraryAssets({ workspace, input: job.input || {} })
   return result(job, output.status, [], [], output)
@@ -847,6 +882,35 @@ function placementPlanJob(job, profile) {
     ? optimizePlacementPlan(board, boardTemplates[job.input?.templateId], profile, options)
     : generatePlacementPlan(board, boardTemplates[job.input?.templateId], profile, options)
   return result(job, plan.status, plan.issues.filter((item) => item.severity === 'WARNING'), plan.issues.filter((item) => ['BLOCKER', 'ERROR'].includes(item.severity)), { placementPlan: plan, constraints: plan.constraints, humanReviewRequired: true })
+}
+
+async function applyPlacementJob(job, workspace, profile) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  if (!projectDir) return result(job, 'PLACEMENT_APPLY_BLOCKED', [], [{ severity: 'ERROR', code: 'PROJECT_PATH_REQUIRED', message: 'apply_placement_plan requires input.projectPath.' }], { generatedFiles: [] })
+  const state = await readProjectState(projectDir)
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const rawComponents = job.input?.components || job.input?.placementPlan?.components || await readRichComponents(projectDir) || state?.components || []
+  const components = job.type === 'move_component'
+    ? rawComponents.map((component) => component.ref === job.input?.ref ? { ...component, x: job.input.x, y: job.input.y, rotation: job.input.rotation ?? component.rotation } : component)
+    : rawComponents
+  const plan = job.input?.placementPlan || (job.input?.optimize !== false ? optimizePlacementPlan(board, null, profile, { components, nets: job.input?.nets || state?.requirements?.nets || [] }) : generatePlacementPlan(board, null, profile, { components, nets: job.input?.nets || state?.requirements?.nets || [] }))
+  const componentsToApply = plan.components || components
+  const applyResult = await applyPlacementPlanToPcb(projectDir, componentsToApply, { dryRun: job.dryRun })
+  if (!job.dryRun && applyResult.updatedRefs?.length) {
+    const componentsFile = path.join(projectDir, 'boardforge-components.json')
+    await writeFile(componentsFile, JSON.stringify(componentsToApply, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: applyResult.status,
+      components: normalizeComponents(componentsToApply),
+      placement: { status: applyResult.status, plan, updatedRefs: applyResult.updatedRefs, missingRefs: applyResult.missingRefs },
+      generatedFiles: [...new Set([...(current.generatedFiles || []), ...(applyResult.generatedFiles || []), componentsFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Applied placement updates to ${applyResult.updatedRefs.length} PCB footprints.`,
+    }))
+    applyResult.generatedFiles = [...new Set([...(applyResult.generatedFiles || []), componentsFile])]
+  }
+  return result(job, applyResult.status, applyResult.warnings, applyResult.errors, { ...applyResult, placementPlan: plan, humanReviewRequired: true })
 }
 
 function routingPlanJob(job) {

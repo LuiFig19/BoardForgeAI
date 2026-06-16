@@ -47,6 +47,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `plan_stackup`
 - `compare_manufacturers`
 - `plan_complex_board`
+- `generate_design_constraints`
 - `sync_kicad_libraries`
 - `search_library_assets`
 - `resolve_component_assets`
@@ -111,6 +112,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `plan_requirements` when the user gives a hardware description and Codex needs a structured BOM/net/circuit plan before KiCad generation.
 - Run `plan_stackup` before dense, high-speed, high-current, RF, or HDI boards so BoardForge can decide layer roles, blind/buried/microvia policy, impedance intent, copper strategy, and advanced fab blockers.
 - Run `plan_complex_board` for serious boards before project generation or routing. Treat its output as the main engineering plan for requirements, stackup, keepouts, vias, copper pours, and export gates.
+- Run `generate_design_constraints` after requirements/stackup/placement changes so Codex has one current constraints artifact before routing/export.
 - Treat all AI plans as proposals until validated.
 - Require human review before manufacturing.
 - Never claim `DRC pass`, `ERC pass`, `routed`, `JLCPCB ready`, or `manufacturable` unless the local tool result proves it.
@@ -137,6 +139,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `plan_requirements` writes or returns a requirements plan with reusable circuit blocks, components, nets, constraints, and assumptions for constrained board families.
 - `plan_stackup` writes or returns a stackup plan with layer roles, manufacturer HDI capability, blind/buried/microvia rules, impedance intent, copper strategy, and thermal strategy.
 - `plan_complex_board` writes or returns a combined complex-board plan with requirements, stackup, complexity score, placement/routing strategy, keepouts, copper pours, and manufacturing gates.
+- `generate_design_constraints` writes `boardforge-constraints.json` for reusable board, manufacturer, placement, routing, keepout, net-class, HDI, and manufacturing-gate constraints.
 - `create_kicad_project` places real KiCad footprints from installed footprint libraries for template components.
 - `sync_kicad_libraries` detects installed KiCad 10/9/8 library roots, optionally syncs allowlisted official KiCad symbol/footprint/3D repos, and writes `.boardforge/library-cache/boardforge-library-index.json`.
 - `search_library_assets` searches indexed symbols, footprints, and 3D models.
@@ -158,6 +161,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `create_net_classes`, `validate_net_classes`, and `report_unclassified_nets` use BoardForge net-class rules.
 - `generate_placement_plan` creates deterministic placement plans, scores density, edge connector intent, passive proximity, and ratsnest length, and fails on off-board/overlap issues.
 - `optimize_placement` proposes deterministic placement repairs for overlaps, edge connectors, RF/antenna edge access, and ratsnest quality before routing.
+- `apply_placement_plan` writes reviewed placement coordinates into real `.kicad_pcb` footprint `(at x y rotation)` fields and marks the project DRC-required.
 - `generate_routing_plan` creates a partial routing plan from explicit route points or inferred component pin-map endpoints, emits route waypoints for reviewable 45/90-degree legs, and reports unrouted nets. It does not claim full autorouting.
 - `validate_routing_geometry` prechecks route points, widths, via size/drill, via keepouts, mounting-hole clearance, differential-pair mates, copper-pour keepouts, and power-route width before copper is written.
 - Routing tools return compact-board via policy, layer-change rules, copper pour plans, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions.
@@ -215,6 +219,7 @@ Supported endpoints:
 - `POST /jobs/plan-stackup`
 - `POST /jobs/compare-manufacturers`
 - `POST /jobs/plan-complex-board`
+- `POST /jobs/design-constraints`
 - `POST /jobs/sync-libraries`
 - `POST /jobs/search-library`
 - `POST /jobs/resolve-assets`
@@ -225,6 +230,7 @@ Supported endpoints:
 - `POST /jobs/generate-netlist`
 - `POST /jobs/design-audit`
 - `POST /jobs/validate-routing`
+- `POST /jobs/apply-placement`
 - `POST /jobs/find-missing-footprints`
 - `POST /jobs/link-3d-models`
 - `POST /jobs/validate`

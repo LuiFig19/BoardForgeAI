@@ -497,6 +497,7 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     assert.equal(result.generatedFiles.some((file) => file.endsWith('.kicad_sch')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-stackup-plan.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-assembly-plan.json')), true)
+    assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-constraints.json')), true)
     const schematic = await readFile(path.join(result.projectPath, 'sensor-project.kicad_sch'), 'utf8')
     assert.match(schematic, /kicad_sch/)
     assert.match(schematic, /BoardForge component manifest/)
@@ -507,6 +508,7 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     assert.equal(state.mode, 'full_project_scaffold')
     assert.ok(state.stackup.layerCount >= 2)
     assert.ok(state.assemblyPlan.sidePlan.length >= 4)
+    assert.equal(state.designConstraints.status, 'CONSTRAINTS_READY_NEEDS_REVIEW')
     assert.ok(state.components.length >= 4)
     assert.equal(result.projectState.components.count >= 4, true)
     const scan = await executeJob({ id: 'scan', type: 'scan_kicad_project', input: { projectPath: 'sensor-project' } }, workspace)
@@ -518,6 +520,30 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     assert.ok(['MANUFACTURING_MANIFEST_BLOCKED', 'MANUFACTURING_MANIFEST_NEEDS_REVIEW', 'MANUFACTURING_MANIFEST_READY_NEEDS_REVIEW'].includes(manifest.status))
     assert.equal(manifest.generatedFiles.some((file) => file.endsWith('boardforge-manufacturing-manifest.json')), true)
     assert.ok(manifest.manifest.files.some((file) => file.label === 'KiCad PCB' && file.exists))
+    const constraints = await executeJob({ id: 'constraints', type: 'generate_design_constraints', input: { projectPath: 'sensor-project' } }, workspace)
+    assert.equal(constraints.status, 'CONSTRAINTS_READY_NEEDS_REVIEW')
+    assert.equal(constraints.generatedFiles.some((file) => file.endsWith('boardforge-constraints.json')), true)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('apply_placement_plan writes optimized footprint coordinates into KiCad PCB', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-placement-apply-test-'))
+  try {
+    await executeJob({ id: 'project', type: 'create_kicad_project', allowOverwrite: true, input: { projectName: 'Placement Apply Project', templateId: 'ESP32_S3_SENSOR' } }, workspace)
+    const moved = await executeJob({
+      id: 'move_u1',
+      type: 'move_component',
+      input: { projectPath: 'placement-apply-project', ref: 'U1', x: 20, y: 15, rotation: 45, optimize: false },
+    }, workspace)
+    assert.equal(moved.status, 'PLACEMENT_APPLIED_NEEDS_DRC')
+    assert.ok(moved.updatedRefs.includes('U1'))
+    const pcb = await readFile(path.join(workspace, 'placement-apply-project', 'placement-apply-project.kicad_pcb'), 'utf8')
+    assert.match(pcb, /\(property\s+"Reference"\s+"U1"/)
+    assert.match(pcb, /\(at\s+20\s+15\s+45\)/)
+    const state = JSON.parse(await readFile(path.join(workspace, 'placement-apply-project', 'boardforge-project.json'), 'utf8'))
+    assert.equal(state.placement.status, 'PLACEMENT_APPLIED_NEEDS_DRC')
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

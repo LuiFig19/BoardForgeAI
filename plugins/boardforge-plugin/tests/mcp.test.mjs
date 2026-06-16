@@ -28,8 +28,10 @@ test('MCP server exposes BoardForge tools and runs controlled jobs', async () =>
     assert.equal(listed.tools.some((tool) => tool.name === 'plan_requirements'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'plan_stackup'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'plan_complex_board'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'generate_design_constraints'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'add_ground_zone'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'apply_routing_plan'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'apply_placement_plan'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'snapshot_project'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'generate_manufacturing_manifest'), true)
 

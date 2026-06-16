@@ -97,6 +97,8 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - deterministic placement planning with off-board/overlap checks
 - placement scoring for density, edge connector intent, passive proximity, and estimated ratsnest length
 - placement optimization proposals that move edge connectors/RF modules, reduce overlaps, and report fixed error counts before routing
+- apply-placement writer that updates real `.kicad_pcb` footprint coordinates from controlled placement plans
+- reusable `boardforge-constraints.json` artifacts for placement, routing, fab gates, net classes, keepouts, HDI, and manufacturing review
 - partial routing plans that report unrouted nets
 - native KiCad schematic object generation for symbols, wires, labels, global labels, and symbol instances
 - PCB net synchronization from component pin maps to footprint pads
@@ -152,6 +154,7 @@ Endpoints:
 - `POST /jobs/plan-stackup`
 - `POST /jobs/compare-manufacturers`
 - `POST /jobs/plan-complex-board`
+- `POST /jobs/design-constraints`
 - `POST /jobs/sync-libraries`
 - `POST /jobs/search-library`
 - `POST /jobs/resolve-assets`
@@ -162,6 +165,7 @@ Endpoints:
 - `POST /jobs/generate-netlist`
 - `POST /jobs/design-audit`
 - `POST /jobs/validate-routing`
+- `POST /jobs/apply-placement`
 - `POST /jobs/find-missing-footprints`
 - `POST /jobs/link-3d-models`
 - `POST /jobs/validate`
@@ -190,6 +194,7 @@ This writes:
 - `boardforge-requirements-plan.json` when requirement planning runs
 - `boardforge-stackup-plan.json` when stackup planning runs
 - `boardforge-assembly-plan.json` for component-side, connector-access, service-access, and panelization hints
+- `boardforge-constraints.json` for reusable placement/routing/manufacturing constraints
 - `boardforge-complex-board-plan.json` when complex-board planning runs
 - `boardforge-bindings.json` for project scaffolds and binding validation
 - `boardforge-netlist.json` when project scaffolding or the netlist job runs
@@ -235,6 +240,7 @@ Real today:
 - routing endpoint inference from matching component pins so route plans start from actual component connectivity
 - placement scoring with ratsnest, edge-connector, passive-proximity, and density metrics
 - optimize-placement proposals that repair overlap, edge-access, and RF-edge constraint problems before routing is attempted
+- real apply-placement updates into KiCad PCB footprint `(at x y rotation)` fields with DRC-required status
 - route waypoint generation for sane review-required copper legs before DRC
 - DRC repair planning plus safe repair application for low-risk cleanup actions
 - plain-English interactive edit parsing for board resize, rounded corners, edge placement, keepouts, and route-width intents
