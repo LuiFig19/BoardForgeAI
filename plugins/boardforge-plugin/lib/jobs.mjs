@@ -28,6 +28,7 @@ import { auditComponentLibraryCoverage } from './component-audit.mjs'
 import { buildProjectPreflight } from './project-preflight.mjs'
 import { planRequirements } from './requirements-planner.mjs'
 import { compareManufacturerCapabilities, planStackup, scoreBoardComplexity } from './stackup-planner.mjs'
+import { planAssemblyAndMechanical } from './assembly-planner.mjs'
 
 export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'plan_requirements', 'plan_stackup', 'compare_manufacturers', 'plan_complex_board', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
@@ -152,7 +153,14 @@ async function createKiCadProject(job, workspace, profile) {
   const plannedNets = assignNetsToClasses(requirementsPlan?.nets || job.input?.nets || [])
   const netlist = boardforgeNetlistFromComponents(resolvedComponents, plannedNets)
   const schematicModel = generateSchematicModel(board, resolvedComponents, { ...job.input, nets: plannedNets })
-  const state = createProjectState({ job: { ...job, input: { ...job.input, designIntent, requirementsPlan, nets: plannedNets } }, board, mode: 'full_project_scaffold', profile, components: resolvedComponents, library, componentBindings: bindingReport, review: { ...review, placementIssues, zoneIssues, bindingIssues: [...bindingReport.warnings, ...bindingReport.errors] }, generatedFiles: [] })
+  const stackup = planStackup({ ...job.input, board, components: resolvedComponents, nets: plannedNets, manufacturerProfile: profile.id })
+  const assemblyPlan = planAssemblyAndMechanical(board, resolvedComponents, job.input || {})
+  const state = {
+    ...createProjectState({ job: { ...job, input: { ...job.input, designIntent, requirementsPlan, nets: plannedNets } }, board, mode: 'full_project_scaffold', profile, components: resolvedComponents, library, componentBindings: bindingReport, review: { ...review, placementIssues, zoneIssues, bindingIssues: [...bindingReport.warnings, ...bindingReport.errors] }, generatedFiles: [] }),
+    requirementsPlan,
+    stackup,
+    assemblyPlan,
+  }
   const files = [
     { path: `${safeName}.kicad_pro`, content: kicadProjectFile(board, netClasses) },
     { path: `${safeName}.kicad_sch`, content: kicadSchematicFile(board, { components: resolvedComponents }) },
@@ -160,6 +168,8 @@ async function createKiCadProject(job, workspace, profile) {
     { path: 'boardforge-components.json', content: JSON.stringify(resolvedComponents, null, 2) },
     { path: 'boardforge-netlist.json', content: JSON.stringify(netlist, null, 2) },
     { path: 'boardforge-schematic-model.json', content: JSON.stringify(schematicModel, null, 2) },
+    { path: 'boardforge-stackup-plan.json', content: JSON.stringify(stackup, null, 2) },
+    { path: 'boardforge-assembly-plan.json', content: JSON.stringify(assemblyPlan, null, 2) },
     { path: 'boardforge-library.json', content: JSON.stringify(library, null, 2) },
     ...(requirementsPlan ? [{ path: 'boardforge-requirements-plan.json', content: JSON.stringify(requirementsPlan, null, 2) }] : []),
     { path: 'boardforge-bindings.json', content: JSON.stringify(bindingReport, null, 2) },
@@ -502,12 +512,14 @@ async function complexBoardPlanJob(job, workspace, profile) {
   const designIntent = createDesignIntent(board, components, nets, profile)
   const routingPlan = generateRoutingPlan(nets, { ...job.input, board, components, layerCount: stackup.layerCount, profile })
   const complexity = scoreBoardComplexity({ ...job.input, board, components, nets })
+  const assemblyPlan = planAssemblyAndMechanical(board, components, job.input || {})
   const blockers = [
     ...stackup.errors,
     ...validateZones(board, designIntent.zones).filter((item) => ['ERROR', 'BLOCKER'].includes(item.severity)),
   ]
   const warnings = [
     ...stackup.warnings,
+    ...assemblyPlan.warnings,
     ...routingPlan.warnings.map((message) => ({ severity: 'WARNING', code: 'ROUTING_PLAN_REVIEW', message })),
     ...requirementsPlan.assumptions.map((message) => ({ severity: 'WARNING', code: 'REQUIREMENT_ASSUMPTION', message })),
   ]
@@ -519,6 +531,7 @@ async function complexBoardPlanJob(job, workspace, profile) {
     components,
     nets,
     designIntent,
+    assemblyPlan,
     routingPlan,
     manufacturingGates: {
       advancedViasRequireQuote: stackup.hdi.requiresAdvancedReview,
@@ -538,6 +551,7 @@ async function complexBoardPlanJob(job, workspace, profile) {
       status: output.status,
       requirementsPlan,
       stackup,
+      assemblyPlan,
       designIntent,
       routing: { ...(current.routing || {}), plan: routingPlan, status: routingPlan.status },
       generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],

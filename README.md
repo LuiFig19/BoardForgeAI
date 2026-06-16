@@ -185,6 +185,7 @@ This writes:
 - `boardforge-preflight.json` when project preflight runs
 - `boardforge-requirements-plan.json` when requirement planning runs
 - `boardforge-stackup-plan.json` when stackup planning runs
+- `boardforge-assembly-plan.json` for component-side, connector-access, service-access, and panelization hints
 - `boardforge-complex-board-plan.json` when complex-board planning runs
 - `boardforge-bindings.json` for project scaffolds and binding validation
 - `boardforge-netlist.json` when project scaffolding or the netlist job runs
@@ -297,6 +298,8 @@ Then add the domains:
 Vercel will show the exact DNS records to place in Porkbun.
 
 ## Commands
+
+Complex-board Codex prompt examples live in `plugins/boardforge-plugin/examples/complex-board-prompts.md`.
 
 ```bash
 npm run lint
