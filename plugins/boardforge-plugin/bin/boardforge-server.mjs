@@ -20,6 +20,7 @@ const routes = {
   'POST /jobs/diff-snapshot': 'diff_project_snapshot',
   'POST /jobs/restore-snapshot': 'restore_project_snapshot',
   'POST /jobs/preflight': 'run_project_preflight',
+  'POST /jobs/workflow-preset': 'build_workflow_preset',
   'POST /jobs/plan-requirements': 'plan_requirements',
   'POST /jobs/plan-stackup': 'plan_stackup',
   'POST /jobs/compare-manufacturers': 'compare_manufacturers',

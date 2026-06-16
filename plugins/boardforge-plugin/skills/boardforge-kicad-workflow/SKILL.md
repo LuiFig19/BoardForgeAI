@@ -43,6 +43,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `diff_project_snapshot`
 - `restore_project_snapshot`
 - `run_project_preflight`
+- `build_workflow_preset`
 - `plan_requirements`
 - `plan_stackup`
 - `compare_manufacturers`
@@ -108,6 +109,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Restore only through `restore_project_snapshot`, then rerun scan, ERC, and DRC before export.
 - Run `diff_project_snapshot` before restore or export when a snapshot exists so the user can review changed files.
 - Run `run_project_preflight` before risky edits, routing, manufacturing export, package generation, or project handoff.
+- Run `build_workflow_preset` when the user asks Codex to build a common board type and needs an ordered sequence of safe BoardForge jobs.
 - Run `generate_manufacturing_manifest` before Gerber/drill/BOM/CPL handoff or JLCPCB packaging so Codex has one explicit artifact list and blocker list.
 - Run `plan_requirements` when the user gives a hardware description and Codex needs a structured BOM/net/circuit plan before KiCad generation.
 - Run `plan_stackup` before dense, high-speed, high-current, RF, or HDI boards so BoardForge can decide layer roles, blind/buried/microvia policy, impedance intent, copper strategy, and advanced fab blockers.
@@ -136,6 +138,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `snapshot_project`, `list_project_snapshots`, and `restore_project_snapshot` provide controlled rollback for KiCad project files and BoardForge metadata before risky edits.
 - `diff_project_snapshot` compares current project files to a saved snapshot and reports added, modified, deleted, and unchanged files with line-delta summaries.
 - `run_project_preflight` writes `boardforge-preflight.json` and aggregates scan, component audit, binding validation, netlist, manufacturing readiness, and optional snapshot diff gates.
+- `build_workflow_preset` returns ordered controlled job steps for ESP32 sensor, PoE/Ethernet sensor, and drone flight-controller workflows, with export steps separated behind validation gates.
 - `plan_requirements` writes or returns a requirements plan with reusable circuit blocks, components, nets, constraints, and assumptions for constrained board families.
 - `plan_stackup` writes or returns a stackup plan with layer roles, manufacturer HDI capability, blind/buried/microvia rules, impedance intent, copper strategy, and thermal strategy.
 - `plan_complex_board` writes or returns a combined complex-board plan with requirements, stackup, complexity score, placement/routing strategy, keepouts, copper pours, and manufacturing gates.
@@ -216,6 +219,7 @@ Supported endpoints:
 - `POST /jobs/diff-snapshot`
 - `POST /jobs/restore-snapshot`
 - `POST /jobs/preflight`
+- `POST /jobs/workflow-preset`
 - `POST /jobs/plan-requirements`
 - `POST /jobs/plan-stackup`
 - `POST /jobs/compare-manufacturers`

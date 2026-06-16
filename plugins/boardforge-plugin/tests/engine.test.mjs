@@ -309,6 +309,19 @@ test('requirements planner expands prompts into circuit components and nets', as
   assert.ok(plan.nets.some((net) => net.name === 'ETH_TX_P'))
 })
 
+test('workflow preset produces ordered controlled Codex plugin steps', async () => {
+  const preset = await executeJob({
+    id: 'workflow_preset',
+    type: 'build_workflow_preset',
+    input: { projectName: 'Workflow PoE Sensor', prompt: 'ESP32-S3 PoE Ethernet sensor with USB and I2C' },
+  }, process.cwd())
+  assert.equal(preset.status, 'WORKFLOW_PRESET_READY_NEEDS_REVIEW')
+  assert.equal(preset.workflowPreset.preset, 'poe_esp32_sensor')
+  assert.equal(preset.workflowPreset.steps[0].type, 'plan_requirements')
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_design_constraints'))
+  assert.ok(preset.workflowPreset.exportStepsAfterValidation.some((step) => step.type === 'package_jlcpcb'))
+})
+
 test('project snapshots can be listed and restored without touching arbitrary files', async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-snapshot-test-'))
   try {

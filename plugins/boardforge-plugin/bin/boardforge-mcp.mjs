@@ -22,6 +22,7 @@ const toolToJobType = {
   diff_project_snapshot: 'diff_project_snapshot',
   restore_project_snapshot: 'restore_project_snapshot',
   run_project_preflight: 'run_project_preflight',
+  build_workflow_preset: 'build_workflow_preset',
   plan_requirements: 'plan_requirements',
   plan_stackup: 'plan_stackup',
   compare_manufacturers: 'compare_manufacturers',
