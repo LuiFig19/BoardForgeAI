@@ -44,6 +44,12 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.equal(stackup.status, 'STACKUP_PLAN_NEEDS_REVIEW')
     assert.equal(stackup.stackup.hdi.allowed, true)
+    const si = await postJson(`http://127.0.0.1:${port}/jobs/plan-signal-integrity`, {
+      id: 'server_si',
+      input: { projectName: 'Server USB board', stackup: stackup.stackup, nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }], board: { widthMm: 40, heightMm: 28, layerCount: 4 } },
+    })
+    assert.ok(['SIGNAL_INTEGRITY_NEEDS_REVIEW', 'SIGNAL_INTEGRITY_READY'].includes(si.status))
+    assert.equal(si.signalIntegrity.highSpeedNetCount, 2)
     const audit = await postJson(`http://127.0.0.1:${port}/jobs/audit-component-library`, {
       id: 'server_component_audit',
       input: { projectPath: 'server-project' },

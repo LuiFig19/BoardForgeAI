@@ -28,6 +28,7 @@ const toolToJobType = {
   plan_power_tree: 'plan_power_tree',
   plan_stackup: 'plan_stackup',
   plan_fanout: 'plan_fanout',
+  plan_signal_integrity: 'plan_signal_integrity',
   run_dfm_checks: 'run_dfm_checks',
   compare_manufacturers: 'compare_manufacturers',
   plan_complex_board: 'plan_complex_board',
