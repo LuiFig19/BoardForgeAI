@@ -42,6 +42,7 @@ export function buildDesignConstraints(board, components = [], nets = [], profil
       copperPours: plans.routingPlan?.designIntent?.copperPours || plans.designIntent?.copperPours || [],
       keepouts: plans.routingPlan?.designIntent?.zones || plans.designIntent?.zones || [],
       powerRailConstraints: plans.powerTree?.constraints?.railClasses || [],
+      fanoutPreconditions: plans.fanoutPlan?.routingPreconditions || [],
     },
     power: plans.powerTree ? {
       status: plans.powerTree.status,
@@ -50,6 +51,12 @@ export function buildDesignConstraints(board, components = [], nets = [], profil
       regulators: plans.powerTree.regulators,
       thermalReview: plans.powerTree.thermalReview,
       sequencing: plans.powerTree.sequencing,
+    } : null,
+    fanout: plans.fanoutPlan ? {
+      status: plans.fanoutPlan.status,
+      strategy: plans.fanoutPlan.strategy,
+      denseComponents: plans.fanoutPlan.denseComponents?.map((item) => ({ ref: item.ref, packageClass: item.packageClass, pinCount: item.pinCount, escape: item.escape })),
+      viaPolicy: plans.fanoutPlan.viaPolicy,
     } : null,
     manufacturingGates: {
       requireErcBeforeExport: true,
@@ -65,6 +72,7 @@ export function buildDesignConstraints(board, components = [], nets = [], profil
       assembly: plans.assemblyPlan?.status || null,
       complexBoard: plans.complexPlan?.status || null,
       powerTree: plans.powerTree?.status || null,
+      fanout: plans.fanoutPlan?.status || null,
     },
     humanReviewRequired: true,
   }

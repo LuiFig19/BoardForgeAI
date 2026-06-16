@@ -26,6 +26,7 @@ const toolToJobType = {
   plan_requirements: 'plan_requirements',
   plan_power_tree: 'plan_power_tree',
   plan_stackup: 'plan_stackup',
+  plan_fanout: 'plan_fanout',
   compare_manufacturers: 'compare_manufacturers',
   plan_complex_board: 'plan_complex_board',
   generate_design_constraints: 'generate_design_constraints',

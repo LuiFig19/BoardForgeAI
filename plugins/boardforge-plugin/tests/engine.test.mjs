@@ -331,6 +331,25 @@ test('power tree planner budgets rails and thermal review', async () => {
   assert.ok(plan.powerTree.constraints.railClasses.some((item) => item.net === '3V3'))
 })
 
+test('fanout planner blocks dense packages on too few layers', async () => {
+  const plan = await executeJob({
+    id: 'fanout',
+    type: 'plan_fanout',
+    input: {
+      layerCount: 2,
+      components: [
+        { ref: 'U1', group: 'MCU', value: 'BGA processor', package: 'BGA-100', pinCount: 100, pitchMm: 0.5 },
+        { ref: 'J1', group: 'USB', value: 'USB-C connector', pinMap: { DP: 'USB_DP', DN: 'USB_DN', VBUS: 'VUSB', GND: 'GND' } },
+      ],
+      nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }, { name: '3V3' }, { name: 'GND' }],
+    },
+  }, process.cwd())
+  assert.equal(plan.status, 'FANOUT_PLAN_BLOCKED')
+  assert.ok(plan.fanoutPlan.errors.some((issue) => issue.code === 'BGA_REQUIRES_4PLUS_LAYERS'))
+  assert.ok(plan.fanoutPlan.edgeConnectors.some((connector) => connector.ref === 'J1'))
+  assert.ok(plan.fanoutPlan.viaPolicy.allowedTransitions.some((pair) => pair.includes('B.Cu')))
+})
+
 test('workflow preset produces ordered controlled Codex plugin steps', async () => {
   const preset = await executeJob({
     id: 'workflow_preset',
@@ -343,6 +362,7 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_power_tree'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_design_constraints'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_kicad_rules'))
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_fanout'))
   assert.ok(preset.workflowPreset.exportStepsAfterValidation.some((step) => step.type === 'package_jlcpcb'))
 })
 
@@ -539,6 +559,7 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     assert.equal(result.generatedFiles.some((file) => file.endsWith('.kicad_sch')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-power-tree.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-stackup-plan.json')), true)
+    assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-fanout-plan.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-assembly-plan.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-constraints.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge.kicad_dru')), true)
@@ -552,6 +573,7 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     assert.equal(state.mode, 'full_project_scaffold')
     assert.ok(state.stackup.layerCount >= 2)
     assert.ok(state.powerTree.rails.some((rail) => rail.name === '3V3'))
+    assert.ok(state.fanoutPlan.denseComponents.length >= 1)
     assert.ok(state.assemblyPlan.sidePlan.length >= 4)
     assert.equal(state.designConstraints.status, 'CONSTRAINTS_READY_NEEDS_REVIEW')
     assert.ok(state.components.length >= 4)

@@ -19,6 +19,7 @@ export function buildWorkflowPreset(input = {}) {
     step('generate_schematic', { projectPath: slug(base.projectName) }, 'Generate review-required schematic objects before ERC.'),
     step('optimize_placement', { projectPath: slug(base.projectName), templateId: base.templateId }, 'Repair placement constraints before copper.'),
     step('apply_placement_plan', { projectPath: slug(base.projectName) }, 'Apply reviewed placement into KiCad PCB footprint coordinates.'),
+    step('plan_fanout', { projectPath: slug(base.projectName) }, 'Plan package escape, via strategy, and routing preconditions before copper.'),
     step('generate_routing_plan', { projectPath: slug(base.projectName) }, 'Generate partial route plan with via/copper/keepout policy.'),
     step('run_project_preflight', { projectPath: slug(base.projectName) }, 'Aggregate scan, component, binding, netlist, and manufacturing gates.'),
     step('run_kicad_erc', { projectPath: slug(base.projectName) }, 'Run local KiCad ERC.'),
