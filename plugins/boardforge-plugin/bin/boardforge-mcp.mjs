@@ -59,6 +59,9 @@ const toolToJobType = {
   run_kicad_drc: 'run_kicad_drc',
   run_kicad_erc: 'run_kicad_erc',
   generate_routing_plan: 'generate_routing_plan',
+  autoroute_board: 'autoroute_board',
+  autoroute_and_apply: 'autoroute_and_apply',
+  autoroute_drc_iteration: 'autoroute_drc_iteration',
   score_routing_quality: 'score_routing_quality',
   validate_routing_geometry: 'validate_routing_geometry',
   optimize_placement: 'optimize_placement',
@@ -141,7 +144,7 @@ async function handleRequest(request) {
       instructions: [
         'Use BoardForge tools with structured JSON only.',
       'Do not run arbitrary KiCad shell commands.',
-      'After apply_routing_plan, run run_kicad_drc before any export or manufacturing claim.',
+      'After apply_routing_plan or autoroute_and_apply, run run_kicad_drc before any export or manufacturing claim.',
       'Treat generated KiCad output as review-required until DRC/ERC/export results prove otherwise.',
       ].join(' '),
     }

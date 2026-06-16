@@ -85,6 +85,9 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `fix_component_overlap`
 - `fix_mounting_hole_conflicts`
 - `generate_routing_plan`
+- `autoroute_board`
+- `autoroute_and_apply`
+- `autoroute_drc_iteration`
 - `score_routing_quality`
 - `validate_routing_geometry`
 - `route_critical_nets`
@@ -135,6 +138,9 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `plan_complex_board` for serious boards before project generation or routing. Treat its output as the main engineering plan for requirements, stackup, keepouts, vias, copper pours, and export gates.
 - Run `generate_design_constraints` after requirements/stackup/placement changes so Codex has one current constraints artifact before routing/export.
 - Run `generate_kicad_rules` after design constraints so KiCad has a reviewable custom-rules file for net classes, differential pairs, keepouts, route widths, and clearance policy.
+- Run `autoroute_board` only after placement, net classes, fanout, SI, and DFM are review-clean enough to attempt routed copper. Treat partial routes as blockers unless the user explicitly asks for a review/debug artifact.
+- Run `autoroute_and_apply` only when routed nets have known endpoints and prechecks do not block copper writing. It writes KiCad copper and forces DRC-required state.
+- Run `autoroute_drc_iteration` when the user asks for autorouting plus the first KiCad DRC pass. Do not export from an autorouted project until DRC/ERC and manufacturing readiness gates pass.
 - Run `score_routing_quality` after routing plans and before copper writing so via count, differential-pair matching, sensitive-net layer swaps, route length, unrouted nets, and power-route widths are reviewed.
 - Treat all AI plans as proposals until validated.
 - Require human review before manufacturing.
@@ -197,6 +203,9 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `optimize_placement` proposes deterministic placement repairs for overlaps, edge connectors, RF/antenna edge access, and ratsnest quality before routing.
 - `apply_placement_plan` writes reviewed placement coordinates into real `.kicad_pcb` footprint `(at x y rotation)` fields and marks the project DRC-required.
 - `generate_routing_plan` creates a partial routing plan from explicit route points or inferred component pin-map endpoints, emits route waypoints for reviewable 45/90-degree legs, and reports unrouted nets. It does not claim full autorouting.
+- `autoroute_board` runs the BoardForge controlled deterministic grid/A* router against board outline, component obstacles, net classes, layer policy, via policy, keepouts, and compact-board rules. It returns routed/unrouted nets and remains review-required.
+- `autoroute_and_apply` writes only prechecked autorouted KiCad copper to `.kicad_pcb`, assigns PCB nets/pad nets where possible, records `boardforge-project.json` routing state, and requires DRC before export.
+- `autoroute_drc_iteration` applies controlled autorouted copper and immediately runs local KiCad DRC, returning the DRC report and blocking manufacturing claims when DRC errors remain.
 - `score_routing_quality` scores routing plans for unrouted nets, route length, differential-pair mismatch, sensitive-net vias, layer swaps, via budget, and power-route width before copper writing.
 - `validate_routing_geometry` prechecks route points, widths, via size/drill, via keepouts, mounting-hole clearance, differential-pair mates, copper-pour keepouts, and power-route width before copper is written.
 - Routing tools return compact-board via policy, layer-change rules, copper pour plans, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions.
@@ -280,6 +289,9 @@ Supported endpoints:
 - `POST /jobs/apply-placement`
 - `POST /jobs/find-missing-footprints`
 - `POST /jobs/link-3d-models`
+- `POST /jobs/autoroute`
+- `POST /jobs/autoroute-apply`
+- `POST /jobs/autoroute-drc-iteration`
 - `POST /jobs/validate`
 - `POST /jobs/run-drc`
 - `POST /jobs/run-erc`

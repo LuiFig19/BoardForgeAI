@@ -7,6 +7,7 @@ import { pointInPolygon, rectCorners, rectsOverlap } from './geometry.mjs'
 import { createBoardShape, createTemplateBoard, boardTemplates } from './templates.mjs'
 import { generatePlacementPlan, optimizePlacementPlan } from './placement.mjs'
 import { generateRoutingPlan } from './routing.mjs'
+import { autorouteBoard } from './autorouter.mjs'
 import { kicadPcbFile, kicadProjectFile, kicadSchematicFile, projectReadmeFile, readmeFile, scanKiCadProject } from './kicad.mjs'
 import { runFullSelfReview, validateBoardOutline, validatePlacement } from './validation.mjs'
 import { detectKiCadCli, exportBom, exportCpl, exportDrill, exportGerbers, findKiCadProjectFiles, packageJlcpcb, runDrc, runErc } from './kicad-cli.mjs'
@@ -43,7 +44,7 @@ import { planSignalIntegrity } from './signal-integrity-planner.mjs'
 import { planPinAssignments } from './pin-assignment-planner.mjs'
 import { planTestStrategy } from './test-strategy-planner.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -115,6 +116,9 @@ export async function executeJob(job, workspace) {
   if (job.type === 'validate_net_classes' || job.type === 'report_unclassified_nets') return validateNetClassesJob(job)
   if (job.type === 'generate_placement_plan' || job.type === 'optimize_placement') return placementPlanJob(job, profile)
   if (job.type === 'apply_placement_plan' || job.type === 'move_component' || job.type === 'fix_component_overlap' || job.type === 'fix_component_off_board') return applyPlacementJob(job, workspace, profile)
+  if (job.type === 'autoroute_board') return autorouteBoardJob(job, workspace, profile)
+  if (job.type === 'autoroute_and_apply') return autorouteAndApplyJob(job, workspace, profile)
+  if (job.type === 'autoroute_drc_iteration') return autorouteDrcIterationJob(job, workspace, profile)
   if (job.type === 'apply_routing_plan') return applyRoutingPlanJob(job, workspace, profile)
   if (job.type === 'validate_routing_geometry') return routingGeometryJob(job, profile)
   if (job.type === 'score_routing_quality') return routingQualityJob(job, profile)
@@ -1349,6 +1353,101 @@ function routingQualityJob(job, profile) {
   const routingPlan = job.input?.routingPlan || generateRoutingPlan(assignNetsToClasses(job.input?.nets || []), { ...job.input, layerCount: job.input?.layerCount || board.layerCount, board, components: job.input?.components || [], profile })
   const routeQuality = scoreRoutingPlan({ routingPlan, profile, powerTree: job.input?.powerTree || null })
   return result(job, routeQuality.status, routeQuality.warnings, routeQuality.errors, { routingPlan, routeQuality, humanReviewRequired: true })
+}
+
+async function autorouteBoardJob(job, workspace, profile) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const nets = assignNetsToClasses(job.input?.nets || state?.requirements?.nets || state?.netlist?.nets || [])
+  const routingPlan = autorouteBoard({ board, components, nets, profile, options: { ...job.input, layerCount: board.layerCount } })
+  const routeValidation = validateRoutingGeometry({ board, components, routingPlan, profile })
+  const routeQuality = scoreRoutingPlan({ routingPlan, profile, powerTree: job.input?.powerTree || state?.powerTree || null })
+  const generatedFiles = []
+
+  if (projectDir && !job.dryRun) {
+    const outputFile = path.join(projectDir, 'boardforge-autoroute-plan.json')
+    await writeFile(outputFile, JSON.stringify({ routingPlan, routeValidation, routeQuality }, null, 2), 'utf8')
+    generatedFiles.push(outputFile)
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: routingPlan.status,
+      routing: {
+        ...current.routing,
+        status: routingPlan.status,
+        plan: routingPlan,
+        autoroute: routingPlan,
+        precheck: routeValidation,
+        quality: routeQuality,
+        drcRequired: false,
+      },
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Autorouted ${routingPlan.routedNets.length} nets; ${routingPlan.unroutedNets.length} nets remain unrouted.`,
+    }))
+  }
+
+  return result(job, routingPlan.status, [...routingPlan.warnings, ...routeValidation.warnings, ...routeQuality.warnings], [...routingPlan.errors, ...routeValidation.errors, ...routeQuality.errors], { routingPlan, routeValidation, routeQuality, generatedFiles, humanReviewRequired: true })
+}
+
+async function autorouteAndApplyJob(job, workspace, profile) {
+  const context = await getKiCadContext(job, workspace, 'pcb')
+  if (context.blocked) return context.blocked
+  const state = await readProjectState(context.files.projectDir)
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const components = job.input?.components || await readRichComponents(context.files.projectDir) || state?.components || []
+  const nets = assignNetsToClasses(job.input?.nets || state?.requirements?.nets || state?.netlist?.nets || [])
+  const routingPlan = job.input?.routingPlan || autorouteBoard({ board, components, nets, profile, options: { ...job.input, layerCount: board.layerCount } })
+  const routeValidation = validateRoutingGeometry({ board, components, routingPlan, profile })
+  const routeQuality = scoreRoutingPlan({ routingPlan, profile, powerTree: job.input?.powerTree || state?.powerTree || null })
+  const warnings = [...(routingPlan.warnings || []), ...routeValidation.warnings, ...routeQuality.warnings]
+  const errors = [...(routingPlan.errors || []), ...routeValidation.errors, ...routeQuality.errors]
+
+  if (routingPlan.unroutedNets?.length && !job.input?.allowPartialAutorouteWrite) {
+    return result(job, 'AUTOROUTE_WRITE_BLOCKED_UNROUTED_NETS', warnings, [...errors, { severity: 'ERROR', code: 'UNROUTED_NETS_REMAIN', message: `Autoroute left ${routingPlan.unroutedNets.length} net(s) unrouted. Set allowPartialAutorouteWrite only for explicit review/debug output.`, details: { unroutedNets: routingPlan.unroutedNets } }], { routingPlan, routeValidation, routeQuality, generatedFiles: [], humanReviewRequired: true })
+  }
+  if ((routeValidation.errors.length || routeQuality.errors.length) && !job.input?.allowUnsafeRoutingWrite) {
+    return result(job, 'AUTOROUTE_WRITE_BLOCKED_PRECHECK_FAILED', warnings, errors, { routingPlan, routeValidation, routeQuality, generatedFiles: [], humanReviewRequired: true })
+  }
+  if (!routingPlan.routes?.some((route) => route.status === 'routed' && route.start && route.end)) {
+    return result(job, 'AUTOROUTE_WRITE_BLOCKED_NO_GEOMETRY', warnings, [{ severity: 'ERROR', code: 'NO_AUTOROUTED_GEOMETRY', message: 'Autorouter produced no writable routed nets.' }, ...errors], { routingPlan, routeValidation, routeQuality, generatedFiles: [], humanReviewRequired: true })
+  }
+
+  const output = await applyRoutingPlanToPcb({ pcbFile: context.files.pcbFile, board, routingPlan, components })
+  const { status: _writerStatus, ...autorouteOutput } = output
+  await updateProjectState(context.files.projectDir, async (current) => ({
+    ...current,
+    status: 'AUTOROUTE_COPPER_APPLIED_NEEDS_DRC',
+    routing: {
+      status: 'AUTOROUTE_COPPER_APPLIED_NEEDS_DRC',
+      plan: routingPlan,
+      autoroute: routingPlan,
+      routes: output.routes,
+      vias: output.vias,
+      zones: output.zones,
+      generatedObjects: output.generatedObjects,
+      precheck: routeValidation,
+      quality: routeQuality,
+      drcRequired: true,
+    },
+    generatedFiles: [...new Set([...(current.generatedFiles || []), context.files.pcbFile])],
+    lastJobType: job.type,
+    lastHistoryMessage: `Autoroute applied ${output.generatedObjects.segments} segments, ${output.generatedObjects.vias} vias, and ${output.generatedObjects.zones} zones. DRC required.`,
+  }))
+  return result(job, 'AUTOROUTE_COPPER_APPLIED_NEEDS_DRC', [{ severity: 'WARNING', code: 'DRC_REQUIRED', message: 'Autorouted copper was written to KiCad PCB. Run autoroute_drc_iteration or run_kicad_drc before export/manufacturing.' }, ...warnings], [], { ...autorouteOutput, routingPlan, routeValidation, routeQuality, generatedFiles: [context.files.pcbFile], humanReviewRequired: true })
+}
+
+async function autorouteDrcIterationJob(job, workspace, profile) {
+  const applied = await autorouteAndApplyJob(job, workspace, profile)
+  if (applied.status !== 'AUTOROUTE_COPPER_APPLIED_NEEDS_DRC') return applied
+  const context = await getKiCadContext(job, workspace, 'pcb')
+  if (context.blocked) return context.blocked
+  const reportFile = path.join(context.files.projectDir, 'reports', 'autoroute-drc.json')
+  const drc = await runDrc({ pcbFile: context.files.pcbFile, outputFile: reportFile, kicadCliPath: context.detected.path })
+  await updateValidationState(context.files.projectDir, job.type, 'autorouteDrc', drc)
+  const status = drc.issueCounts.errors ? 'AUTOROUTE_DRC_ITERATION_NEEDS_FIX' : 'AUTOROUTE_DRC_ITERATION_COMPLETE_NEEDS_REVIEW'
+  return result(job, status, [...applied.warnings, ...(drc.issueCounts.warnings ? [{ severity: 'WARNING', code: 'DRC_WARNINGS', message: `${drc.issueCounts.warnings} DRC warnings found after autoroute.` }] : [])], drc.issueCounts.errors ? [{ severity: 'ERROR', code: 'DRC_ERRORS', message: `${drc.issueCounts.errors} DRC errors found after autoroute.` }] : [], { applied, kicad: context.detected, report: drc, generatedFiles: [...(applied.generatedFiles || []), reportFile], humanReviewRequired: true })
 }
 
 async function applyRoutingPlanJob(job, workspace, profile) {

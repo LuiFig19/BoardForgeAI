@@ -715,6 +715,60 @@ test('apply_routing_plan writes review-required KiCad copper, vias, and zones', 
   }
 })
 
+test('autoroute_board routes simple nets around component obstacles', async () => {
+  const board = { widthMm: 50, heightMm: 30, layerCount: 2, outline: rectanglePoints(50, 30), mountingHoles: [] }
+  const components = [
+    { ref: 'J1', group: 'connector', x: 6, y: 8, width: 3, height: 3, pinMap: { '1': 'SIG' } },
+    { ref: 'U1', group: 'mcu', x: 44, y: 22, width: 3, height: 3, pinMap: { '1': 'SIG' } },
+    { ref: 'KEEP1', group: 'mechanical', x: 25, y: 15, width: 10, height: 14, pinMap: {} },
+  ]
+  const routed = await executeJob({
+    id: 'autoroute_plan',
+    type: 'autoroute_board',
+    input: { board, components, nets: [{ name: 'SIG' }], gridMm: 1 },
+  }, tmpdir())
+  assert.equal(routed.status, 'AUTOROUTE_READY_NEEDS_DRC')
+  assert.deepEqual(routed.routingPlan.routedNets, ['SIG'])
+  const route = routed.routingPlan.routes.find((item) => item.net === 'SIG')
+  assert.equal(route.status, 'routed')
+  assert.ok(route.waypoints.length > 2)
+  assert.ok(route.estimatedLengthMm > 0)
+})
+
+test('autoroute_and_apply writes controlled KiCad copper and marks DRC required', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-autoroute-test-'))
+  try {
+    await executeJob({
+      id: 'project',
+      type: 'create_outline_board',
+      allowOverwrite: true,
+      input: { projectName: 'Autoroute Test', widthMm: 50, heightMm: 30, layerCount: 2 },
+    }, workspace)
+    const board = { widthMm: 50, heightMm: 30, layerCount: 2, outline: rectanglePoints(50, 30), mountingHoles: [] }
+    const components = [
+      { ref: 'J1', group: 'connector', x: 6, y: 8, width: 3, height: 3, pinMap: { '1': 'SIG' } },
+      { ref: 'U1', group: 'mcu', x: 44, y: 22, width: 3, height: 3, pinMap: { '1': 'SIG' } },
+      { ref: 'KEEP1', group: 'mechanical', x: 25, y: 15, width: 10, height: 14, pinMap: {} },
+    ]
+    const applied = await executeJob({
+      id: 'autoroute_apply',
+      type: 'autoroute_and_apply',
+      input: { projectPath: 'autoroute-test', board, components, nets: [{ name: 'SIG' }], gridMm: 1 },
+    }, workspace)
+    assert.equal(applied.status, 'AUTOROUTE_COPPER_APPLIED_NEEDS_DRC')
+    assert.ok(applied.generatedObjects.segments > 0)
+    const pcb = await readFile(path.join(workspace, 'autoroute-test', 'autoroute-test.kicad_pcb'), 'utf8')
+    assert.match(pcb, /\(net \d+ "SIG"\)/)
+    assert.match(pcb, /\(segment /)
+    const state = JSON.parse(await readFile(path.join(workspace, 'autoroute-test', 'boardforge-project.json'), 'utf8'))
+    assert.equal(state.routing.status, 'AUTOROUTE_COPPER_APPLIED_NEEDS_DRC')
+    assert.equal(state.routing.drcRequired, true)
+    assert.equal(state.routing.autoroute.routedNets.includes('SIG'), true)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
 test('advanced jobs build component database, schematic model, interactive edits, and DRC repair plan', async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-advanced-test-'))
   try {
