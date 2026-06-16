@@ -291,6 +291,32 @@ test('component library audit reports missing assets and 3D model coverage', asy
   assert.ok(result.actions.some((action) => action.includes('resolve_component_assets')))
 })
 
+test('component audit blocks weak package and selected-part confidence', async () => {
+  const result = await executeJob({
+    id: 'component_audit_confidence',
+    type: 'audit_component_library',
+    input: {
+      components: [
+        {
+          ref: 'U_BAD',
+          group: 'MCU',
+          value: 'unknown MCU',
+          symbol: 'MCU:Unknown',
+          footprint: 'Package_QFP:Wrong',
+          pinMap: { VDD: '3V3', GND: 'GND' },
+          footprintConfidence: { status: 'weak_or_missing_match', score: 20, expectedPackage: 'QFN-56' },
+          selectionScore: 35,
+          procurement: { lifecycleRisk: 'unknown_requires_supplier_check' },
+        },
+      ],
+    },
+  }, process.cwd())
+  assert.equal(result.status, 'COMPONENT_LIBRARY_AUDIT_NEEDS_FIX')
+  assert.ok(result.errors.some((issue) => issue.code === 'FOOTPRINT_CONFIDENCE_WEAK'))
+  assert.ok(result.errors.some((issue) => issue.code === 'COMPONENT_SELECTION_SCORE_LOW'))
+  assert.ok(result.actions.some((action) => action.includes('package-to-footprint')))
+})
+
 test('requirements planner expands prompts into circuit components and nets', async () => {
   const plan = await executeJob({
     id: 'requirements_plan',

@@ -42,6 +42,10 @@ function auditComponent(component) {
   if (!coverage.model3d) issues.push(issue('WARNING', 'MODEL_3D_MISSING', `${component.ref} has no linked STEP/WRL model, so KiCad 3D preview will be incomplete.`))
   if (!coverage.pinMap) issues.push(issue('WARNING', 'PIN_MAP_MISSING', `${component.ref} needs a pin map before nets can be assigned safely.`))
   if (!coverage.lcsc && !coverage.mpn) issues.push(issue('WARNING', 'SUPPLIER_ID_MISSING', `${component.ref} needs LCSC or MPN data for BOM sourcing review.`))
+  if (!coverage.package) issues.push(issue('WARNING', 'PACKAGE_MISSING', `${component.ref} needs package metadata so footprint and assembly choice can be trusted.`))
+  if (component.footprintConfidence?.status === 'weak_or_missing_match') issues.push(issue('ERROR', 'FOOTPRINT_CONFIDENCE_WEAK', `${component.ref} footprint confidence is weak or missing. Do not place/export this component until reviewed.`, component.footprintConfidence))
+  if (typeof component.selectionScore === 'number' && component.selectionScore < 50) issues.push(issue('ERROR', 'COMPONENT_SELECTION_SCORE_LOW', `${component.ref} selection score is ${component.selectionScore}/100. Resolve symbol, footprint, 3D, supplier, and package data.`, { selectionScore: component.selectionScore }))
+  if (component.procurement?.lifecycleRisk === 'unknown_requires_supplier_check') issues.push(issue('WARNING', 'SUPPLIER_LIFECYCLE_UNKNOWN', `${component.ref} has unknown lifecycle/stock risk and needs a supplier check.`))
   return {
     ref: component.ref,
     group: component.group || null,
@@ -53,6 +57,9 @@ function auditComponent(component) {
     lcsc: component.lcsc || null,
     mpn: component.mpn || null,
     coverage,
+    footprintConfidence: component.footprintConfidence || null,
+    selectionScore: component.selectionScore ?? null,
+    procurement: component.procurement || null,
     coverageScore: componentScore(coverage, issues),
     issues,
   }
@@ -86,6 +93,9 @@ function recommendedActions({ audited, blockers, warnings }) {
   if (warnings.some((item) => item.code === 'MODEL_3D_MISSING')) actions.push('Run link_3d_models and verify KiCad 3D model paths before relying on physical preview.')
   if (warnings.some((item) => item.code === 'PIN_MAP_MISSING')) actions.push('Add or review pin maps before generating netlists, schematic wiring, or PCB pad nets.')
   if (warnings.some((item) => item.code === 'SUPPLIER_ID_MISSING')) actions.push('Resolve BOM source data with LCSC/MPN alternates before manufacturing review.')
+  if (warnings.some((item) => item.code === 'PACKAGE_MISSING') || blockers.some((item) => item.code === 'FOOTPRINT_CONFIDENCE_WEAK')) actions.push('Run sync_component_database and resolve_component_assets, then manually confirm package-to-footprint match.')
+  if (blockers.some((item) => item.code === 'COMPONENT_SELECTION_SCORE_LOW')) actions.push('Replace low-score selected parts or provide explicit symbol, footprint, 3D model, LCSC/MPN, and pin map overrides.')
+  if (warnings.some((item) => item.code === 'SUPPLIER_LIFECYCLE_UNKNOWN')) actions.push('Pick an alternate with known stock/lifecycle before BOM handoff.')
   if (!audited.length) actions.push('No components were provided. Create or scan a project before running component library audit.')
   return [...new Set(actions)]
 }
