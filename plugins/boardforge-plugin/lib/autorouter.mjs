@@ -15,9 +15,21 @@ export function autorouteBoard({ board, components = [], nets = [], profile = {}
   const routes = []
   const warnings = []
   const errors = []
+  const processed = new Set()
 
   for (const net of classified) {
+    if (processed.has(net.name)) continue
     if (net.className === 'GROUND') continue
+    const mate = diffMateFor(net, classified)
+    if (mate && !processed.has(mate.name)) {
+      const pairRoutes = routeDifferentialPair({ net, mate, board, components, profile, options, designIntent, obstacles, occupied, gridMm, layerCount })
+      routes.push(...pairRoutes.routes)
+      warnings.push(...pairRoutes.warnings)
+      processed.add(net.name)
+      processed.add(mate.name)
+      for (const route of pairRoutes.routes.filter((item) => item.status === 'routed')) reserveRoute(route, occupied, gridMm)
+      continue
+    }
     const endpoints = inferEndpoints(net, components)
     const start = net.start || endpoints.start
     const end = net.end || endpoints.end
@@ -33,6 +45,7 @@ export function autorouteBoard({ board, components = [], nets = [], profile = {}
     } else {
       warnings.push(issue('WARNING', 'AUTOROUTE_NET_UNROUTED', `${net.name} could not be routed without violating current obstacles/board outline.`, { net: net.name, reason: route.status }))
     }
+    processed.add(net.name)
   }
 
   const routedNets = routes.filter((route) => route.status === 'routed').map((route) => route.net)
@@ -57,6 +70,37 @@ export function autorouteBoard({ board, components = [], nets = [], profile = {}
     warnings,
     errors,
     humanReviewRequired: true,
+  }
+}
+
+function routeDifferentialPair({ net, mate, board, components, profile, options, designIntent, obstacles, occupied, gridMm, layerCount }) {
+  const warnings = []
+  const firstEndpoints = inferEndpoints(net, components)
+  const secondEndpoints = inferEndpoints(mate, components)
+  const firstStart = net.start || firstEndpoints.start
+  const firstEnd = net.end || firstEndpoints.end
+  const secondStart = mate.start || secondEndpoints.start
+  const secondEnd = mate.end || secondEndpoints.end
+  if (!firstStart || !firstEnd || !secondStart || !secondEnd) {
+    warnings.push(issue('WARNING', 'AUTOROUTE_DIFF_PAIR_ENDPOINTS_MISSING', `${net.name}/${mate.name} needs endpoints for both pair members.`, { nets: [net.name, mate.name] }))
+    return { warnings, routes: [routeShell(net, firstStart, firstEnd, firstEndpoints, 'unrouted_missing_endpoints'), routeShell(mate, secondStart, secondEnd, secondEndpoints, 'unrouted_missing_endpoints')] }
+  }
+  const pairStart = averagePoint(firstStart, secondStart)
+  const pairEnd = averagePoint(firstEnd, secondEnd)
+  const centerRoute = routeNet({ net: { ...net, name: `${net.name}_${mate.name}_PAIR` }, start: pairStart, end: pairEnd, endpoints: { refs: [...new Set([...(firstEndpoints.refs || []), ...(secondEndpoints.refs || [])])] }, board, components, profile, options, designIntent, obstacles, occupied, gridMm, layerCount })
+  if (centerRoute.status !== 'routed') {
+    warnings.push(issue('WARNING', 'AUTOROUTE_DIFF_PAIR_UNROUTED', `${net.name}/${mate.name} pair centerline could not be routed.`, { nets: [net.name, mate.name], reason: centerRoute.status }))
+    return { warnings, routes: [routeShell(net, firstStart, firstEnd, firstEndpoints, centerRoute.status), routeShell(mate, secondStart, secondEnd, secondEndpoints, centerRoute.status)] }
+  }
+  const spacingMm = Number(options.diffPairSpacingMm || 0.25)
+  const firstPath = offsetPath(centerRoute.waypoints, spacingMm)
+  const secondPath = offsetPath(centerRoute.waypoints, -spacingMm)
+  return {
+    warnings,
+    routes: [
+      routedPairMember(net, firstStart, firstEnd, firstEndpoints, firstPath, centerRoute, spacingMm),
+      routedPairMember(mate, secondStart, secondEnd, secondEndpoints, secondPath, centerRoute, spacingMm),
+    ],
   }
 }
 
@@ -149,6 +193,22 @@ function routed(net, start, end, endpoints, path, layer, layerCount, board, desi
     clearanceMm: Math.max(rules.clearanceMm || 0.15, profile.minClearanceMm || 0.127),
     layerPreference: [layer],
     viaPlan: { ...viaPlan, candidates: vias, maxVias: vias.length || viaPlan.maxVias || 0 },
+    waypoints: path,
+    estimatedLengthMm: routeLength(path),
+    status: 'routed',
+  }
+}
+
+function routedPairMember(net, start, end, endpoints, path, centerRoute, spacingMm) {
+  return {
+    ...centerRoute,
+    net: net.name,
+    className: net.className || centerRoute.className || 'DEFAULT',
+    start,
+    end,
+    endpointRefs: endpoints.refs,
+    strategy: 'controlled_astar_matched_diff_pair',
+    differentialPair: { mate: diffMateName(net.name), spacingMm, centerlineLengthMm: centerRoute.estimatedLengthMm, lengthMatched: true },
     waypoints: path,
     estimatedLengthMm: routeLength(path),
     status: 'routed',
@@ -272,6 +332,38 @@ function routeLength(points) {
 
 function pointFor(component) {
   return { x: Number(component.x || 0), y: Number(component.y || 0) }
+}
+
+function diffMateFor(net, nets) {
+  const mateName = diffMateName(net.name)
+  if (!mateName || !['USB_DIFF', 'ETHERNET_DIFF', 'CAN_DIFF'].includes(net.className || '')) return null
+  return nets.find((candidate) => candidate.name === mateName && candidate.className === net.className) || null
+}
+
+function diffMateName(name) {
+  if (/_DP$/.test(name)) return name.replace(/_DP$/, '_DN')
+  if (/_DN$/.test(name)) return name.replace(/_DN$/, '_DP')
+  if (/_P$/.test(name)) return name.replace(/_P$/, '_N')
+  if (/_N$/.test(name)) return name.replace(/_N$/, '_P')
+  if (/\+$/.test(name)) return name.replace(/\+$/, '-')
+  if (/-$/.test(name)) return name.replace(/-$/, '+')
+  return null
+}
+
+function averagePoint(a, b) {
+  return { x: round((a.x + b.x) / 2), y: round((a.y + b.y) / 2) }
+}
+
+function offsetPath(path, amount) {
+  if (!path.length) return []
+  return path.map((point, index) => {
+    const prev = path[Math.max(0, index - 1)]
+    const next = path[Math.min(path.length - 1, index + 1)]
+    const dx = next.x - prev.x
+    const dy = next.y - prev.y
+    const length = Math.hypot(dx, dy) || 1
+    return { x: round(point.x + (-dy / length) * amount), y: round(point.y + (dx / length) * amount) }
+  })
 }
 
 function priority(net) {

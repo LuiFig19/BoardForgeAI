@@ -754,6 +754,28 @@ test('autoroute_board avoids generated antenna copper keepouts', async () => {
   assert.equal(route.waypoints.some((point) => pointInPolygon(point, keepout.polygon)), false)
 })
 
+test('autoroute_board routes differential pairs with matched geometry', async () => {
+  const board = { widthMm: 60, heightMm: 34, layerCount: 4, outline: rectanglePoints(60, 34), mountingHoles: [] }
+  const components = [
+    { ref: 'J1', group: 'USB_C', x: 8, y: 17, width: 4, height: 6, pinMap: { A6: 'USB_DP', A7: 'USB_DN' } },
+    { ref: 'U1', group: 'MCU', x: 50, y: 17, width: 8, height: 8, pinMap: { DP: 'USB_DP', DN: 'USB_DN' } },
+    { ref: 'KEEP1', group: 'mechanical', x: 30, y: 17, width: 8, height: 12, pinMap: {} },
+  ]
+  const routed = await executeJob({
+    id: 'autoroute_usb_pair',
+    type: 'autoroute_board',
+    input: { board, components, nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }], gridMm: 1, diffPairSpacingMm: 0.3 },
+  }, tmpdir())
+  assert.equal(routed.status, 'AUTOROUTE_READY_NEEDS_DRC')
+  const dp = routed.routingPlan.routes.find((route) => route.net === 'USB_DP')
+  const dn = routed.routingPlan.routes.find((route) => route.net === 'USB_DN')
+  assert.equal(dp.strategy, 'controlled_astar_matched_diff_pair')
+  assert.equal(dn.strategy, 'controlled_astar_matched_diff_pair')
+  assert.equal(dp.differentialPair.mate, 'USB_DN')
+  assert.equal(dn.differentialPair.mate, 'USB_DP')
+  assert.ok(Math.abs(dp.estimatedLengthMm - dn.estimatedLengthMm) <= 0.5)
+})
+
 test('autoroute_and_apply writes controlled KiCad copper and marks DRC required', async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-autoroute-test-'))
   try {
