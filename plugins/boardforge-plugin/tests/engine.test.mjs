@@ -405,8 +405,14 @@ test('create_kicad_project can use requirements planner output', async () => {
     assert.equal(result.status, 'KICAD_PROJECT_CREATED_NEEDS_REVIEW')
     assert.ok(result.requirementsPlan.selectedCircuits.includes('poe_ethernet'))
     assert.ok(result.generatedFiles.some((file) => file.endsWith('boardforge-requirements-plan.json')))
+    assert.ok(result.generatedFiles.some((file) => file.endsWith('boardforge-netlist.json')))
+    assert.ok(result.generatedFiles.some((file) => file.endsWith('boardforge-schematic-model.json')))
     const planText = await readFile(path.join(result.projectPath, 'boardforge-requirements-plan.json'), 'utf8')
     assert.match(planText, /poe_ethernet/)
+    const netlist = JSON.parse(await readFile(path.join(result.projectPath, 'boardforge-netlist.json'), 'utf8'))
+    assert.ok(netlist.nets.some((net) => net.name === 'ETH_TX_P'))
+    const schematicModel = JSON.parse(await readFile(path.join(result.projectPath, 'boardforge-schematic-model.json'), 'utf8'))
+    assert.ok(schematicModel.nets.some((net) => net.name === 'ETH_TX_P'))
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

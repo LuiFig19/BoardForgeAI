@@ -145,12 +145,17 @@ async function createKiCadProject(job, workspace, profile) {
     return { ...component, symbol: resolved?.symbol || component.symbol || null, footprint: resolved?.footprint || component.footprint, model3d: resolved?.model3d || component.model3d || null, confidence: resolved?.confidence || 'needs_review' }
   })
   const bindingReport = await validateComponentBindings(resolvedComponents)
-  const state = createProjectState({ job: { ...job, input: { ...job.input, designIntent } }, board, mode: 'full_project_scaffold', profile, components: resolvedComponents, library, componentBindings: bindingReport, review: { ...review, placementIssues, zoneIssues, bindingIssues: [...bindingReport.warnings, ...bindingReport.errors] }, generatedFiles: [] })
+  const plannedNets = assignNetsToClasses(requirementsPlan?.nets || job.input?.nets || [])
+  const netlist = boardforgeNetlistFromComponents(resolvedComponents, plannedNets)
+  const schematicModel = generateSchematicModel(board, resolvedComponents, { ...job.input, nets: plannedNets })
+  const state = createProjectState({ job: { ...job, input: { ...job.input, designIntent, requirementsPlan, nets: plannedNets } }, board, mode: 'full_project_scaffold', profile, components: resolvedComponents, library, componentBindings: bindingReport, review: { ...review, placementIssues, zoneIssues, bindingIssues: [...bindingReport.warnings, ...bindingReport.errors] }, generatedFiles: [] })
   const files = [
     { path: `${safeName}.kicad_pro`, content: kicadProjectFile(board, netClasses) },
     { path: `${safeName}.kicad_sch`, content: kicadSchematicFile(board, { components: resolvedComponents }) },
     { path: `${safeName}.kicad_pcb`, content: kicadPcbFile(board, { netClasses, footprints }) },
     { path: 'boardforge-components.json', content: JSON.stringify(resolvedComponents, null, 2) },
+    { path: 'boardforge-netlist.json', content: JSON.stringify(netlist, null, 2) },
+    { path: 'boardforge-schematic-model.json', content: JSON.stringify(schematicModel, null, 2) },
     { path: 'boardforge-library.json', content: JSON.stringify(library, null, 2) },
     ...(requirementsPlan ? [{ path: 'boardforge-requirements-plan.json', content: JSON.stringify(requirementsPlan, null, 2) }] : []),
     { path: 'boardforge-bindings.json', content: JSON.stringify(bindingReport, null, 2) },

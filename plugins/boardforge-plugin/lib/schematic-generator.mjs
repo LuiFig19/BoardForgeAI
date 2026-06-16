@@ -9,7 +9,7 @@ export function generateSchematicModel(board, components = [], input = {}) {
     symbol: component.symbol?.libId || component.symbol || null,
     footprint: component.footprint?.libId || component.footprint || null,
     at: { x: 25 + (index % 3) * 45, y: 35 + Math.floor(index / 3) * 32 },
-    pinMap: component.pinMap || {},
+    pinMap: Object.keys(component.pinMap || {}).length ? component.pinMap : fallbackPinMap(component),
     uuid: crypto.randomUUID(),
   }))
   return {

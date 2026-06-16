@@ -174,11 +174,12 @@ This writes:
 - `.boardforge/snapshots/*` when snapshot jobs are run
 - `boardforge-components.json` for project scaffolds
 - `boardforge-library.json` for project scaffolds
+- `boardforge-schematic-model.json` for generated schematic intent
 - `boardforge-component-audit.json` when component coverage audit runs
 - `boardforge-preflight.json` when project preflight runs
 - `boardforge-requirements-plan.json` when requirement planning runs
 - `boardforge-bindings.json` for project scaffolds and binding validation
-- `boardforge-netlist.json` when the netlist job runs
+- `boardforge-netlist.json` when project scaffolding or the netlist job runs
 - `boardforge-design-report.json` when the design audit job runs
 - `boardforge-review.json`
 - `README.md`
