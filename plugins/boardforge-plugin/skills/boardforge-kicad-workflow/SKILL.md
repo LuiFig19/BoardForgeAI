@@ -63,6 +63,9 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `validate_component_bindings`
 - `generate_netlist`
 - `run_design_audit`
+- `generate_schematic`
+- `plan_erc_repairs`
+- `apply_safe_erc_repairs`
 - `validate_manufacturing_readiness`
 - `generate_manufacturing_manifest`
 - `find_missing_footprints`
@@ -174,6 +177,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `validate_manufacturing_readiness` checks DRC/ERC reports plus BOM/CPL artifacts and reports blockers before export/package workflows.
 - `generate_manufacturing_manifest` writes `boardforge-manufacturing-manifest.json`, collecting required project files, stackup, assembly, binding, preflight, DRC/ERC, BOM, CPL, advanced-fab approval, blockers, and warnings.
 - `generate_schematic` writes review-required KiCad schematic objects into `.kicad_sch`, including symbols, footprint properties, wires, labels, global labels, and symbol instances. Run ERC after it.
+- `plan_erc_repairs` and `apply_safe_erc_repairs` classify ERC reports and apply only metadata-safe schematic repair notes; electrical connectivity fixes remain review-required.
 - `plan_drc_repairs` and `apply_safe_drc_repairs` create a DRC repair plan and apply only low-risk safe repairs; rerun DRC after any repair.
 - `interactive_edit` parses plain-English edits such as resizing the board, rounding corners, moving USB to an edge, enforcing antenna keepout, or increasing power route width.
 - `validate_board_outline` checks outline area, self-intersections, mounting hole containment, and edge clearance.
@@ -254,6 +258,8 @@ Supported endpoints:
 - `POST /jobs/manufacturing-manifest`
 - `POST /jobs/generate-netlist`
 - `POST /jobs/design-audit`
+- `POST /jobs/plan-erc-repairs`
+- `POST /jobs/apply-safe-erc-repairs`
 - `POST /jobs/validate-routing`
 - `POST /jobs/apply-placement`
 - `POST /jobs/find-missing-footprints`

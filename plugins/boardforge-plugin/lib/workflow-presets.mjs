@@ -24,7 +24,9 @@ export function buildWorkflowPreset(input = {}) {
     step('run_dfm_checks', { projectPath: slug(base.projectName) }, 'Run board, placement, fanout, power, assembly, and fab DFM checks.'),
     step('run_project_preflight', { projectPath: slug(base.projectName) }, 'Aggregate scan, component, binding, netlist, and manufacturing gates.'),
     step('run_kicad_erc', { projectPath: slug(base.projectName) }, 'Run local KiCad ERC.'),
+    step('plan_erc_repairs', { projectPath: slug(base.projectName) }, 'Classify ERC blockers and propose reviewed schematic repairs.'),
     step('run_kicad_drc', { projectPath: slug(base.projectName) }, 'Run local KiCad DRC.'),
+    step('plan_drc_repairs', { projectPath: slug(base.projectName) }, 'Classify DRC blockers and propose safe geometry repairs.'),
     step('generate_manufacturing_manifest', { projectPath: slug(base.projectName) }, 'Create final handoff manifest before exports.'),
   ]
   return {

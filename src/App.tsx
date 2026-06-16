@@ -109,6 +109,8 @@ const pluginCommands = [
   'generate_manufacturing_manifest',
   'find_missing_footprints',
   'link_3d_models',
+  'plan_erc_repairs',
+  'apply_safe_erc_repairs',
   'run_kicad_drc',
   'run_kicad_erc',
   'optimize_placement',

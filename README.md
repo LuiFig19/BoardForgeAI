@@ -108,6 +108,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - KiCad custom-rules generation in `boardforge.kicad_dru` for reviewable trace width, clearance, differential-pair, antenna keepout, and thermal spacing policy
 - partial routing plans that report unrouted nets
 - native KiCad schematic object generation for symbols, wires, labels, global labels, and symbol instances
+- ERC repair planning that classifies unconnected pins, undriven power nets, duplicate refs, pin conflicts, and missing symbol/footprint bindings
 - PCB net synchronization from component pin maps to footprint pads
 - routing endpoint inference from component connectivity instead of manual-only coordinates
 - explicit route waypoint generation so written copper is split into reviewable 45/90-degree legs
@@ -177,6 +178,8 @@ Endpoints:
 - `POST /jobs/manufacturing-manifest`
 - `POST /jobs/generate-netlist`
 - `POST /jobs/design-audit`
+- `POST /jobs/plan-erc-repairs`
+- `POST /jobs/apply-safe-erc-repairs`
 - `POST /jobs/validate-routing`
 - `POST /jobs/apply-placement`
 - `POST /jobs/find-missing-footprints`
@@ -260,6 +263,7 @@ Real today:
 - fanout planning for dense packages, connector escape, BGA/QFN/QFP strategy, allowed via transitions, and routing preconditions
 - DFM checks for board outline, component placement, route dimensions, power thermal risk, fanout feasibility, assembly, silkscreen, and advanced fab approval
 - schematic object generation with symbols, wires, labels, power/global labels, component footprint properties, and symbol instances written into `.kicad_sch`
+- ERC repair planning plus metadata-safe repair notes while electrical connectivity changes remain review-required
 - schematic-to-PCB net propagation that writes net declarations and assigns component pad nets from BoardForge pin maps
 - routing endpoint inference from matching component pins so route plans start from actual component connectivity
 - placement scoring with ratsnest, edge-connector, passive-proximity, and density metrics

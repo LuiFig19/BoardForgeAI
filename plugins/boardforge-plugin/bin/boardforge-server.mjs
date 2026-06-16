@@ -40,6 +40,8 @@ const routes = {
   'POST /jobs/manufacturing-manifest': 'generate_manufacturing_manifest',
   'POST /jobs/generate-netlist': 'generate_netlist',
   'POST /jobs/design-audit': 'run_design_audit',
+  'POST /jobs/plan-erc-repairs': 'plan_erc_repairs',
+  'POST /jobs/apply-safe-erc-repairs': 'apply_safe_erc_repairs',
   'POST /jobs/find-missing-footprints': 'find_missing_footprints',
   'POST /jobs/link-3d-models': 'link_3d_models',
   'POST /jobs/validate-routing': 'validate_routing_geometry',

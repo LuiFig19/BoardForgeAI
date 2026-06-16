@@ -22,6 +22,7 @@ import { buildKiCadRules, writeKiCadRules } from './kicad-rules-writer.mjs'
 import { buildComponentDatabase, enrichComponents } from './component-database.mjs'
 import { boardforgeNetlistFromComponents, generateSchematicModel, kicadSchematicFromModel } from './schematic-generator.mjs'
 import { applySafeDrcRepairs, planDrcRepairs } from './drc-repair.mjs'
+import { applySafeErcRepairs, planErcRepairs } from './erc-repair.mjs'
 import { applyInteractiveEdits } from './interactive-edits.mjs'
 import { validateComponentBindings } from './component-compatibility.mjs'
 import { validateExportGate, validateManufacturingReadiness } from './manufacturing-readiness.mjs'
@@ -38,7 +39,7 @@ import { planPowerTree } from './power-tree-planner.mjs'
 import { planFanout } from './fanout-planner.mjs'
 import { runDfmChecks } from './dfm-checker.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_requirements', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_requirements', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -96,6 +97,8 @@ export async function executeJob(job, workspace) {
   if (job.type === 'generate_netlist') return generateNetlistJob(job, workspace)
   if (job.type === 'run_design_audit') return designAuditJob(job, workspace, profile)
   if (job.type === 'generate_schematic') return generateSchematicJob(job, workspace)
+  if (job.type === 'plan_erc_repairs') return planErcRepairsJob(job, workspace)
+  if (job.type === 'apply_safe_erc_repairs') return applySafeErcRepairsJob(job, workspace)
   if (job.type === 'plan_drc_repairs') return planDrcRepairsJob(job, workspace)
   if (job.type === 'apply_safe_drc_repairs') return applySafeDrcRepairsJob(job, workspace)
   if (job.type === 'interactive_edit') return interactiveEditJob(job, workspace, profile)
@@ -1061,6 +1064,39 @@ async function generateSchematicJob(job, workspace) {
 async function missingFootprintsJob(job, workspace) {
   const output = await findMissingFootprints({ workspace, input: job.input || {} })
   return result(job, output.status, [], [], output)
+}
+
+async function planErcRepairsJob(job, workspace) {
+  const context = await getKiCadContext(job, workspace, 'sch')
+  if (context.blocked) return context.blocked
+  const reportFile = job.input?.reportFile ? resolveInsideWorkspace(workspace, job.input.reportFile) : path.join(context.files.projectDir, 'reports', 'erc.json')
+  const state = await readProjectState(context.files.projectDir)
+  const repairPlan = await planErcRepairs({ reportFile, schFile: context.files.schFile, state })
+  await updateProjectState(context.files.projectDir, async (current) => ({
+    ...current,
+    status: repairPlan.status,
+    ercRepair: repairPlan,
+    lastJobType: job.type,
+    lastHistoryMessage: `Planned ${repairPlan.repairs.length} ERC repair actions.`,
+  }))
+  return result(job, repairPlan.status, repairPlan.repairs.length ? [{ severity: 'WARNING', code: 'ERC_REPAIR_REVIEW_REQUIRED', message: 'ERC repair plan requires electrical review before schematic changes.' }] : [], [], { repairPlan, humanReviewRequired: true })
+}
+
+async function applySafeErcRepairsJob(job, workspace) {
+  const context = await getKiCadContext(job, workspace, 'sch')
+  if (context.blocked) return context.blocked
+  const state = await readProjectState(context.files.projectDir)
+  const repairPlan = job.input?.repairPlan || state?.ercRepair
+  if (!repairPlan) return result(job, 'NEEDS_FIX', [], [{ severity: 'ERROR', code: 'MISSING_ERC_REPAIR_PLAN', message: 'Run plan_erc_repairs before apply_safe_erc_repairs.' }], { generatedFiles: [], humanReviewRequired: true })
+  const output = await applySafeErcRepairs({ schFile: context.files.schFile, repairPlan })
+  await updateProjectState(context.files.projectDir, async (current) => ({
+    ...current,
+    status: output.status,
+    ercRepair: { ...(current.ercRepair || repairPlan), applied: output },
+    lastJobType: job.type,
+    lastHistoryMessage: `Applied ${output.applied} safe ERC repair actions. Rerun ERC.`,
+  }))
+  return result(job, output.status, [{ severity: 'WARNING', code: 'RERUN_ERC_REQUIRED', message: 'Safe ERC repairs were attempted. Run run_kicad_erc again.' }], [], { ...output, generatedFiles: [context.files.schFile], humanReviewRequired: true })
 }
 
 async function planDrcRepairsJob(job, workspace) {

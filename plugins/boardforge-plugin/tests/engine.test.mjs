@@ -448,6 +448,38 @@ test('DRC repair planner classifies reports and applies safe cleanup only', asyn
   }
 })
 
+test('ERC repair planner classifies electrical issues and only applies safe metadata', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-erc-repair-test-'))
+  try {
+    await executeJob({
+      id: 'project',
+      type: 'create_kicad_project',
+      allowOverwrite: true,
+      input: { projectName: 'ERC Repair Project', templateId: 'ESP32_S3_SENSOR' },
+    }, workspace)
+    const projectDir = path.join(workspace, 'erc-repair-project')
+    const reportsDir = path.join(projectDir, 'reports')
+    await mkdir(reportsDir, { recursive: true })
+    await writeFile(path.join(reportsDir, 'erc.json'), JSON.stringify({
+      violations: [
+        { severity: 'error', type: 'unconnected_pin', description: 'pin is not connected' },
+        { severity: 'error', type: 'power_input_not_driven', description: 'power input pin is not driven' },
+        { severity: 'warning', type: 'duplicate_reference', description: 'duplicate reference designator' },
+      ],
+    }), 'utf8')
+    const plan = await executeJob({ id: 'erc_repair_plan', type: 'plan_erc_repairs', input: { projectPath: 'erc-repair-project' } }, workspace)
+    assert.equal(plan.status, 'ERC_REPAIR_PLAN_READY_NEEDS_REVIEW')
+    assert.ok(plan.repairPlan.repairs.some((item) => item.category === 'connectivity'))
+    assert.ok(plan.repairPlan.repairs.some((item) => item.category === 'power_integrity'))
+    assert.ok(plan.repairPlan.blockers.length >= 2)
+    const applied = await executeJob({ id: 'erc_repair_apply', type: 'apply_safe_erc_repairs', input: { projectPath: 'erc-repair-project' } }, workspace)
+    assert.equal(applied.status, 'SAFE_ERC_REPAIRS_APPLIED_RERUN_ERC')
+    assert.match(await readFile(path.join(projectDir, 'erc-repair-project.kicad_sch'), 'utf8'), /BoardForge ERC repair review required/)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
 test('project snapshots can be listed and restored without touching arbitrary files', async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-snapshot-test-'))
   try {
