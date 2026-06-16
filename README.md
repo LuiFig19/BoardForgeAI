@@ -84,6 +84,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - KiCad library indexing for installed KiCad symbols, footprints, and 3D models
 - component asset resolution for symbols, footprints, and 3D model candidates
 - richer built-in component database defaults for ESP32, USB-C, RJ45, IMU, barometer, SPI flash, Ethernet PHY, PoE front end, power input, SWD, ESC headers, passives, inductors, packages, LCSC/MPN candidates, and pin-map intent
+- component procurement intelligence with footprint-confidence, selection score, lifecycle/assembly risk, and substitution candidates
 - component library audit reports for symbol, footprint, 3D model, pin-map, and supplier coverage before schematic/placement/export workflows
 - symbol/footprint/pin-map compatibility validation from parsed KiCad symbol pins and footprint pads
 - BoardForge netlist generation from component pin maps for schematic/PCB sync review

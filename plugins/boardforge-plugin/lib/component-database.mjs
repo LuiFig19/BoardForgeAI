@@ -27,8 +27,9 @@ export async function buildComponentDatabase({ workspace, input = {} }) {
     status: enriched.some((item) => item.assetStatus !== 'complete_needs_review') ? 'COMPONENT_DATABASE_PARTIAL_NEEDS_REVIEW' : 'COMPONENT_DATABASE_READY_NEEDS_REVIEW',
     catalogVersion: 'boardforge-mvp-1',
     components: enriched,
-    alternates: components.map((component) => ({ ref: component.ref, candidates: candidatesFor(component).slice(0, 3) })),
+    alternates: enriched.map((component) => ({ ref: component.ref, selected: selectedPartKey(component), candidates: substitutionCandidates(component).slice(0, 5) })),
     riskSummary: riskSummary(enriched),
+    procurementSummary: procurementSummary(enriched),
     humanReviewRequired: true,
   }
 }
@@ -52,6 +53,10 @@ export async function enrichComponents({ workspace, components, input = {} }) {
       model3d: resolved?.model3d || component.model3d || null,
       assetStatus: resolved?.symbol && resolved?.footprint ? 'complete_needs_review' : 'missing_assets',
       confidence: resolved?.confidence || 'needs_review',
+      footprintConfidence: footprintConfidence(component, resolved?.footprint, base),
+      procurement: procurementProfile(component, base),
+      substitutions: substitutionCandidates({ ...component, ...base }).slice(0, 3),
+      selectionScore: selectionScore(component, base, resolved),
     }
   })
 }
@@ -62,6 +67,73 @@ function bestCatalogMatch(component) {
 
 function candidatesFor(component) {
   return catalog.filter((item) => item.group === component.group || text(item.value).includes(text(component.value))).map((item) => ({ ...item, reason: item.group === component.group ? 'same functional group' : 'value text match' }))
+}
+
+function substitutionCandidates(component) {
+  const base = bestCatalogMatch(component) || component
+  return candidatesFor(component)
+    .filter((candidate) => candidate.mpn !== base.mpn || candidate.lcsc !== base.lcsc)
+    .map((candidate) => ({
+      group: candidate.group,
+      value: candidate.value,
+      lcsc: candidate.lcsc,
+      mpn: candidate.mpn,
+      package: candidate.package,
+      stockRisk: candidate.stockRisk,
+      assembly: candidate.assembly,
+      compatibility: packageFamily(candidate.package) === packageFamily(base.package) ? 'drop_in_package_family_needs_review' : 'same_function_relayout_required',
+      reason: candidate.group === base.group ? 'same functional group' : 'catalog text match',
+    }))
+}
+
+function footprintConfidence(component, footprint, base) {
+  const libId = footprint?.libId || component.footprint?.libId || component.footprint || ''
+  const packageName = component.package || base?.package || ''
+  const normalizedFootprint = text(libId)
+  const normalizedPackage = text(packageName)
+  const packageHit = normalizedPackage && normalizedFootprint.includes(normalizedPackage.replace(/[^a-z0-9]/g, ''))
+  const groupHit = component.group && normalizedFootprint.includes(text(component.group).replace(/_/g, ''))
+  const score = Math.min(100, (footprint ? 45 : 0) + (packageHit ? 35 : 0) + (groupHit ? 10 : 0) + (footprint?.models3d?.length ? 10 : 0))
+  return {
+    score,
+    status: score >= 80 ? 'strong_match_needs_review' : score >= 45 ? 'usable_match_needs_review' : 'weak_or_missing_match',
+    footprint: libId || null,
+    expectedPackage: packageName || null,
+    checks: {
+      footprintResolved: Boolean(footprint || component.footprint),
+      packageTextMatched: Boolean(packageHit),
+      groupTextMatched: Boolean(groupHit),
+      modelLinked: Boolean(footprint?.models3d?.length || component.model3d),
+    },
+  }
+}
+
+function procurementProfile(component, base) {
+  const risk = component.stockRisk || base?.stockRisk || 'unknown'
+  return {
+    lcsc: component.lcsc || base?.lcsc || null,
+    mpn: component.mpn || base?.mpn || null,
+    package: component.package || base?.package || null,
+    stockRisk: risk,
+    lifecycleRisk: risk === 'low' ? 'low_review' : risk === 'medium' ? 'alternate_recommended' : 'unknown_requires_supplier_check',
+    assemblyRisk: /review|extended|orientation|power|high-voltage/i.test(base?.assembly || component.assembly || '') ? 'review_required' : 'basic_candidate',
+  }
+}
+
+function selectionScore(component, base, resolved) {
+  let score = 0
+  if (base) score += 25
+  if (component.lcsc || base?.lcsc) score += 15
+  if (component.mpn || base?.mpn) score += 10
+  if (resolved?.symbol) score += 15
+  if (resolved?.footprint) score += 20
+  if (resolved?.model3d) score += 10
+  if ((component.stockRisk || base?.stockRisk) === 'low') score += 5
+  return Math.min(100, score)
+}
+
+function selectedPartKey(component) {
+  return [component.ref, component.mpn, component.lcsc, component.package].filter(Boolean).join('|')
 }
 
 function defaultPinMap(component, base) {
@@ -89,8 +161,22 @@ function riskSummary(components) {
     missingAssets: components.filter((item) => item.assetStatus !== 'complete_needs_review').length,
     unknownStock: components.filter((item) => item.stockRisk === 'unknown').length,
     mediumRisk: components.filter((item) => item.stockRisk === 'medium').length,
+    weakFootprintMatches: components.filter((item) => item.footprintConfidence?.status === 'weak_or_missing_match').length,
     requiresHumanReview: true,
   }
+}
+
+function procurementSummary(components) {
+  return {
+    total: components.length,
+    lcscLinked: components.filter((item) => item.procurement?.lcsc).length,
+    alternatesAvailable: components.filter((item) => item.substitutions?.length).length,
+    reviewRequired: components.filter((item) => item.procurement?.assemblyRisk === 'review_required' || item.procurement?.lifecycleRisk !== 'low_review').length,
+  }
+}
+
+function packageFamily(value) {
+  return text(value).replace(/[^a-z0-9]/g, '').replace(/metric$/, '')
 }
 
 function text(value) {

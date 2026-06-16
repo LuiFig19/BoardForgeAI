@@ -257,6 +257,11 @@ test('component database enriches advanced board blocks with default pin intent'
   assert.equal(result.components.find((component) => component.ref === 'U3').pinMap.TXP, 'ETH_TX_P')
   assert.equal(result.components.find((component) => component.ref === 'L1').pinMap[1], 'SW')
   assert.equal(result.components.find((component) => component.ref === 'JTAG1').pinMap.SWDIO, 'SWDIO')
+  assert.ok(result.components.every((component) => component.procurement))
+  assert.ok(result.components.every((component) => component.footprintConfidence))
+  assert.ok(result.components.every((component) => typeof component.selectionScore === 'number'))
+  assert.ok(result.procurementSummary.reviewRequired >= 1)
+  assert.ok(result.alternates.some((item) => Array.isArray(item.candidates)))
 })
 
 test('3D model paths normalize to KiCad model variables when possible', () => {

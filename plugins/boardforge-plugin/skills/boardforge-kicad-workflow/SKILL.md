@@ -148,6 +148,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `link_3d_models` attaches available 3D model references from indexed KiCad footprints/packages and normalizes model paths to KiCad variables when possible.
 - `resolve_component_assets` and `link_3d_models` update `boardforge-project.json` when `projectPath` is provided.
 - `sync_component_database` and `resolve_bom_parts` enrich components with LCSC, MPN, package, pin-map, symbol, footprint, 3D model, and stock-risk candidates for common USB, MCU, IMU, barometer, flash, Ethernet, PoE, SWD, power, connector, passive, and inductor blocks.
+- Component database jobs also return footprint confidence, selection scores, lifecycle/assembly risk, procurement summary, and substitution candidates for BOM review.
 - `audit_component_library` writes `boardforge-component-audit.json` and scores symbol, footprint, 3D model, pin-map, package, LCSC, and MPN coverage before schematic, placement, routing, or export work.
 - `validate_component_bindings` parses KiCad symbol pins and footprint pads, compares them to BoardForge pin maps, and writes compatibility results to `boardforge-bindings.json` when `projectPath` is provided.
 - `generate_netlist` writes `boardforge-netlist.json` from component pin maps so Codex can review schematic/PCB connectivity before routing.
