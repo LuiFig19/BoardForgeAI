@@ -1,5 +1,6 @@
 import { pointInPolygon, polygonBounds, round } from './geometry.mjs'
 import { netClassProfiles } from './net-classes.mjs'
+import { planStackup, planViaTransitions } from './stackup-planner.mjs'
 
 export function createDesignIntent(board, components = [], nets = [], profile = {}) {
   const bounds = polygonBounds(board.outline || [])
@@ -17,7 +18,8 @@ export function createDesignIntent(board, components = [], nets = [], profile = 
     },
     zones,
     copperPours: copperPourPlan(board, nets, zones),
-    viaRules: viaRulesForBoard(board, profile),
+    stackup: planStackup({ board, layerCount: board.layerCount || 2, components, nets, manufacturerProfile: profile.id }),
+    viaRules: viaRulesForBoard(board, profile, { components, nets }),
     layerPolicy: layerPolicyForBoard(board),
     routePriority: routePriority(nets),
     humanReviewRequired: true,
@@ -33,8 +35,10 @@ export function planViasForRoute({ net, start, end, board, zones = [], profile =
   const layerCount = board.layerCount || 2
   const sensitive = ['USB_DIFF', 'ETHERNET_DIFF', 'RF', 'CRYSTAL', 'CLOCK'].includes(netClass)
   const highCurrent = ['BATTERY', 'MOTOR_PHASE', 'POWER_HIGH_CURRENT'].includes(netClass)
+  const stackup = planStackup({ board, layerCount, nets: [net], manufacturerProfile: profile.id, allowBlindVias: board.allowBlindVias, allowBuriedVias: board.allowBuriedVias, allowMicrovias: board.allowMicrovias })
+  const transitionPolicy = planViaTransitions({ route: { net: net.name, className: netClass }, board, profile, stackup, input: board })
   const maxVias = sensitive ? 0 : highCurrent ? Math.max(1, Math.floor(manhattan / 25)) : Math.max(1, Math.floor(manhattan / 18))
-  const viaStack = highCurrent ? 'stitched_parallel_vias' : sensitive ? 'avoid_vias' : layerCount >= 4 ? 'blind_prefer_inner_reference' : 'through_via'
+  const viaStack = highCurrent ? 'stitched_parallel_vias' : sensitive ? 'avoid_vias' : transitionPolicy.viaStack
   const candidates = []
   if (!sensitive && layerCount >= 2 && manhattan > 12) {
     const mid = { x: round(((start?.x || 0) + (end?.x || 0)) / 2), y: round(((start?.y || 0) + (end?.y || 0)) / 2) }
@@ -42,8 +46,10 @@ export function planViasForRoute({ net, start, end, board, zones = [], profile =
       candidates.push({
         x: mid.x,
         y: mid.y,
-        diameterMm: Math.max(rules.viaDiameterMm, profile.minViaDiameterMm || 0.45),
-        drillMm: Math.max(rules.viaDrillMm, profile.minViaDrillMm || 0.2),
+        diameterMm: Math.max(transitionPolicy.diameterMm || rules.viaDiameterMm, rules.viaDiameterMm, profile.minViaDiameterMm || 0.45),
+        drillMm: Math.max(transitionPolicy.drillMm || rules.viaDrillMm, rules.viaDrillMm, profile.minViaDrillMm || 0.2),
+        viaType: transitionPolicy.microvia ? 'microvia' : viaStack.includes('blind') ? 'blind' : 'through',
+        layers: transitionPolicy.allowedTransitions?.[0] || ['F.Cu', 'B.Cu'],
         reason: highCurrent ? 'shorten high-current route with stitched layer transition' : 'compact route layer transition near midpoint',
       })
     }
@@ -58,8 +64,10 @@ export function planViasForRoute({ net, start, end, board, zones = [], profile =
       diameterMm: Math.max(rules.viaDiameterMm, profile.minViaDiameterMm || 0.45),
       drillMm: Math.max(rules.viaDrillMm, profile.minViaDrillMm || 0.2),
       annularReview: true,
+      allowedTransitions: transitionPolicy.allowedTransitions || [['F.Cu', 'B.Cu']],
+      hdiReviewRequired: ['blind_via_fanout', 'microvia_blind_fanout'].includes(viaStack),
     },
-    warnings: sensitive ? [`${net.name} should avoid vias unless the user explicitly accepts impedance/return-path review.`] : [],
+    warnings: [...transitionPolicy.warnings, ...(sensitive ? [`${net.name} should avoid vias unless the user explicitly accepts impedance/return-path review.`] : [])],
   }
 }
 
@@ -137,14 +145,17 @@ function copperPourPlan(board, nets, zones) {
   return pours
 }
 
-function viaRulesForBoard(board, profile) {
+function viaRulesForBoard(board, profile, context = {}) {
   const compact = compactnessForBoard(board) !== 'roomy'
+  const stackup = planStackup({ board, layerCount: board.layerCount || 2, components: context.components || [], nets: context.nets || [], manufacturerProfile: profile.id, allowBlindVias: board.allowBlindVias, allowBuriedVias: board.allowBuriedVias, allowMicrovias: board.allowMicrovias })
   return {
     preferSameLayerFor: ['USB_DIFF', 'ETHERNET_DIFF', 'RF', 'CRYSTAL', 'CLOCK'],
     allowLayerSwitchFor: ['GROUND', 'POWER_LOW_CURRENT', 'POWER_HIGH_CURRENT', 'BATTERY', 'MOTOR_PHASE', 'I2C', 'UART', 'SPI', 'DEFAULT'],
     compactBoardPolicy: compact ? 'use midpoint vias only when it avoids component conflict or route crossing' : 'minimize vias but allow clean layer transitions',
     minViaDiameterMm: profile.minViaDiameterMm || 0.45,
     minViaDrillMm: profile.minViaDrillMm || 0.2,
+    advancedVias: stackup.hdi,
+    allowedTransitions: stackup.hdi.allowed ? [...stackup.hdi.supportedBlindViaPairs, ...stackup.hdi.supportedBuriedViaPairs, ['F.Cu', 'B.Cu']] : [['F.Cu', 'B.Cu']],
     viaToEdgeClearanceMm: Math.max(0.5, profile.minClearanceMm || 0.15),
     viaToComponentClearanceMm: Math.max(0.35, profile.componentToComponentClearanceMm || 0.25),
     stitching: {

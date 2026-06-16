@@ -38,6 +38,12 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.equal(plan.status, 'REQUIREMENTS_PLAN_READY_NEEDS_REVIEW')
     assert.ok(plan.components.length > 0)
+    const stackup = await postJson(`http://127.0.0.1:${port}/jobs/plan-stackup`, {
+      id: 'server_stackup',
+      input: { projectName: 'Server HDI sensor', prompt: 'compact USB sensor with blind vias', layerCount: 6, manufacturerProfile: 'ADVANCED_HDI_REVIEW', allowBlindVias: true },
+    })
+    assert.equal(stackup.status, 'STACKUP_PLAN_NEEDS_REVIEW')
+    assert.equal(stackup.stackup.hdi.allowed, true)
     const audit = await postJson(`http://127.0.0.1:${port}/jobs/audit-component-library`, {
       id: 'server_component_audit',
       input: { projectPath: 'server-project' },

@@ -109,7 +109,7 @@ export function materializeRouteObjects(board, routingPlan) {
     if (via && route.viaPlan?.viaStack !== 'avoid_vias') {
       const beforeVia = route.waypoints?.length ? route.waypoints.slice(0, Math.max(2, route.waypoints.findIndex((point) => point.x === via.x && point.y === via.y) + 1)) : [route.start, via]
       appendPathSegments(segments, route, beforeVia, layer)
-      vias.push({ net: route.net, x: via.x, y: via.y, diameterMm: via.diameterMm, drillMm: via.drillMm, layers: ['F.Cu', 'B.Cu'], reason: via.reason })
+      vias.push({ net: route.net, x: via.x, y: via.y, diameterMm: via.diameterMm, drillMm: via.drillMm, layers: via.layers || ['F.Cu', 'B.Cu'], viaType: via.viaType || 'through', reason: via.reason })
       const viaIndex = route.waypoints?.findIndex((point) => point.x === via.x && point.y === via.y) ?? -1
       const afterVia = viaIndex >= 0 ? route.waypoints.slice(viaIndex) : [via, route.end]
       appendPathSegments(segments, route, afterVia, 'B.Cu')

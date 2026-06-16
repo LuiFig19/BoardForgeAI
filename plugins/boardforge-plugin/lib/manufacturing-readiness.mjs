@@ -9,16 +9,19 @@ export async function validateManufacturingReadiness(projectDir, options = {}) {
   const erc = await readReport(path.join(reportsDir, 'erc.json'), 'ERC')
   const bom = await validateBom(path.join(fabDir, 'bom.csv'))
   const cpl = await validateCpl(path.join(fabDir, 'cpl.csv'))
+  const stackup = await validateStackup(path.join(projectDir, 'boardforge-stackup-plan.json'), options)
   const errors = [
     ...gateReport(drc, 'DRC', options.requireDrc !== false),
     ...gateReport(erc, 'ERC', options.requireErc !== false),
     ...bom.errors,
     ...cpl.errors,
+    ...stackup.errors,
   ]
-  const warnings = [...drc.warnings, ...erc.warnings, ...bom.warnings, ...cpl.warnings]
+  const warnings = [...drc.warnings, ...erc.warnings, ...bom.warnings, ...cpl.warnings, ...stackup.warnings]
   return {
     status: errors.length ? 'MANUFACTURING_READINESS_BLOCKED' : warnings.length ? 'MANUFACTURING_READINESS_NEEDS_REVIEW' : 'MANUFACTURING_READINESS_READY_NEEDS_REVIEW',
     reports: { drc, erc },
+    stackup,
     bom,
     cpl,
     errors,
@@ -27,8 +30,26 @@ export async function validateManufacturingReadiness(projectDir, options = {}) {
   }
 }
 
+async function validateStackup(file, options) {
+  if (!existsSync(file)) return { file, exists: false, errors: [], warnings: [{ severity: 'WARNING', code: 'STACKUP_PLAN_MISSING', message: 'No BoardForge stackup plan was found; advanced via/export review is limited.' }] }
+  try {
+    const stackup = JSON.parse(await readFile(file, 'utf8'))
+    const advanced = Boolean(stackup.hdi?.requiresAdvancedReview)
+    return {
+      file,
+      exists: true,
+      advancedViaReviewRequired: advanced,
+      errors: advanced && !options.approveAdvancedFab ? [{ severity: 'ERROR', code: 'ADVANCED_FAB_APPROVAL_REQUIRED', message: 'Stackup uses or recommends HDI/advanced via review. Pass approveAdvancedFab only after manufacturer quote/stackup approval.' }] : [],
+      warnings: advanced ? [{ severity: 'WARNING', code: 'ADVANCED_STACKUP_REVIEW', message: 'Blind/buried/microvia decisions require manufacturer stackup approval before fabrication.' }] : [],
+    }
+  } catch (error) {
+    return { file, exists: true, errors: [{ severity: 'ERROR', code: 'STACKUP_PLAN_UNREADABLE', message: error.message }], warnings: [] }
+  }
+}
+
 export async function validateExportGate(projectDir, kind, options = {}) {
   const readiness = await validateManufacturingReadiness(projectDir, {
+    ...options,
     requireDrc: ['gerbers', 'drill', 'cpl', 'jlcpcb'].includes(kind),
     requireErc: ['bom', 'jlcpcb'].includes(kind),
   })

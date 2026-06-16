@@ -73,6 +73,15 @@ function validateRouteVias(route, board, zones, profile) {
     if (!pointInPolygon(via, board.outline || [])) issues.push(issue('ERROR', 'VIA_OFF_BOARD', `${route.net} via is outside the board outline.`, { net: route.net, via }))
     if ((via.diameterMm || 0) < Math.max(profile.minViaDiameterMm || 0.45, rules.diameterMm || 0)) issues.push(issue('ERROR', 'VIA_DIAMETER_TOO_SMALL', `${route.net} via diameter is below manufacturer minimum.`, { net: route.net, via }))
     if ((via.drillMm || 0) < Math.max(profile.minViaDrillMm || 0.2, rules.drillMm || 0)) issues.push(issue('ERROR', 'VIA_DRILL_TOO_SMALL', `${route.net} via drill is below manufacturer minimum.`, { net: route.net, via }))
+    if (['blind', 'buried', 'microvia'].includes(via.viaType) && !/supported|review|quote/i.test(`${profile.hdi?.blindVias || ''} ${profile.hdi?.buriedVias || ''} ${profile.hdi?.microvias || ''}`)) {
+      issues.push(issue('ERROR', 'ADVANCED_VIA_NOT_SUPPORTED', `${route.net} uses ${via.viaType}, but the selected manufacturer profile does not support advanced vias.`, { net: route.net, via }))
+    }
+    if (['blind', 'buried', 'microvia'].includes(via.viaType) && !rules.hdiReviewRequired) {
+      issues.push(issue('WARNING', 'ADVANCED_VIA_REVIEW_REQUIRED', `${route.net} uses ${via.viaType}; manufacturer quote and stackup review are required.`, { net: route.net, via }))
+    }
+    if (via.layers?.length === 2 && rules.allowedTransitions?.length && !rules.allowedTransitions.some((pair) => pair[0] === via.layers[0] && pair[1] === via.layers[1])) {
+      issues.push(issue('ERROR', 'VIA_LAYER_PAIR_NOT_ALLOWED', `${route.net} via layer pair ${via.layers.join('->')} is not allowed by stackup policy.`, { net: route.net, via }))
+    }
     const blocked = zones.find((zone) => zone.allowVias === false && pointInPolygon(via, zone.polygon || []))
     if (blocked) issues.push(issue('ERROR', 'VIA_IN_KEEP_OUT', `${route.net} via is inside ${blocked.id}.`, { net: route.net, zone: blocked.id, via }))
   }

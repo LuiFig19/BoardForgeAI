@@ -78,6 +78,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - snapshot diff reports that show added/modified/deleted KiCad and BoardForge files before restore/export decisions
 - project preflight reports that aggregate scan, component audit, binding validation, netlist, manufacturing readiness, and optional snapshot diff gates
 - requirements planner that expands constrained prompts into reusable circuit blocks, BOM components, nets, and design constraints
+- stackup and complex-board planner for 2/4/6/8+ layer boards, HDI review, blind/buried/microvia policy, impedance intent, copper strategy, and thermal/RF keepouts
 - deterministic placement of real KiCad footprints from installed libraries
 - KiCad library indexing for installed KiCad symbols, footprints, and 3D models
 - component asset resolution for symbols, footprints, and 3D model candidates
@@ -90,6 +91,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - Edge.Cuts geometry validation
 - mounting-hole inside/edge-clearance checks
 - JLCPCB/PCBWay manufacturer profiles
+- manufacturer capability comparison including standard vs advanced HDI review profiles
 - PCB net-class profiles and net classification
 - deterministic placement planning with off-board/overlap checks
 - placement scoring for density, edge connector intent, passive proximity, and estimated ratsnest length
@@ -99,6 +101,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - routing endpoint inference from component connectivity instead of manual-only coordinates
 - explicit route waypoint generation so written copper is split into reviewable 45/90-degree legs
 - route geometry prechecks for off-board routes, bad vias, keepout violations, hole clearance, differential-pair mates, and power-route width review
+- blind/buried/microvia layer-pair validation and advanced fab approval gates
 - manufacturing readiness validation that gates exports on DRC/ERC reports by default
 - BOM/CPL sanity checks for required columns, refs, coordinates, values, and placement rows
 - design-audit report generation that combines netlist, PCB pad-net audit, placement score, routing prechecks, and recommended next actions
@@ -144,6 +147,9 @@ Endpoints:
 - `POST /jobs/restore-snapshot`
 - `POST /jobs/preflight`
 - `POST /jobs/plan-requirements`
+- `POST /jobs/plan-stackup`
+- `POST /jobs/compare-manufacturers`
+- `POST /jobs/plan-complex-board`
 - `POST /jobs/sync-libraries`
 - `POST /jobs/search-library`
 - `POST /jobs/resolve-assets`
@@ -178,6 +184,8 @@ This writes:
 - `boardforge-component-audit.json` when component coverage audit runs
 - `boardforge-preflight.json` when project preflight runs
 - `boardforge-requirements-plan.json` when requirement planning runs
+- `boardforge-stackup-plan.json` when stackup planning runs
+- `boardforge-complex-board-plan.json` when complex-board planning runs
 - `boardforge-bindings.json` for project scaffolds and binding validation
 - `boardforge-netlist.json` when project scaffolding or the netlist job runs
 - `boardforge-design-report.json` when the design audit job runs
@@ -211,7 +219,7 @@ Real today:
 - project state tracking across create, resolve, link, validate, export, and package jobs
 - project snapshots and restore jobs for safe rollback before/after AI-assisted edits
 - project snapshot diffs for approval and audit trails before restore/export
-- compact-board routing policy with via rules, layer-change logic, copper pour planning, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions
+- complex-board routing policy with standard/blind/buried/microvia rules, layer-change logic, copper pour planning, antenna keepouts, thermal keepouts, sensitive analog/sensor regions, and advanced fab gates
 - controlled `apply_routing_plan` writer for review-required KiCad `segment`, `via`, and `zone` objects
 - BoardForge component database enrichment with LCSC/MPN/package/pin-map candidates
 - component library coverage auditing for symbol, footprint, 3D model, pin-map, and supplier readiness

@@ -5,7 +5,7 @@ const routingOrder = ['BATTERY', 'POWER_HIGH_CURRENT', 'POWER_LOW_CURRENT', 'USB
 
 export function generateRoutingPlan(nets, options = {}) {
   const layerCount = options.layerCount || 2
-  const board = options.board || { layerCount, outline: [] }
+  const board = { ...(options.board || { layerCount, outline: [] }), allowBlindVias: Boolean(options.allowBlindVias), allowBuriedVias: Boolean(options.allowBuriedVias), allowMicrovias: Boolean(options.allowMicrovias), allowSensitiveVias: Boolean(options.allowSensitiveVias) }
   const components = options.components || []
   const designIntent = createDesignIntent({ ...board, layerCount }, options.components || [], nets || [], options.profile || {})
   const classified = [...(nets || [])].sort((a, b) => (routingOrder.indexOf(a.className || 'DEFAULT') || 999) - (routingOrder.indexOf(b.className || 'DEFAULT') || 999))

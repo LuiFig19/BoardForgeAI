@@ -27,8 +27,9 @@ import { createProjectSnapshot, diffProjectSnapshot, listProjectSnapshots, resto
 import { auditComponentLibraryCoverage } from './component-audit.mjs'
 import { buildProjectPreflight } from './project-preflight.mjs'
 import { planRequirements } from './requirements-planner.mjs'
+import { compareManufacturerCapabilities, planStackup, scoreBoardComplexity } from './stackup-planner.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'plan_requirements', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'plan_requirements', 'plan_stackup', 'compare_manufacturers', 'plan_complex_board', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -65,6 +66,9 @@ export async function executeJob(job, workspace) {
   if (job.type === 'restore_project_snapshot') return restoreProjectSnapshotJob(job, workspace)
   if (job.type === 'run_project_preflight') return projectPreflightJob(job, workspace)
   if (job.type === 'plan_requirements') return planRequirementsJob(job, workspace)
+  if (job.type === 'plan_stackup') return stackupPlanJob(job, workspace, profile)
+  if (job.type === 'compare_manufacturers') return manufacturerCompareJob(job)
+  if (job.type === 'plan_complex_board') return complexBoardPlanJob(job, workspace, profile)
   if (job.type === 'sync_kicad_libraries') return librarySyncJob(job, workspace)
   if (job.type === 'search_library_assets') return librarySearchJob(job, workspace)
   if (job.type === 'resolve_component_assets') return resolveAssetsJob(job, workspace)
@@ -460,6 +464,90 @@ async function planRequirementsJob(job, workspace) {
   return result(job, output.status, [], [], { ...output, generatedFiles: outputFile ? [outputFile] : [] })
 }
 
+async function stackupPlanJob(job, workspace, profile) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const components = job.input?.components || state?.components || []
+  const nets = assignNetsToClasses(job.input?.nets || state?.requirements?.nets || [])
+  const output = planStackup({ ...job.input, board, components, nets, manufacturerProfile: profile.id })
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-stackup-plan.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      stackup: output,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Planned ${output.layerCount}-layer stackup with ${output.hdi.requiresAdvancedReview ? 'advanced-via review' : 'standard via policy'}.`,
+    }))
+  }
+  return result(job, output.status, output.warnings, output.errors, { stackup: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
+}
+
+function manufacturerCompareJob(job) {
+  const output = compareManufacturerCapabilities(job.input || {})
+  return result(job, output.status, [], [], { comparison: output, humanReviewRequired: true })
+}
+
+async function complexBoardPlanJob(job, workspace, profile) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const requirementsPlan = planRequirements({ ...job.input, templateId: job.input?.templateId || board.id })
+  const components = job.input?.components?.length ? job.input.components : applyPlannedPlacement(board, requirementsPlan.components || [])
+  const nets = assignNetsToClasses(requirementsPlan.nets || job.input?.nets || [])
+  const stackup = planStackup({ ...job.input, board, components, nets, manufacturerProfile: profile.id })
+  const designIntent = createDesignIntent(board, components, nets, profile)
+  const routingPlan = generateRoutingPlan(nets, { ...job.input, board, components, layerCount: stackup.layerCount, profile })
+  const complexity = scoreBoardComplexity({ ...job.input, board, components, nets })
+  const blockers = [
+    ...stackup.errors,
+    ...validateZones(board, designIntent.zones).filter((item) => ['ERROR', 'BLOCKER'].includes(item.severity)),
+  ]
+  const warnings = [
+    ...stackup.warnings,
+    ...routingPlan.warnings.map((message) => ({ severity: 'WARNING', code: 'ROUTING_PLAN_REVIEW', message })),
+    ...requirementsPlan.assumptions.map((message) => ({ severity: 'WARNING', code: 'REQUIREMENT_ASSUMPTION', message })),
+  ]
+  const output = {
+    status: blockers.length ? 'COMPLEX_BOARD_PLAN_BLOCKED' : 'COMPLEX_BOARD_PLAN_READY_NEEDS_REVIEW',
+    requirementsPlan,
+    complexity,
+    stackup,
+    components,
+    nets,
+    designIntent,
+    routingPlan,
+    manufacturingGates: {
+      advancedViasRequireQuote: stackup.hdi.requiresAdvancedReview,
+      requireDrcBeforeExport: true,
+      requireErcBeforeBomPackage: true,
+      requireHumanStackupApproval: stackup.hdi.requiresAdvancedReview || complexity.level !== 'low',
+    },
+    warnings,
+    errors: blockers,
+    humanReviewRequired: true,
+  }
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-complex-board-plan.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      requirementsPlan,
+      stackup,
+      designIntent,
+      routing: { ...(current.routing || {}), plan: routingPlan, status: routingPlan.status },
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Complex board plan generated with ${complexity.level} complexity and ${stackup.layerCount} layers.`,
+    }))
+  }
+  return result(job, output.status, warnings, blockers, { ...output, generatedFiles: outputFile ? [outputFile] : [] })
+}
+
 async function librarySearchJob(job, workspace) {
   const output = await searchLibraryAssets({ workspace, input: job.input || {} })
   return result(job, output.status, [], [], output)
@@ -729,7 +817,7 @@ function placementPlanJob(job, profile) {
 
 function routingPlanJob(job) {
   const board = boardFromJob(job)
-  const plan = generateRoutingPlan(assignNetsToClasses(job.input?.nets || []), { layerCount: job.input?.layerCount || board.layerCount, board, components: job.input?.components || [], profile: getManufacturerProfile(job.input?.manufacturerProfile || job.input?.manufacturer || 'JLCPCB_STANDARD') })
+  const plan = generateRoutingPlan(assignNetsToClasses(job.input?.nets || []), { ...job.input, layerCount: job.input?.layerCount || board.layerCount, board, components: job.input?.components || [], profile: getManufacturerProfile(job.input?.manufacturerProfile || job.input?.manufacturer || 'JLCPCB_STANDARD') })
   const routeValidation = validateRoutingGeometry({ board, components: job.input?.components || [], routingPlan: plan, profile: getManufacturerProfile(job.input?.manufacturerProfile || job.input?.manufacturer || 'JLCPCB_STANDARD') })
   const statusByType = {
     add_ground_zone: plan.designIntent.copperPours.some((pour) => pour.net === 'GND') ? 'GROUND_ZONE_PLAN_READY_NEEDS_REVIEW' : 'GROUND_ZONE_NEEDS_GND_NET',
@@ -746,7 +834,7 @@ function routingPlanJob(job) {
 
 function routingGeometryJob(job, profile) {
   const board = boardFromJob(job)
-  const routingPlan = job.input?.routingPlan || generateRoutingPlan(assignNetsToClasses(job.input?.nets || []), { layerCount: job.input?.layerCount || board.layerCount, board, components: job.input?.components || [], profile })
+  const routingPlan = job.input?.routingPlan || generateRoutingPlan(assignNetsToClasses(job.input?.nets || []), { ...job.input, layerCount: job.input?.layerCount || board.layerCount, board, components: job.input?.components || [], profile })
   const routeValidation = validateRoutingGeometry({ board, components: job.input?.components || [], routingPlan, profile })
   return result(job, routeValidation.status, routeValidation.warnings, routeValidation.errors, { routingPlan, routeValidation, humanReviewRequired: true })
 }
@@ -758,7 +846,7 @@ async function applyRoutingPlanJob(job, workspace, profile) {
   const board = job.input?.board || state?.board || boardFromJob(job)
   const components = job.input?.components || state?.components || []
   const nets = assignNetsToClasses(job.input?.nets || state?.requirements?.nets || [])
-  const routingPlan = job.input?.routingPlan || generateRoutingPlan(nets, { layerCount: board.layerCount, board, components, profile })
+  const routingPlan = job.input?.routingPlan || generateRoutingPlan(nets, { ...job.input, layerCount: board.layerCount, board, components, profile })
   const routeValidation = validateRoutingGeometry({ board, components, routingPlan, profile })
   if (routeValidation.errors.length && !job.input?.allowUnsafeRoutingWrite) {
     return result(job, 'ROUTING_WRITE_BLOCKED_PRECHECK_FAILED', routeValidation.warnings, routeValidation.errors, { routingPlan, routeValidation, generatedFiles: [], humanReviewRequired: true })

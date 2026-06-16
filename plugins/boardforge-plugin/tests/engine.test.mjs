@@ -115,6 +115,66 @@ test('routing jobs return keepout, via, and copper-pour logic for compact boards
   assert.equal(result.viaRules.compactBoardPolicy.includes('midpoint vias'), true)
 })
 
+test('stackup planner models HDI blind via logic for dense compact boards', async () => {
+  const result = await executeJob({
+    id: 'hdi_stackup',
+    type: 'plan_stackup',
+    input: {
+      projectName: 'Tiny HDI wearable',
+      widthMm: 24,
+      heightMm: 18,
+      layerCount: 6,
+      manufacturerProfile: 'ADVANCED_HDI_REVIEW',
+      allowBlindVias: true,
+      allowMicrovias: true,
+      prompt: 'tiny compact BLE wearable with RF antenna, USB, battery charger, dense BGA, blind vias and microvias',
+      components: Array.from({ length: 38 }, (_, index) => ({ ref: `U${index + 1}`, group: index === 0 ? 'ESP32_S3' : 'CAP', x: 5 + (index % 8) * 2, y: 5 + Math.floor(index / 8) * 2, width: 1.2, height: 0.8 })),
+    },
+  }, process.cwd())
+  assert.equal(result.status, 'STACKUP_PLAN_NEEDS_REVIEW')
+  assert.equal(result.stackup.hdi.allowed, true)
+  assert.equal(result.stackup.hdi.requiresAdvancedReview, true)
+  assert.ok(result.stackup.layers.some((layer) => /ground/.test(layer.role)))
+})
+
+test('complex board planner blocks unsupported blind vias on cheap stackups', async () => {
+  const result = await executeJob({
+    id: 'bad_hdi',
+    type: 'plan_complex_board',
+    input: {
+      projectName: 'Cheap HDI Attempt',
+      widthMm: 30,
+      heightMm: 25,
+      layerCount: 2,
+      manufacturerProfile: 'JLCPCB_STANDARD',
+      allowBlindVias: true,
+      prompt: 'compact ESP32 board with USB-C, RF antenna, blind vias, buried vias, microvias',
+    },
+  }, process.cwd())
+  assert.equal(result.status, 'COMPLEX_BOARD_PLAN_BLOCKED')
+  assert.ok(result.errors.some((issue) => issue.code === 'HDI_REQUIRES_4PLUS_LAYERS'))
+})
+
+test('large board complex planner prefers standard vias and separates power thermal strategy', async () => {
+  const result = await executeJob({
+    id: 'large_controller',
+    type: 'plan_complex_board',
+    input: {
+      projectName: 'Large Robotics Controller',
+      widthMm: 130,
+      heightMm: 90,
+      layerCount: 4,
+      manufacturerProfile: 'JLCPCB_STANDARD',
+      prompt: 'large robotics controller with CAN, motor drivers, battery input, USB debug, I2C sensors, thermal MOSFET zones',
+      interfaces: ['USB', 'I2C', 'CAN'],
+    },
+  }, process.cwd())
+  assert.equal(result.status, 'COMPLEX_BOARD_PLAN_READY_NEEDS_REVIEW')
+  assert.equal(result.stackup.hdi.allowed, false)
+  assert.ok(result.designIntent.zones.some((zone) => zone.kind === 'thermal_keepout'))
+  assert.ok(result.routingPlan.designIntent.copperPours.length > 0)
+})
+
 test('component database enriches advanced board blocks with default pin intent', async () => {
   const result = await executeJob({
     id: 'advanced_parts',

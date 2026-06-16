@@ -44,6 +44,9 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `restore_project_snapshot`
 - `run_project_preflight`
 - `plan_requirements`
+- `plan_stackup`
+- `compare_manufacturers`
+- `plan_complex_board`
 - `sync_kicad_libraries`
 - `search_library_assets`
 - `resolve_component_assets`
@@ -104,6 +107,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `diff_project_snapshot` before restore or export when a snapshot exists so the user can review changed files.
 - Run `run_project_preflight` before risky edits, routing, manufacturing export, package generation, or project handoff.
 - Run `plan_requirements` when the user gives a hardware description and Codex needs a structured BOM/net/circuit plan before KiCad generation.
+- Run `plan_stackup` before dense, high-speed, high-current, RF, or HDI boards so BoardForge can decide layer roles, blind/buried/microvia policy, impedance intent, copper strategy, and advanced fab blockers.
+- Run `plan_complex_board` for serious boards before project generation or routing. Treat its output as the main engineering plan for requirements, stackup, keepouts, vias, copper pours, and export gates.
 - Treat all AI plans as proposals until validated.
 - Require human review before manufacturing.
 - Never claim `DRC pass`, `ERC pass`, `routed`, `JLCPCB ready`, or `manufacturable` unless the local tool result proves it.
@@ -128,6 +133,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `diff_project_snapshot` compares current project files to a saved snapshot and reports added, modified, deleted, and unchanged files with line-delta summaries.
 - `run_project_preflight` writes `boardforge-preflight.json` and aggregates scan, component audit, binding validation, netlist, manufacturing readiness, and optional snapshot diff gates.
 - `plan_requirements` writes or returns a requirements plan with reusable circuit blocks, components, nets, constraints, and assumptions for constrained board families.
+- `plan_stackup` writes or returns a stackup plan with layer roles, manufacturer HDI capability, blind/buried/microvia rules, impedance intent, copper strategy, and thermal strategy.
+- `plan_complex_board` writes or returns a combined complex-board plan with requirements, stackup, complexity score, placement/routing strategy, keepouts, copper pours, and manufacturing gates.
 - `create_kicad_project` places real KiCad footprints from installed footprint libraries for template components.
 - `sync_kicad_libraries` detects installed KiCad 10/9/8 library roots, optionally syncs allowlisted official KiCad symbol/footprint/3D repos, and writes `.boardforge/library-cache/boardforge-library-index.json`.
 - `search_library_assets` searches indexed symbols, footprints, and 3D models.
@@ -201,6 +208,9 @@ Supported endpoints:
 - `POST /jobs/restore-snapshot`
 - `POST /jobs/preflight`
 - `POST /jobs/plan-requirements`
+- `POST /jobs/plan-stackup`
+- `POST /jobs/compare-manufacturers`
+- `POST /jobs/plan-complex-board`
 - `POST /jobs/sync-libraries`
 - `POST /jobs/search-library`
 - `POST /jobs/resolve-assets`
