@@ -319,6 +319,7 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
   assert.equal(preset.workflowPreset.preset, 'poe_esp32_sensor')
   assert.equal(preset.workflowPreset.steps[0].type, 'plan_requirements')
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_design_constraints'))
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_kicad_rules'))
   assert.ok(preset.workflowPreset.exportStepsAfterValidation.some((step) => step.type === 'package_jlcpcb'))
 })
 
@@ -516,6 +517,7 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-stackup-plan.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-assembly-plan.json')), true)
     assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge-constraints.json')), true)
+    assert.equal(result.generatedFiles.some((file) => file.endsWith('boardforge.kicad_dru')), true)
     const schematic = await readFile(path.join(result.projectPath, 'sensor-project.kicad_sch'), 'utf8')
     assert.match(schematic, /kicad_sch/)
     assert.match(schematic, /BoardForge component manifest/)
@@ -541,6 +543,10 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     const constraints = await executeJob({ id: 'constraints', type: 'generate_design_constraints', input: { projectPath: 'sensor-project' } }, workspace)
     assert.equal(constraints.status, 'CONSTRAINTS_READY_NEEDS_REVIEW')
     assert.equal(constraints.generatedFiles.some((file) => file.endsWith('boardforge-constraints.json')), true)
+    const rules = await executeJob({ id: 'rules', type: 'generate_kicad_rules', input: { projectPath: 'sensor-project', includeText: true } }, workspace)
+    assert.equal(rules.status, 'KICAD_RULES_READY_NEEDS_REVIEW')
+    assert.equal(rules.generatedFiles.some((file) => file.endsWith('boardforge.kicad_dru')), true)
+    assert.match(rules.rulesText, /track_width|trace width/)
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

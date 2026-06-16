@@ -28,6 +28,7 @@ const toolToJobType = {
   compare_manufacturers: 'compare_manufacturers',
   plan_complex_board: 'plan_complex_board',
   generate_design_constraints: 'generate_design_constraints',
+  generate_kicad_rules: 'generate_kicad_rules',
   sync_kicad_libraries: 'sync_kicad_libraries',
   search_library_assets: 'search_library_assets',
   resolve_component_assets: 'resolve_component_assets',

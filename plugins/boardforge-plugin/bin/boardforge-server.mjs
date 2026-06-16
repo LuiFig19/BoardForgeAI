@@ -26,6 +26,7 @@ const routes = {
   'POST /jobs/compare-manufacturers': 'compare_manufacturers',
   'POST /jobs/plan-complex-board': 'plan_complex_board',
   'POST /jobs/design-constraints': 'generate_design_constraints',
+  'POST /jobs/kicad-rules': 'generate_kicad_rules',
   'POST /jobs/sync-libraries': 'sync_kicad_libraries',
   'POST /jobs/search-library': 'search_library_assets',
   'POST /jobs/resolve-assets': 'resolve_component_assets',

@@ -100,6 +100,7 @@ const pluginCommands = [
   'compare_manufacturers',
   'plan_complex_board',
   'generate_design_constraints',
+  'generate_kicad_rules',
   'audit_component_library',
   'generate_manufacturing_manifest',
   'find_missing_footprints',

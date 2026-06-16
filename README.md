@@ -101,6 +101,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - placement optimization proposals that move edge connectors/RF modules, reduce overlaps, and report fixed error counts before routing
 - apply-placement writer that updates real `.kicad_pcb` footprint coordinates from controlled placement plans
 - reusable `boardforge-constraints.json` artifacts for placement, routing, fab gates, net classes, keepouts, HDI, and manufacturing review
+- KiCad custom-rules generation in `boardforge.kicad_dru` for reviewable trace width, clearance, differential-pair, antenna keepout, and thermal spacing policy
 - partial routing plans that report unrouted nets
 - native KiCad schematic object generation for symbols, wires, labels, global labels, and symbol instances
 - PCB net synchronization from component pin maps to footprint pads
@@ -158,6 +159,7 @@ Endpoints:
 - `POST /jobs/compare-manufacturers`
 - `POST /jobs/plan-complex-board`
 - `POST /jobs/design-constraints`
+- `POST /jobs/kicad-rules`
 - `POST /jobs/sync-libraries`
 - `POST /jobs/search-library`
 - `POST /jobs/resolve-assets`
@@ -199,6 +201,7 @@ This writes:
 - `boardforge-stackup-plan.json` when stackup planning runs
 - `boardforge-assembly-plan.json` for component-side, connector-access, service-access, and panelization hints
 - `boardforge-constraints.json` for reusable placement/routing/manufacturing constraints
+- `boardforge.kicad_dru` for review-required KiCad custom rules derived from BoardForge constraints
 - `boardforge-complex-board-plan.json` when complex-board planning runs
 - `boardforge-bindings.json` for project scaffolds and binding validation
 - `boardforge-netlist.json` when project scaffolding or the netlist job runs
@@ -234,6 +237,7 @@ Real today:
 - project snapshots and restore jobs for safe rollback before/after AI-assisted edits
 - project snapshot diffs for approval and audit trails before restore/export
 - complex-board routing policy with standard/blind/buried/microvia rules, layer-change logic, copper pour planning, antenna keepouts, thermal keepouts, sensitive analog/sensor regions, and advanced fab gates
+- KiCad custom-rule generation for BoardForge net classes, widths, clearances, differential pairs, antenna keepouts, and thermal spacing review
 - controlled `apply_routing_plan` writer for review-required KiCad `segment`, `via`, and `zone` objects
 - BoardForge component database enrichment with LCSC/MPN/package/pin-map candidates
 - component library coverage auditing for symbol, footprint, 3D model, pin-map, and supplier readiness

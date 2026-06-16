@@ -14,6 +14,7 @@ export function buildWorkflowPreset(input = {}) {
     step('create_kicad_project', base, 'Create review-required KiCad project, schematic scaffold, PCB, and metadata.'),
     step('sync_component_database', { projectPath: slug(base.projectName) }, 'Enrich BOM parts with pin maps, LCSC/MPN, footprints, models, and alternates.'),
     step('generate_design_constraints', { projectPath: slug(base.projectName) }, 'Write reusable BoardForge placement/routing/manufacturing constraints.'),
+    step('generate_kicad_rules', { projectPath: slug(base.projectName) }, 'Write KiCad custom rules from BoardForge net classes, diff pairs, and keepouts.'),
     step('generate_schematic', { projectPath: slug(base.projectName) }, 'Generate review-required schematic objects before ERC.'),
     step('optimize_placement', { projectPath: slug(base.projectName), templateId: base.templateId }, 'Repair placement constraints before copper.'),
     step('apply_placement_plan', { projectPath: slug(base.projectName) }, 'Apply reviewed placement into KiCad PCB footprint coordinates.'),
