@@ -77,6 +77,7 @@ The CLI MVP accepts structured JSON jobs. It now includes real engineering scaff
 - controlled project snapshots, snapshot listing, and restore-before-review rollback for generated KiCad work
 - snapshot diff reports that show added/modified/deleted KiCad and BoardForge files before restore/export decisions
 - project preflight reports that aggregate scan, component audit, binding validation, netlist, manufacturing readiness, and optional snapshot diff gates
+- requirements planner that expands constrained prompts into reusable circuit blocks, BOM components, nets, and design constraints
 - deterministic placement of real KiCad footprints from installed libraries
 - KiCad library indexing for installed KiCad symbols, footprints, and 3D models
 - component asset resolution for symbols, footprints, and 3D model candidates
@@ -142,6 +143,7 @@ Endpoints:
 - `POST /jobs/diff-snapshot`
 - `POST /jobs/restore-snapshot`
 - `POST /jobs/preflight`
+- `POST /jobs/plan-requirements`
 - `POST /jobs/sync-libraries`
 - `POST /jobs/search-library`
 - `POST /jobs/resolve-assets`
@@ -174,6 +176,7 @@ This writes:
 - `boardforge-library.json` for project scaffolds
 - `boardforge-component-audit.json` when component coverage audit runs
 - `boardforge-preflight.json` when project preflight runs
+- `boardforge-requirements-plan.json` when requirement planning runs
 - `boardforge-bindings.json` for project scaffolds and binding validation
 - `boardforge-netlist.json` when the netlist job runs
 - `boardforge-design-report.json` when the design audit job runs
@@ -212,6 +215,7 @@ Real today:
 - BoardForge component database enrichment with LCSC/MPN/package/pin-map candidates
 - component library coverage auditing for symbol, footprint, 3D model, pin-map, and supplier readiness
 - project preflight gate reports before risky edits, routing, restore, export, or JLCPCB packaging
+- requirements-to-circuit planning for USB-C, ESP32-S3 core, 3V3 regulation, I2C headers, SWD, PoE/Ethernet, and drone FC core blocks
 - schematic object generation with symbols, wires, labels, power/global labels, component footprint properties, and symbol instances written into `.kicad_sch`
 - schematic-to-PCB net propagation that writes net declarations and assigns component pad nets from BoardForge pin maps
 - routing endpoint inference from matching component pins so route plans start from actual component connectivity

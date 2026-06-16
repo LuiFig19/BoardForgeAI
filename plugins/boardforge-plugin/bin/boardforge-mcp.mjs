@@ -22,6 +22,7 @@ const toolToJobType = {
   diff_project_snapshot: 'diff_project_snapshot',
   restore_project_snapshot: 'restore_project_snapshot',
   run_project_preflight: 'run_project_preflight',
+  plan_requirements: 'plan_requirements',
   sync_kicad_libraries: 'sync_kicad_libraries',
   search_library_assets: 'search_library_assets',
   resolve_component_assets: 'resolve_component_assets',

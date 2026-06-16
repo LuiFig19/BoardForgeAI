@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { createNetClasses, assignNetsToClasses, validateNetClasses } from './net-classes.mjs'
 import { getManufacturerProfile } from './manufacturers.mjs'
+import { pointInPolygon, rectCorners, rectsOverlap } from './geometry.mjs'
 import { createBoardShape, createTemplateBoard, boardTemplates } from './templates.mjs'
 import { generatePlacementPlan } from './placement.mjs'
 import { generateRoutingPlan } from './routing.mjs'
@@ -25,8 +26,9 @@ import { runDesignAudit } from './design-audit.mjs'
 import { createProjectSnapshot, diffProjectSnapshot, listProjectSnapshots, restoreProjectSnapshot } from './project-snapshots.mjs'
 import { auditComponentLibraryCoverage } from './component-audit.mjs'
 import { buildProjectPreflight } from './project-preflight.mjs'
+import { planRequirements } from './requirements-planner.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'plan_requirements', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -62,6 +64,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'diff_project_snapshot') return diffProjectSnapshotJob(job, workspace)
   if (job.type === 'restore_project_snapshot') return restoreProjectSnapshotJob(job, workspace)
   if (job.type === 'run_project_preflight') return projectPreflightJob(job, workspace)
+  if (job.type === 'plan_requirements') return planRequirementsJob(job, workspace)
   if (job.type === 'sync_kicad_libraries') return librarySyncJob(job, workspace)
   if (job.type === 'search_library_assets') return librarySearchJob(job, workspace)
   if (job.type === 'resolve_component_assets') return resolveAssetsJob(job, workspace)
@@ -122,8 +125,12 @@ async function createKiCadProject(job, workspace, profile) {
   const projectDir = resolveInsideWorkspace(workspace, safeName)
   if (existsSync(projectDir) && !job.allowOverwrite) return result(job, 'NEEDS_FIX', [], [{ severity: 'ERROR', code: 'PROJECT_EXISTS', message: `Project already exists. Set allowOverwrite true to replace files: ${projectDir}` }], { projectPath: projectDir, generatedFiles: [] })
   const netClasses = createNetClasses(profile)
-  const components = generateTemplateComponents(board, job.input?.templateId)
-  const designIntent = createDesignIntent(board, components, assignNetsToClasses(job.input?.nets || []), profile)
+  const requirementsPlan = (job.input?.prompt || job.input?.notes || job.input?.components?.length || job.input?.interfaces?.length)
+    ? planRequirements({ ...job.input, templateId: job.input?.templateId || board.id })
+    : null
+  const plannedComponents = requirementsPlan?.components?.length ? applyPlannedPlacement(board, requirementsPlan.components) : null
+  const components = plannedComponents || generateTemplateComponents(board, job.input?.templateId)
+  const designIntent = createDesignIntent(board, components, assignNetsToClasses(requirementsPlan?.nets || job.input?.nets || []), profile)
   const zoneIssues = validateZones(board, designIntent.zones)
   const placementIssues = validatePlacement(board, components, profile)
   const blockingPlacementIssues = [...placementIssues, ...zoneIssues].filter((item) => ['BLOCKER', 'ERROR'].includes(item.severity) && item.code !== 'ANTENNA_KEEPOUT_ALLOWS_COPPER')
@@ -145,6 +152,7 @@ async function createKiCadProject(job, workspace, profile) {
     { path: `${safeName}.kicad_pcb`, content: kicadPcbFile(board, { netClasses, footprints }) },
     { path: 'boardforge-components.json', content: JSON.stringify(resolvedComponents, null, 2) },
     { path: 'boardforge-library.json', content: JSON.stringify(library, null, 2) },
+    ...(requirementsPlan ? [{ path: 'boardforge-requirements-plan.json', content: JSON.stringify(requirementsPlan, null, 2) }] : []),
     { path: 'boardforge-bindings.json', content: JSON.stringify(bindingReport, null, 2) },
     { path: 'boardforge-review.json', content: JSON.stringify({ ...review, components }, null, 2) },
     { path: stateFileName, content: JSON.stringify({ ...state, generatedFiles: [] }, null, 2) },
@@ -157,7 +165,185 @@ async function createKiCadProject(job, workspace, profile) {
     await mkdir(projectDir, { recursive: true })
     for (const file of files) await writeFile(resolveInsideWorkspace(projectDir, file.path), file.content, 'utf8')
   }
-  return result(job, 'KICAD_PROJECT_CREATED_NEEDS_REVIEW', review.issues.filter((item) => item.severity === 'WARNING'), review.issues.filter((item) => ['BLOCKER', 'ERROR'].includes(item.severity)), { projectPath: projectDir, generatedFiles, projectState: summarizeProjectState({ ...state, generatedFiles }), qualityGates: review.qualityGates, summary: review.summary, humanReviewRequired: true })
+  return result(job, 'KICAD_PROJECT_CREATED_NEEDS_REVIEW', review.issues.filter((item) => item.severity === 'WARNING'), review.issues.filter((item) => ['BLOCKER', 'ERROR'].includes(item.severity)), { projectPath: projectDir, generatedFiles, requirementsPlan, projectState: summarizeProjectState({ ...state, generatedFiles }), qualityGates: review.qualityGates, summary: review.summary, humanReviewRequired: true })
+}
+
+function applyPlannedPlacement(board, components) {
+  const bounds = {
+    minX: Math.min(...board.outline.map((point) => point.x)),
+    maxX: Math.max(...board.outline.map((point) => point.x)),
+    minY: Math.min(...board.outline.map((point) => point.y)),
+    maxY: Math.max(...board.outline.map((point) => point.y)),
+  }
+  const placed = []
+  const ordered = [...components].sort((a, b) => placementPriority(b) - placementPriority(a))
+  const generic = plannedPositions(bounds, components.length + 18)
+  for (const component of ordered) {
+    const dims = componentDimensions(component.group)
+    const base = { ...component, ...dims }
+    const candidates = [...rolePositions(component, bounds), ...nearParentPositions(component, bounds, placed), ...generic]
+    const selected = candidates.find((candidate) => canPlace(board, { ...base, ...candidate }, placed)) || firstInside(board, base, candidates) || { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2, rotation: 0 }
+    placed.push({ ...base, ...selected, rotation: component.rotation ?? selected.rotation ?? 0 })
+  }
+  const byRef = new Map(placed.map((component) => [component.ref, component]))
+  return components.map((component) => byRef.get(component.ref))
+}
+
+function plannedPositions(bounds, count) {
+  const cols = Math.max(5, Math.ceil(Math.sqrt(count * 1.7)))
+  const rows = Math.max(4, Math.ceil(count / cols) + 1)
+  const marginX = Math.min(12, Math.max(7, (bounds.maxX - bounds.minX) * 0.14))
+  const marginY = Math.min(10, Math.max(7, (bounds.maxY - bounds.minY) * 0.18))
+  const usableW = Math.max(1, bounds.maxX - bounds.minX - marginX * 2)
+  const usableH = Math.max(1, bounds.maxY - bounds.minY - marginY * 2)
+  const positions = []
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      positions.push({
+        x: bounds.minX + marginX + (usableW * (col + 0.5)) / cols,
+        y: bounds.minY + marginY + (usableH * (row + 0.5)) / rows,
+        rotation: 0,
+      })
+    }
+  }
+  return positions
+}
+
+function rolePositions(component, bounds) {
+  const cx = (bounds.minX + bounds.maxX) / 2
+  const cy = (bounds.minY + bounds.maxY) / 2
+  const role = component.role || ''
+  const w = bounds.maxX - bounds.minX
+  const h = bounds.maxY - bounds.minY
+  if (/edge_usb/.test(role) || component.group === 'USB') return edgeFan(bounds, 'left', cy, 90)
+  if (/edge_ethernet/.test(role) || component.group === 'RJ45') return edgeFan(bounds, 'right', cy, 270)
+  if (/edge_sensor/.test(role) || component.group === 'SENSOR_CONNECTOR') return edgeFan(bounds, 'top', bounds.minX + w * 0.72, 0)
+  if (/debug_header/.test(role) || component.group === 'SWD') return edgeFan(bounds, 'bottom', bounds.minX + w * 0.72, 180)
+  if (/edge_esc/.test(role) || component.group === 'ESC_CONNECTOR') return edgeFan(bounds, 'bottom', cx, 0)
+  if (/mcu_rf_module/.test(role) || component.group === 'ESP32_S3') return [
+    { x: bounds.minX + w * 0.42, y: cy, rotation: 0 },
+    { x: cx, y: cy, rotation: 0 },
+    { x: bounds.minX + w * 0.38, y: bounds.minY + h * 0.62, rotation: 0 },
+  ]
+  if (/ethernet_phy/.test(role) || component.group === 'ETHERNET_PHY') return [
+    { x: bounds.minX + w * 0.63, y: bounds.minY + h * 0.35, rotation: 0 },
+    { x: bounds.minX + w * 0.58, y: bounds.minY + h * 0.58, rotation: 0 },
+  ]
+  if (/poe_front_end/.test(role) || component.group === 'POE_FRONT_END') return [
+    { x: bounds.minX + w * 0.62, y: bounds.minY + h * 0.66, rotation: 0 },
+    { x: bounds.minX + w * 0.52, y: bounds.minY + h * 0.72, rotation: 0 },
+  ]
+  if (/power_regulator/.test(role) || component.group === 'REGULATOR') return [
+    { x: bounds.minX + w * 0.28, y: bounds.minY + h * 0.66, rotation: 0 },
+    { x: bounds.minX + w * 0.28, y: bounds.minY + h * 0.34, rotation: 0 },
+  ]
+  return []
+}
+
+function edgeFan(bounds, edge, along, rotation) {
+  const offsets = [-8, 0, 8, -14, 14]
+  return offsets.map((offset) => {
+    if (edge === 'left') return { x: bounds.minX + 7, y: along + offset, rotation }
+    if (edge === 'right') return { x: bounds.maxX - 9, y: along + offset, rotation }
+    if (edge === 'top') return { x: along + offset, y: bounds.minY + 7, rotation }
+    return { x: along + offset, y: bounds.maxY - 7, rotation }
+  })
+}
+
+function nearParentPositions(component, bounds, placed) {
+  const parent = parentRef(component)
+  const anchor = placed.find((item) => item.ref === parent) || placed.find((item) => item.group === parentGroup(component))
+  if (!anchor) return []
+  const radius = ['CAP', 'RES'].includes(component.group) ? 6 : 9
+  return [
+    { x: anchor.x - radius, y: anchor.y - radius, rotation: 0 },
+    { x: anchor.x + radius, y: anchor.y - radius, rotation: 0 },
+    { x: anchor.x - radius, y: anchor.y + radius, rotation: 0 },
+    { x: anchor.x + radius, y: anchor.y + radius, rotation: 0 },
+    { x: anchor.x, y: anchor.y - radius, rotation: 0 },
+    { x: anchor.x, y: anchor.y + radius, rotation: 0 },
+  ].filter((point) => point.x > bounds.minX && point.x < bounds.maxX && point.y > bounds.minY && point.y < bounds.maxY)
+}
+
+function parentRef(component) {
+  if (/^C10|^L10/.test(component.ref)) return 'U10'
+  if (/^C4/.test(component.ref)) return component.ref === 'C40' ? 'U40' : 'U41'
+  if (/^C10[12]|^R10[12]|^SW[12]/.test(component.ref)) return 'U1'
+  if (/^R20|^R21/.test(component.ref)) return 'J20'
+  if (/USB/.test(component.ref)) return 'J1'
+  return null
+}
+
+function parentGroup(component) {
+  if (component.netA === '3V3' || component.netB === '3V3') return 'REGULATOR'
+  if (/USB/.test(component.value || '')) return 'USB'
+  return null
+}
+
+function canPlace(board, candidate, placed) {
+  return isInsideBoard(board, candidate, 0.6)
+    && !conflictsWithHoles(board, candidate, 1.2)
+    && !placed.some((other) => rectsOverlap(candidate, other, componentClearance(candidate, other)))
+}
+
+function firstInside(board, component, candidates) {
+  return candidates.find((candidate) => isInsideBoard(board, { ...component, ...candidate }, 1.2) && !conflictsWithHoles(board, { ...component, ...candidate }, 1.2))
+}
+
+function isInsideBoard(board, component, clearance = 0) {
+  return rectCorners(component, clearance).every((corner) => pointInPolygon(corner, board.outline))
+}
+
+function conflictsWithHoles(board, component, clearance = 1) {
+  return (board.mountingHoles || []).some((hole) => rectsOverlap(component, { x: hole.x, y: hole.y, width: hole.diameterMm + clearance * 2, height: hole.diameterMm + clearance * 2 }))
+}
+
+function componentClearance(a, b) {
+  if (['CAP', 'RES'].includes(a.group) && ['CAP', 'RES'].includes(b.group)) return 0.55
+  if (['CAP', 'RES'].includes(a.group) || ['CAP', 'RES'].includes(b.group)) return 0.8
+  return 1.4
+}
+
+function placementPriority(component) {
+  return {
+    RJ45: 100,
+    USB: 95,
+    ESP32_S3: 90,
+    MCU: 88,
+    ETHERNET_PHY: 82,
+    POE_FRONT_END: 80,
+    REGULATOR: 75,
+    SENSOR_CONNECTOR: 70,
+    SWD: 68,
+    ESC_CONNECTOR: 65,
+    SWITCH: 35,
+    INDUCTOR: 30,
+    TVS: 28,
+    CAP: 10,
+    RES: 10,
+  }[component.group] || 20
+}
+
+function componentDimensions(group) {
+  return {
+    MCU: { width: 10, height: 10 },
+    ESP32_S3: { width: 18, height: 14 },
+    IMU: { width: 3, height: 3 },
+    USB: { width: 9, height: 6 },
+    RJ45: { width: 13, height: 11 },
+    REGULATOR: { width: 4.5, height: 4.5 },
+    ETHERNET_PHY: { width: 6, height: 6 },
+    POE_FRONT_END: { width: 7, height: 6 },
+    BLACKBOX: { width: 6, height: 5 },
+    SENSOR_CONNECTOR: { width: 8, height: 3.5 },
+    ESC_CONNECTOR: { width: 10, height: 4 },
+    CAP: { width: 1.6, height: 0.8 },
+    RES: { width: 1.6, height: 0.8 },
+    INDUCTOR: { width: 3, height: 2.2 },
+    SWD: { width: 8, height: 3.5 },
+    TVS: { width: 3, height: 2 },
+    SWITCH: { width: 4.5, height: 4.5 },
+  }[group] || { width: 4, height: 3 }
 }
 
 async function librarySyncJob(job, workspace) {
@@ -249,6 +435,24 @@ async function projectPreflightJob(job, workspace) {
     lastHistoryMessage: `Project preflight scored ${preflight.readinessScore}/100 with ${preflight.blockers.length} blockers and ${preflight.warnings.length} warnings.`,
   }))
   return result(job, preflight.status, preflight.warnings, preflight.blockers, { ...preflight, scan, componentAudit, bindingReport, netlist, readiness, snapshotDiff, generatedFiles: [outputFile] })
+}
+
+async function planRequirementsJob(job, workspace) {
+  const output = planRequirements(job.input || {})
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-requirements-plan.json') : null
+  if (projectDir) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      requirementsPlan: output,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Requirements planner selected ${output.selectedCircuits.length} circuits and ${output.components.length} components.`,
+    }))
+  }
+  return result(job, output.status, [], [], { ...output, generatedFiles: outputFile ? [outputFile] : [] })
 }
 
 async function librarySearchJob(job, workspace) {

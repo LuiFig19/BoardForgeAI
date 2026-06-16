@@ -32,6 +32,12 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { query: '0603 resistor', maxAssets: 2000, limit: 5 },
     })
     assert.equal(search.status, 'LIBRARY_SEARCH_COMPLETE_NEEDS_REVIEW')
+    const plan = await postJson(`http://127.0.0.1:${port}/jobs/plan-requirements`, {
+      id: 'server_plan',
+      input: { projectName: 'Server ESP32 sensor', prompt: 'ESP32-S3 USB I2C sensor with SWD debug' },
+    })
+    assert.equal(plan.status, 'REQUIREMENTS_PLAN_READY_NEEDS_REVIEW')
+    assert.ok(plan.components.length > 0)
     const audit = await postJson(`http://127.0.0.1:${port}/jobs/audit-component-library`, {
       id: 'server_component_audit',
       input: { projectPath: 'server-project' },

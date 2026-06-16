@@ -20,6 +20,7 @@ const routes = {
   'POST /jobs/diff-snapshot': 'diff_project_snapshot',
   'POST /jobs/restore-snapshot': 'restore_project_snapshot',
   'POST /jobs/preflight': 'run_project_preflight',
+  'POST /jobs/plan-requirements': 'plan_requirements',
   'POST /jobs/sync-libraries': 'sync_kicad_libraries',
   'POST /jobs/search-library': 'search_library_assets',
   'POST /jobs/resolve-assets': 'resolve_component_assets',

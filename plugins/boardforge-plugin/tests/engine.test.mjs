@@ -162,6 +162,24 @@ test('component library audit reports missing assets and 3D model coverage', asy
   assert.ok(result.actions.some((action) => action.includes('resolve_component_assets')))
 })
 
+test('requirements planner expands prompts into circuit components and nets', async () => {
+  const plan = await executeJob({
+    id: 'requirements_plan',
+    type: 'plan_requirements',
+    input: {
+      projectName: 'ESP32 PoE sensor',
+      prompt: 'ESP32-S3 PoE Ethernet environmental sensor with USB-C debug, I2C sensor connector, SWD programming, 3V3 regulator',
+      interfaces: ['USB', 'Ethernet', 'I2C'],
+    },
+  }, process.cwd())
+  assert.equal(plan.status, 'REQUIREMENTS_PLAN_READY_NEEDS_REVIEW')
+  assert.ok(plan.selectedCircuits.includes('esp32_s3_core'))
+  assert.ok(plan.selectedCircuits.includes('poe_ethernet'))
+  assert.ok(plan.components.some((component) => component.group === 'RJ45'))
+  assert.ok(plan.components.some((component) => component.group === 'SWD'))
+  assert.ok(plan.nets.some((net) => net.name === 'ETH_TX_P'))
+})
+
 test('project snapshots can be listed and restored without touching arbitrary files', async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-snapshot-test-'))
   try {
@@ -366,6 +384,29 @@ test('create_kicad_project writes a KiCad schematic scaffold', async () => {
     const scan = await executeJob({ id: 'scan', type: 'scan_kicad_project', input: { projectPath: 'sensor-project' } }, workspace)
     assert.equal(scan.status, 'SCAN_COMPLETE_NEEDS_REVIEW')
     assert.ok(scan.scan.footprints.length >= 4)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('create_kicad_project can use requirements planner output', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-planned-project-test-'))
+  try {
+    const result = await executeJob({
+      id: 'planned_project',
+      type: 'create_kicad_project',
+      input: {
+        projectName: 'Planned PoE Sensor',
+        templateId: 'ESP32_S3_POE_SENSOR',
+        prompt: 'ESP32-S3 PoE Ethernet sensor with USB-C debug, I2C sensor header, SWD, 3V3 regulator',
+        interfaces: ['USB', 'Ethernet', 'I2C'],
+      },
+    }, workspace)
+    assert.equal(result.status, 'KICAD_PROJECT_CREATED_NEEDS_REVIEW')
+    assert.ok(result.requirementsPlan.selectedCircuits.includes('poe_ethernet'))
+    assert.ok(result.generatedFiles.some((file) => file.endsWith('boardforge-requirements-plan.json')))
+    const planText = await readFile(path.join(result.projectPath, 'boardforge-requirements-plan.json'), 'utf8')
+    assert.match(planText, /poe_ethernet/)
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }
