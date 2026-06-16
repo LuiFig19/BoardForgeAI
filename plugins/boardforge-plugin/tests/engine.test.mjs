@@ -14,6 +14,7 @@ import { detectKiCadLibraryRoots, normalize3dModelPath } from '../lib/library-ad
 import { parseFootprintCourtyardFromText, parseFootprintPadsFromText, parseSymbolPinsFromText } from '../lib/component-compatibility.mjs'
 import { scorePlacement } from '../lib/placement.mjs'
 import { validateRoutingGeometry } from '../lib/routing-validation.mjs'
+import { scoreRoutingPlan } from '../lib/routing-quality.mjs'
 
 test('validates a simple rectangular board outline', () => {
   const board = { outline: rectanglePoints(40, 30), mountingHoles: [{ id: 'MH1', x: 5, y: 5, diameterMm: 3 }] }
@@ -155,6 +156,55 @@ test('routing geometry precheck blocks bad vias and off-board routes', () => {
   assert.equal(output.status, 'ROUTING_GEOMETRY_NEEDS_FIX')
   assert.ok(output.errors.some((issue) => issue.code === 'ROUTE_POINT_OFF_BOARD'))
   assert.ok(output.errors.some((issue) => issue.code === 'VIA_DIAMETER_TOO_SMALL'))
+})
+
+test('routing quality scores differential mismatch, sensitive vias, and weak power routes', async () => {
+  const routingPlan = {
+    routes: [
+      {
+        net: 'USB_DP',
+        className: 'USB_DIFF',
+        status: 'planned_not_routed',
+        start: { x: 4, y: 4 },
+        end: { x: 30, y: 4 },
+        waypoints: [{ x: 4, y: 4 }, { x: 16, y: 4 }, { x: 30, y: 4 }],
+        widthMm: 0.16,
+        viaPlan: { maxVias: 0, candidates: [{ x: 16, y: 4, layers: ['F.Cu', 'B.Cu'] }] },
+      },
+      {
+        net: 'USB_DN',
+        className: 'USB_DIFF',
+        status: 'planned_not_routed',
+        start: { x: 4, y: 6 },
+        end: { x: 30, y: 12 },
+        waypoints: [{ x: 4, y: 6 }, { x: 18, y: 12 }, { x: 30, y: 12 }],
+        widthMm: 0.16,
+        viaPlan: { maxVias: 0, candidates: [] },
+      },
+      {
+        net: 'VIN',
+        className: 'POWER_HIGH_CURRENT',
+        status: 'planned_not_routed',
+        start: { x: 4, y: 18 },
+        end: { x: 30, y: 18 },
+        waypoints: [{ x: 4, y: 18 }, { x: 30, y: 18 }],
+        widthMm: 0.15,
+        viaPlan: { maxVias: 2, candidates: [] },
+      },
+    ],
+    designIntent: { zones: [], copperPours: [] },
+  }
+  const output = scoreRoutingPlan({ routingPlan, profile: getManufacturerProfile(), powerTree: { rails: [{ name: 'VIN', estimatedCurrentMa: 700 }] } })
+  assert.equal(output.status, 'ROUTING_QUALITY_NEEDS_FIX')
+  assert.ok(output.score < 80)
+  assert.equal(output.metrics.sensitiveViaCount, 1)
+  assert.ok(output.warnings.some((issue) => issue.code === 'SENSITIVE_ROUTE_HAS_VIA'))
+  assert.ok(output.issues.some((issue) => issue.code === 'DIFF_PAIR_LENGTH_MISMATCH'))
+  assert.ok(output.errors.some((issue) => issue.code === 'POWER_ROUTE_WIDTH_LOW'))
+
+  const job = await executeJob({ id: 'route_quality_job', type: 'score_routing_quality', input: { routingPlan } }, process.cwd())
+  assert.equal(job.status, 'ROUTING_QUALITY_NEEDS_FIX')
+  assert.ok(job.routeQuality.actions.some((action) => action.command === 'route_diff_pair'))
 })
 
 test('routing jobs return keepout, via, and copper-pour logic for compact boards', async () => {

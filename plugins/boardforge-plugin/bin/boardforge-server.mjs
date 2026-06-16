@@ -44,6 +44,7 @@ const routes = {
   'POST /jobs/apply-safe-erc-repairs': 'apply_safe_erc_repairs',
   'POST /jobs/find-missing-footprints': 'find_missing_footprints',
   'POST /jobs/link-3d-models': 'link_3d_models',
+  'POST /jobs/score-routing': 'score_routing_quality',
   'POST /jobs/validate-routing': 'validate_routing_geometry',
   'POST /jobs/apply-placement': 'apply_placement_plan',
   'POST /jobs/validate': 'run_full_self_review',

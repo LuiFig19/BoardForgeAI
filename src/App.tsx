@@ -113,6 +113,7 @@ const pluginCommands = [
   'apply_safe_erc_repairs',
   'run_kicad_drc',
   'run_kicad_erc',
+  'score_routing_quality',
   'optimize_placement',
   'apply_placement_plan',
   'export_gerbers',

@@ -60,6 +60,12 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.ok(['MANUFACTURING_MANIFEST_BLOCKED', 'MANUFACTURING_MANIFEST_NEEDS_REVIEW', 'MANUFACTURING_MANIFEST_READY_NEEDS_REVIEW'].includes(manifest.status))
     assert.equal(manifest.generatedFiles.some((file) => file.endsWith('boardforge-manufacturing-manifest.json')), true)
+    const routeScore = await postJson(`http://127.0.0.1:${port}/jobs/score-routing`, {
+      id: 'server_route_score',
+      input: { nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }], board: { widthMm: 40, heightMm: 30 } },
+    })
+    assert.ok(['ROUTING_QUALITY_NEEDS_FIX', 'ROUTING_QUALITY_NEEDS_REVIEW', 'ROUTING_QUALITY_READY_NEEDS_DRC'].includes(routeScore.status))
+    assert.equal(typeof routeScore.routeQuality.score, 'number')
     const snapshot = await postJson(`http://127.0.0.1:${port}/jobs/snapshot`, {
       id: 'server_snapshot',
       input: { projectPath: 'server-project', label: 'server-smoke' },

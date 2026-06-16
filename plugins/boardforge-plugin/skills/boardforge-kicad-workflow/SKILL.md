@@ -82,6 +82,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `fix_component_overlap`
 - `fix_mounting_hole_conflicts`
 - `generate_routing_plan`
+- `score_routing_quality`
 - `validate_routing_geometry`
 - `route_critical_nets`
 - `route_power_nets`
@@ -128,6 +129,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `plan_complex_board` for serious boards before project generation or routing. Treat its output as the main engineering plan for requirements, stackup, keepouts, vias, copper pours, and export gates.
 - Run `generate_design_constraints` after requirements/stackup/placement changes so Codex has one current constraints artifact before routing/export.
 - Run `generate_kicad_rules` after design constraints so KiCad has a reviewable custom-rules file for net classes, differential pairs, keepouts, route widths, and clearance policy.
+- Run `score_routing_quality` after routing plans and before copper writing so via count, differential-pair matching, sensitive-net layer swaps, route length, unrouted nets, and power-route widths are reviewed.
 - Treat all AI plans as proposals until validated.
 - Require human review before manufacturing.
 - Never claim `DRC pass`, `ERC pass`, `routed`, `JLCPCB ready`, or `manufacturable` unless the local tool result proves it.
@@ -186,6 +188,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `optimize_placement` proposes deterministic placement repairs for overlaps, edge connectors, RF/antenna edge access, and ratsnest quality before routing.
 - `apply_placement_plan` writes reviewed placement coordinates into real `.kicad_pcb` footprint `(at x y rotation)` fields and marks the project DRC-required.
 - `generate_routing_plan` creates a partial routing plan from explicit route points or inferred component pin-map endpoints, emits route waypoints for reviewable 45/90-degree legs, and reports unrouted nets. It does not claim full autorouting.
+- `score_routing_quality` scores routing plans for unrouted nets, route length, differential-pair mismatch, sensitive-net vias, layer swaps, via budget, and power-route width before copper writing.
 - `validate_routing_geometry` prechecks route points, widths, via size/drill, via keepouts, mounting-hole clearance, differential-pair mates, copper-pour keepouts, and power-route width before copper is written.
 - Routing tools return compact-board via policy, layer-change rules, copper pour plans, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions.
 - `add_ground_zone`, `stitch_ground_vias`, `route_critical_nets`, `route_power_nets`, `route_diff_pair`, `route_signal_net`, `validate_routes`, and `report_unrouted_nets` are controlled planning tools. They do not claim completed copper until a later KiCad route writer applies and validates geometry.
@@ -260,6 +263,7 @@ Supported endpoints:
 - `POST /jobs/design-audit`
 - `POST /jobs/plan-erc-repairs`
 - `POST /jobs/apply-safe-erc-repairs`
+- `POST /jobs/score-routing`
 - `POST /jobs/validate-routing`
 - `POST /jobs/apply-placement`
 - `POST /jobs/find-missing-footprints`
