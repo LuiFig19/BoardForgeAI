@@ -49,6 +49,11 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.ok(['PIN_ASSIGNMENT_NEEDS_REVIEW', 'PIN_ASSIGNMENT_READY_NEEDS_REVIEW'].includes(pins.status))
     assert.equal(pins.pinAssignments.controller.ref, 'U1')
+    const schematicGraph = await postJson(`http://127.0.0.1:${port}/jobs/validate-schematic-graph`, {
+      id: 'server_schematic_graph',
+      input: { components: plan.components, nets: plan.nets },
+    })
+    assert.ok(['SCHEMATIC_GRAPH_NEEDS_FIX', 'SCHEMATIC_GRAPH_NEEDS_REVIEW', 'SCHEMATIC_GRAPH_READY_NEEDS_ERC'].includes(schematicGraph.status))
     const mission = await postJson(`http://127.0.0.1:${port}/jobs/plan-mission`, {
       id: 'server_mission',
       input: { projectName: 'Server drone', prompt: 'drone that flies 15 miles and lasts 30 minutes' },
@@ -101,6 +106,21 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.ok(['ROUTING_QUALITY_NEEDS_FIX', 'ROUTING_QUALITY_NEEDS_REVIEW', 'ROUTING_QUALITY_READY_NEEDS_DRC'].includes(routeScore.status))
     assert.equal(typeof routeScore.routeQuality.score, 'number')
+    const readiness = await postJson(`http://127.0.0.1:${port}/jobs/routing-readiness`, {
+      id: 'server_routing_readiness',
+      input: { nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }], board: { widthMm: 40, heightMm: 30, outline: [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 30 }, { x: 0, y: 30 }] } },
+    })
+    assert.ok(['ROUTING_READINESS_BLOCKED', 'ROUTING_READINESS_NEEDS_REVIEW', 'ROUTING_READINESS_READY'].includes(readiness.status))
+    const powerRouting = await postJson(`http://127.0.0.1:${port}/jobs/power-routing`, {
+      id: 'server_power_routing',
+      input: { nets: [{ name: 'VBAT' }, { name: '5V' }], rails: [{ name: 'VBAT', currentMa: 4000 }] },
+    })
+    assert.ok(['POWER_ROUTING_NEEDS_FIX', 'POWER_ROUTING_NEEDS_REVIEW', 'POWER_ROUTING_READY_NEEDS_DRC'].includes(powerRouting.status))
+    const viaStrategy = await postJson(`http://127.0.0.1:${port}/jobs/via-strategy`, {
+      id: 'server_via_strategy',
+      input: { nets: [{ name: 'USB_DP' }, { name: 'VBAT' }], board: { layerCount: 4 } },
+    })
+    assert.ok(['VIA_STRATEGY_BLOCKED', 'VIA_STRATEGY_NEEDS_REVIEW', 'VIA_STRATEGY_READY'].includes(viaStrategy.status))
     const routeReport = await postJson(`http://127.0.0.1:${port}/jobs/routing-report`, {
       id: 'server_route_report',
       input: { nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }], board: { widthMm: 40, heightMm: 30 } },

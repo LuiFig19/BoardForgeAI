@@ -47,8 +47,15 @@ import { planPinAssignments } from './pin-assignment-planner.mjs'
 import { planTestStrategy } from './test-strategy-planner.mjs'
 import { buildCategoryPlan, listBoardCategories } from './board-categories.mjs'
 import { buildRoutingReport } from './routing-report.mjs'
+import { validateSchematicGraph } from './schematic-validator.mjs'
+import { checkRoutingReadiness } from './routing-readiness.mjs'
+import { calculatePowerRouting } from './power-routing-calculator.mjs'
+import { selectViaStrategy } from './via-strategy-engine.mjs'
+import { buildNoiseMap } from './noise-map.mjs'
+import { summarizeManufacturerRules } from './manufacturer-rules-summary.mjs'
+import { generateProjectReviewReport } from './project-review-report.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'generate_routing_report', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'generate_routing_report', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -86,6 +93,13 @@ export async function executeJob(job, workspace) {
   if (job.type === 'run_project_preflight') return projectPreflightJob(job, workspace)
   if (job.type === 'list_board_categories') return result(job, 'BOARD_CATEGORIES_LISTED', [], [], { categories: listBoardCategories(), humanReviewRequired: false })
   if (job.type === 'plan_board_category') return boardCategoryPlanJob(job, workspace)
+  if (job.type === 'validate_schematic_graph') return schematicGraphJob(job, workspace)
+  if (job.type === 'check_routing_readiness') return routingReadinessJob(job, workspace, profile)
+  if (job.type === 'calculate_power_routing') return powerRoutingJob(job, workspace, profile)
+  if (job.type === 'select_via_strategy') return viaStrategyJob(job, workspace, profile)
+  if (job.type === 'build_noise_map') return noiseMapJob(job, workspace)
+  if (job.type === 'summarize_manufacturer_rules') return manufacturerRulesJob(job, profile)
+  if (job.type === 'generate_project_review_report') return projectReviewReportJob(job, workspace, profile)
   if (job.type === 'build_workflow_preset') return workflowPresetJob(job, workspace)
   if (job.type === 'run_boardforge_workflow') return runBoardForgeWorkflowJob(job, workspace)
   if (job.type === 'plan_mission_requirements') return missionRequirementsJob(job, workspace)
@@ -633,6 +647,151 @@ async function boardCategoryPlanJob(job, workspace) {
   const warnings = output.manufacturingWarnings.map((message) => ({ severity: 'WARNING', code: 'CATEGORY_REVIEW_WARNING', message }))
   const errors = output.decisions.required.map((item) => ({ severity: 'ERROR', code: 'CATEGORY_DECISION_REQUIRED', message: item.prompt, details: item }))
   return result(job, output.status, warnings, errors, { categoryPlan: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
+}
+
+async function schematicGraphJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const nets = job.input?.nets || state?.netlist?.nets || state?.requirementsPlan?.nets || state?.requirements?.nets || []
+  const output = validateSchematicGraph({ ...job.input, components, nets, netlist: job.input?.netlist || state?.netlist })
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-schematic-graph.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      schematicGraph: output,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Validated schematic graph with ${output.errors.length} errors and ${output.warnings.length} warnings.`,
+    }))
+  }
+  return result(job, output.status, output.warnings, output.errors, { schematicGraph: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
+}
+
+async function routingReadinessJob(job, workspace, profile) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const nets = job.input?.nets || state?.netlist?.nets || state?.requirementsPlan?.nets || []
+  const output = checkRoutingReadiness({ ...job.input, board, components, nets, routingPlan: job.input?.routingPlan || state?.routing?.plan, profile, stackup: job.input?.stackup || state?.stackup, schematicGraph: job.input?.schematicGraph || state?.schematicGraph })
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-routing-readiness.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      routingReadiness: output,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Routing readiness ${output.status} with ${output.errors.length} blockers.`,
+    }))
+  }
+  return result(job, output.status, output.warnings, output.errors, { routingReadiness: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
+}
+
+async function powerRoutingJob(job, workspace, profile) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const nets = job.input?.nets || state?.netlist?.nets || state?.requirementsPlan?.nets || []
+  const output = calculatePowerRouting({ ...job.input, nets, powerTree: job.input?.powerTree || state?.powerTree, profile })
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-power-routing.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      powerRouting: output,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Calculated power routing for ${output.calculations.length} power nets.`,
+    }))
+  }
+  return result(job, output.status, output.warnings, output.errors, { powerRouting: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
+}
+
+async function viaStrategyJob(job, workspace, profile) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const nets = job.input?.nets || state?.netlist?.nets || state?.requirementsPlan?.nets || []
+  const output = selectViaStrategy({ ...job.input, nets, board: job.input?.board || state?.board, stackup: job.input?.stackup || state?.stackup, profile })
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-via-strategy.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      viaStrategy: output,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Selected via strategy for ${output.strategies.length} nets.`,
+    }))
+  }
+  return result(job, output.status, output.warnings, output.errors, { viaStrategy: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
+}
+
+async function noiseMapJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const nets = job.input?.nets || state?.netlist?.nets || state?.requirementsPlan?.nets || []
+  const output = buildNoiseMap({ ...job.input, components, nets })
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-noise-map.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      noiseMap: output,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Built noise map with ${output.noisyRegions.length} noisy regions and ${output.sensitiveRegions.length} sensitive regions.`,
+    }))
+  }
+  return result(job, output.status, output.warnings, output.errors, { noiseMap: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
+}
+
+function manufacturerRulesJob(job, profile) {
+  const output = summarizeManufacturerRules({ ...job.input, profile })
+  return result(job, output.status, output.warnings, output.errors, { manufacturerRules: output, humanReviewRequired: true })
+}
+
+async function projectReviewReportJob(job, workspace, profile) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : {}
+  const output = generateProjectReviewReport({
+    ...job.input,
+    categoryPlan: job.input?.categoryPlan || state?.categoryPlan,
+    schematicGraph: job.input?.schematicGraph || state?.schematicGraph,
+    placementPlan: job.input?.placementPlan || state?.placement,
+    routingReadiness: job.input?.routingReadiness || state?.routingReadiness,
+    routingReport: job.input?.routingReport || state?.routingReport,
+    routingPlan: job.input?.routingPlan || state?.routing,
+    powerRouting: job.input?.powerRouting || state?.powerRouting,
+    powerTree: job.input?.powerTree || state?.powerTree,
+    viaStrategy: job.input?.viaStrategy || state?.viaStrategy,
+    fanoutPlan: job.input?.fanoutPlan || state?.fanoutPlan,
+    noiseMap: job.input?.noiseMap || state?.noiseMap,
+    manufacturerRules: job.input?.manufacturerRules || summarizeManufacturerRules({ ...job.input, profile }),
+    dfmReport: job.input?.dfmReport || state?.dfmReport,
+    manufacturingManifest: job.input?.manufacturingManifest || state?.manufacturingManifest,
+    manufacturingReadiness: job.input?.manufacturingReadiness || state?.manufacturingReadiness,
+  })
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-project-review.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      projectReview: output,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Project review scored ${output.readinessScore}/100 with ${output.blockers.length} blockers.`,
+    }))
+  }
+  return result(job, output.status, output.warnings, output.blockers, { projectReview: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
 }
 
 function summarizeStepResult(step, output) {

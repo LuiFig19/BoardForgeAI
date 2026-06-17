@@ -493,6 +493,111 @@ test('routing report summarizes critical unresolved nets honestly', async () => 
   assert.ok(report.routingReport.nextActions.length > 0)
 })
 
+test('schematic graph validation catches missing power, support, and diff-pair intent', async () => {
+  const output = await executeJob({
+    id: 'schematic_graph',
+    type: 'validate_schematic_graph',
+    input: {
+      components: [
+        { ref: 'U1', group: 'MCU', value: 'QFN MCU', pinMap: { DP: 'USB_DP', GND: 'GND' } },
+        { ref: 'J1', group: 'USB', value: 'USB-C', pinMap: { DP: 'USB_DP', VBUS: 'VUSB', GND: 'GND' } },
+      ],
+      nets: [{ name: 'USB_DP' }, { name: 'VUSB' }, { name: 'GND' }],
+    },
+  }, process.cwd())
+  assert.equal(output.status, 'SCHEMATIC_GRAPH_NEEDS_FIX')
+  assert.ok(output.errors.some((issue) => issue.code === 'POWER_PIN_UNMAPPED'))
+  assert.ok(output.errors.some((issue) => issue.code === 'DIFF_PAIR_MEMBER_MISSING'))
+  assert.ok(output.warnings.some((issue) => issue.code === 'SUPPORT_COMPONENT_REVIEW'))
+})
+
+test('routing readiness blocks copper when endpoints and placement are not ready', async () => {
+  const output = await executeJob({
+    id: 'routing_ready',
+    type: 'check_routing_readiness',
+    input: {
+      board: { widthMm: 30, heightMm: 20, layerCount: 2, outline: rectanglePoints(30, 20) },
+      components: [{ ref: 'U1', group: 'MCU', x: 40, y: 10, width: 5, height: 5, pinMap: { DP: 'USB_DP', DN: 'USB_DN', GND: 'GND' } }],
+      nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }, { name: 'GND' }],
+    },
+  }, process.cwd())
+  assert.equal(output.status, 'ROUTING_READINESS_BLOCKED')
+  assert.ok(output.routingReadiness.gates.some((gate) => gate.name === 'placement' && gate.status === 'blocked'))
+  assert.ok(output.errors.some((issue) => issue.code === 'ROUTE_ENDPOINTS_MISSING'))
+})
+
+test('power routing calculator sizes high-current traces and via arrays', async () => {
+  const output = await executeJob({
+    id: 'power_routing',
+    type: 'calculate_power_routing',
+    input: {
+      nets: [{ name: 'VBAT' }, { name: 'PHASE_A' }, { name: '3V3' }],
+      rails: [{ name: 'VBAT', currentMa: 12000 }, { name: '3V3', currentMa: 500 }],
+      copperWeightOz: 1,
+    },
+  }, process.cwd())
+  assert.equal(output.status, 'POWER_ROUTING_NEEDS_REVIEW')
+  assert.ok(output.powerRouting.calculations.find((item) => item.net === 'VBAT').recommendedWidthMm > 1)
+  assert.ok(output.powerRouting.calculations.find((item) => item.net === 'VBAT').minimumViaCountForLayerChange > 1)
+})
+
+test('via strategy blocks unsupported advanced vias and reviews sensitive nets', async () => {
+  const blocked = await executeJob({
+    id: 'via_blocked',
+    type: 'select_via_strategy',
+    input: {
+      manufacturerProfile: 'JLCPCB_STANDARD',
+      allowMicrovias: true,
+      nets: [{ name: 'USB_DP' }, { name: 'MIPI_D0_P' }, { name: 'VBAT' }],
+      board: { layerCount: 6 },
+    },
+  }, process.cwd())
+  assert.ok(['VIA_STRATEGY_BLOCKED', 'VIA_STRATEGY_NEEDS_REVIEW'].includes(blocked.status))
+  assert.ok(blocked.viaStrategy.strategies.some((item) => item.net === 'VBAT' && item.viaType === 'through_parallel_array'))
+  assert.ok(blocked.warnings.some((issue) => issue.code === 'VIA_STRATEGY_REVIEW'))
+})
+
+test('noise map detects noisy and sensitive region coupling', async () => {
+  const output = await executeJob({
+    id: 'noise_map',
+    type: 'build_noise_map',
+    input: {
+      components: [
+        { ref: 'U1', group: 'REGULATOR', value: 'buck regulator', x: 10, y: 10, width: 5, height: 5 },
+        { ref: 'U2', group: 'SENSOR', value: 'precision ADC sensor', x: 12, y: 11, width: 4, height: 4 },
+      ],
+      nets: [{ name: 'ADC_IN' }],
+    },
+  }, process.cwd())
+  assert.equal(output.status, 'NOISE_MAP_NEEDS_REVIEW')
+  assert.ok(output.noiseMap.noisyRegions.length >= 1)
+  assert.ok(output.warnings.some((issue) => issue.code === 'NOISE_REGION_OVERLAP'))
+})
+
+test('manufacturer rules and project review summarize production blockers', async () => {
+  const rules = await executeJob({
+    id: 'manufacturer_rules',
+    type: 'summarize_manufacturer_rules',
+    input: { manufacturerProfile: 'JLCPCB_STANDARD', layerCount: 10, allowMicrovias: true },
+  }, process.cwd())
+  assert.equal(rules.status, 'MANUFACTURER_RULES_NEEDS_REVIEW')
+  assert.equal(rules.manufacturerRules.selected.id, 'JLCPCB_STANDARD')
+  assert.ok(rules.manufacturerRules.comparisons.length >= 3)
+
+  const review = await executeJob({
+    id: 'project_review',
+    type: 'generate_project_review_report',
+    input: {
+      schematicGraph: { status: 'SCHEMATIC_GRAPH_NEEDS_FIX', errors: [{ severity: 'ERROR', code: 'POWER_PIN_UNMAPPED', message: 'bad' }], warnings: [] },
+      routingReadiness: { status: 'ROUTING_READINESS_BLOCKED', errors: [{ severity: 'ERROR', code: 'ROUTE_ENDPOINTS_MISSING', message: 'missing' }], warnings: [] },
+      manufacturerRules: rules.manufacturerRules,
+    },
+  }, process.cwd())
+  assert.equal(review.status, 'PROJECT_REVIEW_BLOCKED')
+  assert.ok(review.projectReview.blockers.length >= 2)
+  assert.ok(review.projectReview.nextActions[0].includes('Fix blockers'))
+})
+
 test('mission planner handles long range drone goals before KiCad generation', async () => {
   const plan = await executeJob({
     id: 'mission_drone',
