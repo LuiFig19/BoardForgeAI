@@ -20,27 +20,27 @@ type PassivePart = {
 
 const traces = [
   [
-    [-1.45, 0.09, 0.28],
-    [-1.02, 0.09, 0.28],
-    [-0.72, 0.09, 0.04],
-    [-0.16, 0.09, 0.04],
-    [0.44, 0.09, -0.08],
+    [-1.36, 0.09, 0.18],
+    [-1.02, 0.09, 0.18],
+    [-0.72, 0.09, 0.02],
+    [-0.16, 0.09, 0.02],
+    [0.38, 0.09, -0.04],
   ],
   [
-    [1.26, 0.092, 0.2],
-    [0.92, 0.092, 0.2],
-    [0.7, 0.092, 0.02],
-    [0.14, 0.092, 0.02],
+    [1.2, 0.092, -0.14],
+    [0.88, 0.092, -0.14],
+    [0.68, 0.092, 0.02],
+    [0.12, 0.092, 0.02],
   ],
   [
-    [0.44, 0.094, 0.56],
-    [0.44, 0.094, 0.26],
+    [0.52, 0.094, 0.42],
+    [0.52, 0.094, 0.24],
     [0.2, 0.094, 0.08],
     [-0.08, 0.094, 0.08],
   ],
   [
-    [-0.78, 0.096, -0.3],
-    [-0.58, 0.096, -0.3],
+    [-0.82, 0.096, -0.24],
+    [-0.58, 0.096, -0.24],
     [-0.42, 0.096, -0.08],
     [-0.16, 0.096, -0.08],
     [0.18, 0.096, -0.16],
@@ -53,18 +53,18 @@ const passiveParts: PassivePart[] = [
   { id: 'R1', x: -0.66, z: -0.04, rotation: 90 },
   { id: 'R2', x: 0.22, z: -0.22, rotation: 0, color: '#b98c62' },
   { id: 'C3', x: 0.5, z: -0.28, rotation: 90 },
-  { id: 'R3', x: 0.78, z: -0.26, rotation: 90 },
-  { id: 'C4', x: 0.88, z: 0.02, rotation: 0 },
-  { id: 'R4', x: 1.04, z: 0.02, rotation: 90, color: '#b98c62' },
-  { id: 'C5', x: -1.16, z: 0.46, rotation: 0 },
-  { id: 'R5', x: -0.94, z: 0.46, rotation: 0, color: '#b98c62' },
+  { id: 'R3', x: 0.74, z: -0.28, rotation: 90 },
+  { id: 'C4', x: 0.82, z: 0.04, rotation: 0 },
+  { id: 'R4', x: 1.0, z: 0.04, rotation: 90, color: '#b98c62' },
+  { id: 'C5', x: -1.16, z: 0.38, rotation: 0 },
+  { id: 'R5', x: -0.94, z: 0.38, rotation: 0, color: '#b98c62' },
   { id: 'C6', x: 0.16, z: 0.46, rotation: 0 },
-  { id: 'R6', x: 0.72, z: 0.54, rotation: 0, color: '#b98c62' },
+  { id: 'R6', x: 0.66, z: 0.38, rotation: 0, color: '#b98c62' },
 ]
 
-const viaGrid = Array.from({ length: 42 }, (_, index) => ({
-  x: -1.5 + (index % 14) * 0.23,
-  z: -0.56 + Math.floor(index / 14) * 0.46,
+const viaGrid = Array.from({ length: 36 }, (_, index) => ({
+  x: -1.42 + (index % 12) * 0.24,
+  z: -0.46 + Math.floor(index / 12) * 0.38,
 }))
 
 function Silkscreen({ label, x, z, size = 0.06, rotation = 0 }: { label: string; x: number; z: number; size?: number; rotation?: number }) {
@@ -238,8 +238,8 @@ function Rj45({ x, z, visible }: { x: number; z: number; visible: boolean }) {
 function PinHeader({ x, z, visible }: { x: number; z: number; visible: boolean }) {
   return (
     <group position={[x, visible ? 0.22 : 0.9, z]} visible={visible}>
-      {Array.from({ length: 10 }).map((_, index) => (
-        <group key={index} position={[-0.54 + index * 0.12, 0, 0]}>
+      {Array.from({ length: 8 }).map((_, index) => (
+        <group key={index} position={[-0.42 + index * 0.12, 0, 0]}>
           <mesh castShadow>
             <boxGeometry args={[0.032, 0.38, 0.032]} />
             <meshStandardMaterial color="#d6ad53" metalness={0.82} roughness={0.22} />
@@ -250,7 +250,7 @@ function PinHeader({ x, z, visible }: { x: number; z: number; visible: boolean }
           </mesh>
         </group>
       ))}
-      <Silkscreen label="JTAG / GPIO" x={0} z={0.16} size={0.045} />
+      <Silkscreen label="JTAG / GPIO" x={0} z={0.13} size={0.042} />
     </group>
   )
 }
@@ -327,19 +327,19 @@ function BoardAssembly({ progress = 0.4, compact = false }: PcbSceneProps) {
           ))}
         </group>
         <CopperDetails routeGlow={routeGlow} padProgress={padProgress} />
-        <UsbC x={-1.5} z={0.28} label="USB-C" visible={components > 0.08} />
-        <Rj45 x={1.32} z={0.22} visible={components > 0.2} />
-        <UsbC x={0.98} z={-0.18} label="USB-C" visible={components > 0.34} />
+        <UsbC x={-1.42} z={0.16} label="USB-C" visible={components > 0.08} />
+        <Rj45 x={1.22} z={-0.1} visible={components > 0.2} />
+        <UsbC x={0.92} z={0.28} label="USB-C" visible={components > 0.34} />
         <Chip x={-0.14} z={-0.02} label="ESP32-S3" visible={components > 0.06} size={[0.56, 0.13, 0.5]} pins={16} />
-        <Chip x={0.5} z={-0.16} label="QFN MCU" visible={components > 0.42} size={[0.4, 0.12, 0.36]} pins={14} />
+        <Chip x={0.48} z={-0.14} label="QFN MCU" visible={components > 0.42} size={[0.4, 0.12, 0.36]} pins={14} />
         <Chip x={-0.82} z={-0.16} label="LDO" visible={components > 0.52} size={[0.3, 0.1, 0.24]} pins={8} />
         <Crystal x={0.28} z={0.34} visible={components > 0.5} />
-        <PinHeader x={0.32} z={0.54} visible={components > 0.62} />
+        <PinHeader x={0.32} z={0.46} visible={components > 0.62} />
         {passiveParts.map((part, index) => (
           <Passive key={part.id} part={part} visible={components > 0.25 + index * 0.025} />
         ))}
-        <Silkscreen label="BOARDFORGE AI" x={0.36} z={0.68} size={0.065} />
-        <Silkscreen label="BF-PROTO-01  54x46mm" x={1.72} z={0.0} size={0.045} rotation={Math.PI / 2} />
+        <Silkscreen label="BOARDFORGE AI" x={0.34} z={0.61} size={0.055} />
+        <Silkscreen label="BF-PROTO-01  54x46mm" x={1.62} z={0.04} size={0.038} rotation={Math.PI / 2} />
         <Silkscreen label="MCU" x={-0.18} z={-0.43} size={0.05} />
         <Silkscreen label="POWER" x={-0.72} z={0.07} size={0.045} />
         <Silkscreen label="SENSOR BUS" x={0.5} z={0.05} size={0.045} />

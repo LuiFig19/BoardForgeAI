@@ -143,6 +143,66 @@ p {
   box-shadow: inset 0 0 80px rgba(34, 211, 238, 0.1);
 }
 
+.hero-visual {
+  animation: stage-breathe 8s ease-in-out infinite;
+}
+
+.architecture-band,
+.install-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  padding: 0 min(5vw, 72px) 58px;
+}
+
+.architecture-band article,
+.install-grid article {
+  display: grid;
+  gap: 9px;
+  min-height: 150px;
+  padding: 18px;
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(245, 158, 11, 0.08), transparent 42%),
+    rgba(10, 26, 25, 0.72);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.22);
+}
+
+.architecture-band span,
+.install-grid span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  border-radius: 999px;
+  color: #facc15;
+  font: 700 12px/1 var(--mono);
+}
+
+.architecture-band strong,
+.install-grid strong {
+  color: #f8fffd;
+  font-size: 16px;
+}
+
+.architecture-band p,
+.install-grid p {
+  margin: 0;
+  color: #9ab4af;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.install-grid {
+  padding: 0;
+}
+
+.install-grid article svg {
+  color: #5eead4;
+}
+
 .render-gallery-section {
   padding: 34px min(5vw, 72px) 58px;
 }
@@ -170,6 +230,15 @@ p {
   border: 1px solid rgba(94, 234, 212, 0.2);
   border-radius: 8px;
   background: rgba(6, 16, 18, 0.7);
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.render-card:hover,
+.workflow-card:hover,
+.price-card:hover {
+  border-color: rgba(94, 234, 212, 0.38);
+  transform: translateY(-2px);
+  background: rgba(12, 32, 30, 0.78);
 }
 
 .render-card .realistic-viewer {
@@ -399,6 +468,16 @@ button.secondary-action {
   background: linear-gradient(135deg, #0d9488, #2563eb);
 }
 
+.primary-action:hover,
+.secondary-action:hover,
+.nav-item:hover,
+.filter-row button:hover,
+.board-card-actions button:hover,
+.board-card-actions a:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
 .secondary-action {
   background: rgba(15, 23, 42, 0.62);
 }
@@ -513,6 +592,36 @@ button.secondary-action {
   background: rgba(49, 34, 9, 0.34);
 }
 
+.dashboard-setup-list {
+  display: grid;
+  gap: 9px;
+  max-width: 640px;
+  margin-top: 22px;
+}
+
+.dashboard-setup-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid rgba(94, 234, 212, 0.16);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.dashboard-setup-list span {
+  color: #8aa7a1;
+  font-size: 12px;
+}
+
+.dashboard-setup-list strong {
+  color: #eafffb;
+  font-size: 13px;
+  text-align: right;
+}
+
 .plugin-banner h2,
 .plugin-hero h1 {
   margin-bottom: 8px;
@@ -620,6 +729,10 @@ button.secondary-action {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
+}
+
+.pricing-grid-five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .template-card {
@@ -1871,6 +1984,31 @@ textarea {
   gap: 12px;
 }
 
+.prompt-examples {
+  display: grid;
+  gap: 10px;
+}
+
+.prompt-examples code {
+  display: block;
+  padding: 12px;
+  border: 1px solid rgba(94, 234, 212, 0.16);
+  border-radius: 7px;
+  background: rgba(5, 11, 11, 0.76);
+  color: #dffef9;
+  font: 12px/1.55 var(--mono);
+}
+
+@keyframes stage-breathe {
+  0%,
+  100% {
+    box-shadow: inset 0 0 80px rgba(34, 211, 238, 0.1), 0 0 0 rgba(94, 234, 212, 0);
+  }
+  50% {
+    box-shadow: inset 0 0 110px rgba(34, 211, 238, 0.16), 0 22px 90px rgba(20, 184, 166, 0.14);
+  }
+}
+
 .doc-steps div {
   display: flex;
   align-items: center;
@@ -1917,6 +2055,8 @@ summary {
   .component-library-strip,
   .plugin-banner,
   .plugin-hero,
+  .architecture-band,
+  .install-grid,
   .render-gallery-grid,
   .outline-handoff {
     grid-template-columns: 1fr;
@@ -1930,6 +2070,7 @@ summary {
 
   .template-grid,
   .pricing-grid,
+  .pricing-grid-five,
   .metric-grid,
   .mode-grid,
   .generator-form,
