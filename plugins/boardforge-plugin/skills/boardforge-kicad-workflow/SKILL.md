@@ -58,6 +58,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `generate_project_review_report`
 - `build_workflow_preset`
 - `run_boardforge_workflow`
+- `run_verified_demo`
 - `plan_mission_requirements`
 - `intake_user_bom`
 - `audit_user_bom`
@@ -211,6 +212,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `generate_project_review_report` after schematic, placement, routing, DFM, power, via, noise, and manufacturing checks so the user gets one concise human-review artifact.
 - Run `build_workflow_preset` when the user asks Codex to build a common board type and needs an ordered sequence of safe BoardForge jobs.
 - Run `run_boardforge_workflow` when the user wants BoardForge to execute the full controlled preset sequence and produce one workflow report. Do not include exports unless validation and human review gates are acceptable.
+- Run `run_verified_demo` when the user wants a repeatable local proof that the BoardForge stack can create a demo project, generate schematic evidence, solve placement, run routing/DRC/ERC gates, and write one verification report. Stop on blockers unless the user explicitly asks for diagnostic continuation.
 - Run `plan_mission_requirements` first when the user gives a mission-level goal such as range, endurance, aircraft type, payload, autonomy, or "make a drone that flies X miles." Ask/return the required decision questions before claiming a full KiCad design is possible.
 - Run `intake_user_bom` when the user supplies a parts list, CSV, JSON, or rough free-text BOM. Do not trust the list until it is normalized into refs, groups, packages, supplier ids, pin maps, and nets.
 - Run `audit_user_bom` after BOM intake and mission planning to verify whether the supplied parts support the goal, identify missing functions, supplier/package gaps, power-budget issues, substitutions, and clarification questions before schematic generation.
@@ -274,6 +276,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `run_project_preflight` writes `boardforge-preflight.json` and aggregates scan, component audit, binding validation, netlist, manufacturing readiness, and optional snapshot diff gates.
 - `build_workflow_preset` returns ordered controlled job steps for ESP32 sensor, PoE/Ethernet sensor, and drone flight-controller workflows, with export steps separated behind validation gates.
 - `run_boardforge_workflow` executes the controlled preset steps, stops on blockers by default, writes `boardforge-workflow-run.json`, and summarizes next actions.
+- `run_verified_demo` executes a repeatable demo recipe, writes `boardforge-verified-demo-report.json`, and reports project, schematic, placement, routing, ERC, DRC, and package gates without claiming fabrication readiness.
 - `plan_mission_requirements` converts mission prompts into feasibility warnings, required user decisions, architecture, board families, long-range UAV support circuits, and a controlled workflow. It is the right first step for prompts like "drone that flies 15 miles and lasts 30 minutes."
 - `intake_user_bom` parses and normalizes user-supplied BOM rows into BoardForge components, inferred groups, pin maps, supplier identifiers, packages, and nets.
 - `audit_user_bom` compares a user BOM to mission/requirements goals, reports missing functions, compatibility issues, power-budget review, substitutions, and the controlled end-to-end user-BOM workflow.
@@ -281,6 +284,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `synthesize_circuit_blocks` creates circuit blocks such as protection, power tree, USB, Ethernet, I2C, SPI, RF, motor power, clocking, and debug with support-component and net intent.
 - `plan_production_pipeline` returns the full controlled execution sequence from engineering questions through release gates.
 - `build_verified_demo_recipe` returns repeatable demo recipes with pass criteria for USB sensor, PoE sensor, and motor-controller flows.
+- `run_verified_demo` runs one of those demo recipes end-to-end and stores the proof report in the generated KiCad project folder.
 - `build_canonical_net_model` builds the authoritative component/net/pin model used to keep schematic, PCB, BOM, CPL, and routing checks aligned.
 - `audit_asset_resolution` blocks on missing real KiCad symbols or footprints and warns on missing STEP/WRL models for physical 3D review.
 - `audit_placement_legality` catches unplaced, off-board, overlapping, connector-edge, hot/RF, and clearance issues before routing.
@@ -431,6 +435,7 @@ Supported endpoints:
 - `POST /jobs/project-review`
 - `POST /jobs/workflow-preset`
 - `POST /jobs/run-workflow`
+- `POST /jobs/run-verified-demo`
 - `POST /jobs/plan-mission`
 - `POST /jobs/intake-bom`
 - `POST /jobs/audit-bom`

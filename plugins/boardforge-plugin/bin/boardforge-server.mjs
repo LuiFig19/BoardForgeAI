@@ -42,6 +42,7 @@ const routes = {
   'POST /jobs/synthesize-circuit-blocks': 'synthesize_circuit_blocks',
   'POST /jobs/production-pipeline': 'plan_production_pipeline',
   'POST /jobs/verified-demo-recipe': 'build_verified_demo_recipe',
+  'POST /jobs/run-verified-demo': 'run_verified_demo',
   'POST /jobs/canonical-net-model': 'build_canonical_net_model',
   'POST /jobs/audit-assets': 'audit_asset_resolution',
   'POST /jobs/audit-placement-legality': 'audit_placement_legality',

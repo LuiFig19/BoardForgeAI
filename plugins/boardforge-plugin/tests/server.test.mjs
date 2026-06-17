@@ -209,6 +209,13 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { projectPath: 'server-project', preset: 'usb_sensor' },
     })
     assert.equal(demoRecipe.status, 'VERIFIED_DEMO_RECIPE_READY')
+    const verifiedDemo = await postJson(`http://127.0.0.1:${port}/jobs/run-verified-demo`, {
+      id: 'server_verified_demo',
+      allowOverwrite: true,
+      input: { projectPath: 'server-verified-demo', preset: 'usb_sensor', continueOnBlocked: true, diagnosticAllowIncompleteSchematic: true },
+    })
+    assert.ok(['VERIFIED_DEMO_BLOCKED', 'VERIFIED_DEMO_COMPLETE_NEEDS_HUMAN_REVIEW'].includes(verifiedDemo.status))
+    assert.ok(verifiedDemo.verifiedDemoRun.gates.some((gate) => gate.name === 'schematic_model'))
     const canonicalNetModel = await postJson(`http://127.0.0.1:${port}/jobs/canonical-net-model`, {
       id: 'server_canonical_net_model',
       input: { projectPath: 'server-project', components: plan.components, nets: plan.nets },

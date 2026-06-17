@@ -37,6 +37,7 @@ const toolToJobType = {
   generate_project_review_report: 'generate_project_review_report',
   build_workflow_preset: 'build_workflow_preset',
   run_boardforge_workflow: 'run_boardforge_workflow',
+  run_verified_demo: 'run_verified_demo',
   plan_mission_requirements: 'plan_mission_requirements',
   intake_user_bom: 'intake_user_bom',
   audit_user_bom: 'audit_user_bom',
