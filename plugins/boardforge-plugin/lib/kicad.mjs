@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { polygonBounds, round } from './geometry.mjs'
+import { atomNumber, atomText, child, children, descendants, parseSExpr } from './sexpr.mjs'
 
 const uuid = () => crypto.randomUUID()
 const text = (value) => String(value).replace(/"/g, "'")
@@ -71,20 +72,21 @@ export async function scanKiCadProject(projectPath) {
   const schFiles = files.filter((file) => file.endsWith('.kicad_sch'))
   if (!pcbFile) return { projectName: path.basename(root), projectFile: proFile ? path.join(root, proFile) : null, schematicFiles: schFiles.map((file) => path.join(root, file)), pcbFile: null, layerCount: 0, layers: [], netClasses: [], nets: [], footprints: [], tracks: [], vias: [], zones: [], mountingHoles: [], errors: [{ severity: 'ERROR', code: 'PCB_FILE_MISSING', message: 'No .kicad_pcb file was found.' }], warnings: [] }
   const content = await readFile(path.join(root, pcbFile), 'utf8')
-  const layers = [...content.matchAll(/\(\d+\s+"([^"]+)"\s+([^)]+)\)/g)].map((match) => ({ name: match[1], type: match[2].trim() }))
-  const nets = [...content.matchAll(/\(net\s+(\d+)\s+"([^"]+)"\)/g)].map((match) => ({ number: Number(match[1]), name: match[2] }))
+  const tree = safeParsePcb(content)
+  const layers = tree ? parseLayersTree(tree) : [...content.matchAll(/\(\d+\s+"([^"]+)"\s+([^)]+)\)/g)].map((match) => ({ name: match[1], type: match[2].trim() }))
+  const nets = tree ? parseNetsTree(tree) : [...content.matchAll(/\(net\s+(\d+)\s+"([^"]+)"\)/g)].map((match) => ({ number: Number(match[1]), name: match[2] }))
   const netByNumber = new Map(nets.map((net) => [net.number, net.name]))
-  const footprints = parseFootprints(content, netByNumber)
-  const boardOutline = edgeCutsOutline(content)
+  const footprints = tree ? parseFootprintsTree(tree, netByNumber) : parseFootprints(content, netByNumber)
+  const boardOutline = tree ? edgeCutsOutlineTree(tree) : edgeCutsOutline(content)
   const pads = footprints.flatMap((footprint) => footprint.pads.map((pad) => ({
     ...pad,
     ref: footprint.ref,
     footprint: footprint.footprint,
   })))
-  const tracks = parseTracks(content, netByNumber)
-  const vias = parseVias(content, netByNumber)
-  const zones = parseZones(content, netByNumber)
-  const mountingHoles = parseMountingHoles(content)
+  const tracks = tree ? parseTracksTree(tree, netByNumber) : parseTracks(content, netByNumber)
+  const vias = tree ? parseViasTree(tree, netByNumber) : parseVias(content, netByNumber)
+  const zones = tree ? parseZonesTree(tree, netByNumber) : parseZones(content, netByNumber)
+  const mountingHoles = tree ? parseMountingHolesTree(tree) : parseMountingHoles(content)
   const bounds = boardOutline.length ? polygonBounds(boardOutline) : null
   return {
     projectName: path.basename(root), projectFile: proFile ? path.join(root, proFile) : null, schematicFiles: schFiles.map((file) => path.join(root, file)), pcbFile: path.join(root, pcbFile), kicadVersion: content.match(/\(version\s+(\d+)\)/)?.[1],
@@ -111,6 +113,179 @@ export async function scanKiCadProject(projectPath) {
     errors: [],
     warnings: footprints.length && !content.includes('(model') ? [{ severity: 'WARNING', code: 'MISSING_3D_MODEL_HINT', message: `${footprints.length} footprints may be missing 3D models.` }] : [],
   }
+}
+
+function safeParsePcb(content) {
+  try {
+    const tree = parseSExpr(content)
+    return Array.isArray(tree) && tree[0] === 'kicad_pcb' ? tree : null
+  } catch {
+    return null
+  }
+}
+
+function parseLayersTree(tree) {
+  const layers = child(tree, 'layers')
+  return layers ? layers.slice(1).filter(Array.isArray).map((layer) => ({ id: Number(layer[0]), name: atomText(layer[1]), type: atomText(layer[2]) || '' })) : []
+}
+
+function parseNetsTree(tree) {
+  return children(tree, 'net').map((net) => ({ number: atomNumber(net[1]), name: atomText(net[2]) || '' }))
+}
+
+function parseFootprintsTree(tree, netByNumber) {
+  return children(tree, 'footprint').map((node, index) => {
+    const footprint = atomText(node[1]) || `unknown_${index + 1}`
+    const at = child(node, 'at')
+    const ref = children(node, 'property').find((property) => property[1] === 'Reference')?.[2] || children(node, 'fp_text').find((fpText) => fpText[1] === 'reference')?.[2] || `FP${index + 1}`
+    const x = atomNumber(at?.[1])
+    const y = atomNumber(at?.[2])
+    const rotation = atomNumber(at?.[3])
+    const pads = children(node, 'pad').map((pad, padIndex) => padFromTree(pad, { ref, footprint, x, y, rotation }, netByNumber, padIndex))
+    const bounds = padBounds(pads, x, y)
+    const courtyards = courtyardPolygonsFromTree(node, { x, y, rotation })
+    return {
+      id: `fp_${index + 1}`,
+      ref,
+      footprint,
+      value: children(node, 'property').find((property) => property[1] === 'Value')?.[2] || null,
+      x,
+      y,
+      rotation,
+      width: round(bounds.widthMm || polygonWidth(courtyards) || footprintWidthHint(footprint)),
+      height: round(bounds.heightMm || polygonHeight(courtyards) || footprintHeightHint(footprint)),
+      pads,
+      padCount: pads.length,
+      modelCount: children(node, 'model').length,
+      hasCourtyard: courtyards.length > 0,
+      courtyards,
+    }
+  })
+}
+
+function padFromTree(pad, footprint, netByNumber, index) {
+  const name = atomText(pad[1]) || `${index + 1}`
+  const at = child(pad, 'at')
+  const size = child(pad, 'size')
+  const net = child(pad, 'net')
+  const local = { x: atomNumber(at?.[1]), y: atomNumber(at?.[2]) }
+  const center = transformLocalPoint(local, footprint)
+  const netNumber = net ? atomNumber(net[1], null) : null
+  const layersNode = child(pad, 'layers')
+  return {
+    id: `${footprint.ref}:${name}`,
+    pad: name,
+    name,
+    type: atomText(pad[2]) || 'unknown',
+    shape: atomText(pad[3]) || 'unknown',
+    x: center.x,
+    y: center.y,
+    localX: local.x,
+    localY: local.y,
+    rotation: round((footprint.rotation || 0) + atomNumber(at?.[3])),
+    widthMm: atomNumber(size?.[1], 0.6),
+    heightMm: atomNumber(size?.[2], 0.6),
+    netNumber,
+    netName: atomText(net?.[2]) || netByNumber.get(netNumber) || null,
+    layers: layersNode ? layersNode.slice(1).map(atomText) : [],
+    throughHole: atomText(pad[2]) === 'thru_hole',
+    drillMm: atomNumber(child(pad, 'drill')?.[1], 0),
+  }
+}
+
+function edgeCutsOutlineTree(tree) {
+  const lines = children(tree, 'gr_line')
+    .filter((line) => child(line, 'layer')?.[1] === 'Edge.Cuts')
+    .map((line) => ({ start: pointNode(child(line, 'start')), end: pointNode(child(line, 'end')) }))
+  return orderSegments(lines)
+}
+
+function parseTracksTree(tree, netByNumber) {
+  return children(tree, 'segment').map((segment, index) => {
+    const netNumber = atomNumber(child(segment, 'net')?.[1], null)
+    return { id: `track_${index + 1}`, start: pointNode(child(segment, 'start')), end: pointNode(child(segment, 'end')), widthMm: atomNumber(child(segment, 'width')?.[1]), layer: child(segment, 'layer')?.[1] || 'F.Cu', netNumber, netName: netByNumber.get(netNumber) || null }
+  })
+}
+
+function parseViasTree(tree, netByNumber) {
+  return children(tree, 'via').map((via, index) => {
+    const netNumber = atomNumber(child(via, 'net')?.[1], null)
+    const layersNode = child(via, 'layers')
+    return { id: `via_${index + 1}`, ...pointNode(child(via, 'at')), diameterMm: atomNumber(child(via, 'size')?.[1]), drillMm: atomNumber(child(via, 'drill')?.[1]), layers: layersNode ? layersNode.slice(1).map(atomText) : [], netNumber, netName: netByNumber.get(netNumber) || null, viaType: child(via, 'type')?.[1] || 'through' }
+  })
+}
+
+function parseZonesTree(tree, netByNumber) {
+  return children(tree, 'zone').map((zone, index) => {
+    const netNumber = atomNumber(child(zone, 'net')?.[1], null)
+    return { id: `zone_${index + 1}`, netNumber, netName: child(zone, 'net_name')?.[1] || netByNumber.get(netNumber) || null, layer: child(zone, 'layer')?.[1] || null, polygon: descendants(zone, 'xy').map(pointNode) }
+  })
+}
+
+function parseMountingHolesTree(tree) {
+  const circles = children(tree, 'gr_circle').filter((circle) => child(circle, 'layer')?.[1] === 'Edge.Cuts').map((circle, index) => {
+    const center = pointNode(child(circle, 'center'))
+    const end = pointNode(child(circle, 'end'))
+    return { id: `hole_${index + 1}`, x: center.x, y: center.y, diameterMm: round(Math.hypot(end.x - center.x, end.y - center.y) * 2) }
+  })
+  const npths = children(tree, 'footprint').flatMap((fp, fpIndex) => children(fp, 'pad').filter((pad) => pad[2] === 'np_thru_hole').map((pad, padIndex) => {
+    const at = pointNode(child(pad, 'at'))
+    return { id: `npth_${fpIndex + 1}_${padIndex + 1}`, x: at.x, y: at.y, diameterMm: atomNumber(child(pad, 'drill')?.[1]) }
+  }))
+  return [...circles, ...npths]
+}
+
+function pointNode(node) {
+  return { x: atomNumber(node?.[1]), y: atomNumber(node?.[2]) }
+}
+
+function orderSegments(lines) {
+  if (!lines.length) return []
+  const ordered = [lines[0].start, lines[0].end]
+  const remaining = lines.slice(1)
+  while (remaining.length) {
+    const last = ordered[ordered.length - 1]
+    const index = remaining.findIndex((line) => samePoint(line.start, last) || samePoint(line.end, last))
+    if (index < 0) break
+    const [line] = remaining.splice(index, 1)
+    ordered.push(samePoint(line.start, last) ? line.end : line.start)
+  }
+  const deduped = ordered.filter((point, index, list) => index === 0 || !samePoint(point, list[index - 1]))
+  if (deduped.length > 2 && samePoint(deduped[0], deduped[deduped.length - 1])) deduped.pop()
+  return deduped
+}
+
+function courtyardPolygonsFromTree(footprintNode, transform) {
+  const polygons = []
+  for (const rect of children(footprintNode, 'fp_rect').filter((node) => child(node, 'layer')?.[1]?.includes('.CrtYd'))) {
+    const start = transformLocalPoint(pointNode(child(rect, 'start')), transform)
+    const end = transformLocalPoint(pointNode(child(rect, 'end')), transform)
+    polygons.push([
+      { x: start.x, y: start.y },
+      { x: end.x, y: start.y },
+      { x: end.x, y: end.y },
+      { x: start.x, y: end.y },
+    ])
+  }
+  for (const poly of children(footprintNode, 'fp_poly').filter((node) => child(node, 'layer')?.[1]?.includes('.CrtYd'))) {
+    const pts = children(child(poly, 'pts'), 'xy').map((point) => transformLocalPoint(pointNode(point), transform))
+    if (pts.length >= 3) polygons.push(pts)
+  }
+  return polygons
+}
+
+function polygonWidth(polygons) {
+  const points = polygons.flat()
+  if (!points.length) return 0
+  const bounds = polygonBounds(points)
+  return bounds.maxX - bounds.minX
+}
+
+function polygonHeight(polygons) {
+  const points = polygons.flat()
+  if (!points.length) return 0
+  const bounds = polygonBounds(points)
+  return bounds.maxY - bounds.minY
 }
 
 function parseFootprints(content, netByNumber) {

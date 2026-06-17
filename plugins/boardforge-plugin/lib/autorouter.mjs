@@ -37,6 +37,14 @@ export function autorouteBoard({ board, components = [], nets = [], pads = [], e
       continue
     }
     const endpoints = inferEndpoints(net, components, pads)
+    if (endpoints.all?.length > 2) {
+      const multi = routeMultiTerminalNet({ net, endpoints, board, components, profile, options, designIntent, obstacles, occupied, gridMm, layerCount })
+      routes.push(...multi.routes)
+      warnings.push(...multi.warnings)
+      for (const route of multi.routes.filter((item) => item.status === 'routed')) reserveRoute(route, occupied, gridMm)
+      processed.add(net.name)
+      continue
+    }
     const start = net.start || endpoints.start
     const end = net.end || endpoints.end
     if (!start || !end) {
@@ -77,6 +85,27 @@ export function autorouteBoard({ board, components = [], nets = [], pads = [], e
     errors,
     humanReviewRequired: true,
   }
+}
+
+function routeMultiTerminalNet({ net, endpoints, board, components, profile, options, designIntent, obstacles, occupied, gridMm, layerCount }) {
+  const warnings = []
+  const routes = []
+  const legs = minimumSpanningLegs(endpoints.all)
+  for (const [index, leg] of legs.entries()) {
+    const [startPoint, endPoint] = leg
+    const legEndpoints = {
+      refs: [...new Set([startPoint.ref, endPoint.ref].filter(Boolean))],
+      pads: [startPoint.id, endPoint.id].filter(Boolean),
+      source: 'multi_terminal_pad_tree',
+    }
+    const route = routeNet({ net, start: startPoint, end: endPoint, endpoints: legEndpoints, board, components, profile, options, designIntent, obstacles, occupied, gridMm, layerCount })
+    route.branchIndex = index + 1
+    route.multiTerminal = { totalEndpoints: endpoints.all.length, treeLegs: legs.length }
+    routes.push(route)
+    if (route.status === 'routed') reserveRoute(route, occupied, gridMm)
+    else warnings.push(issue('WARNING', 'AUTOROUTE_MULTI_TERMINAL_LEG_UNROUTED', `${net.name} branch ${index + 1} could not be routed.`, { net: net.name, branchIndex: index + 1, reason: route.status }))
+  }
+  return { routes, warnings }
 }
 
 function routeDifferentialPair({ net, mate, board, components, pads, profile, options, designIntent, obstacles, occupied, gridMm, layerCount }) {
@@ -205,6 +234,7 @@ function inferEndpoints(net, components, pads = []) {
     return {
       start: padEndpoints[0],
       end: padEndpoints[1],
+      all: allPadEndpoints(net, pads),
       refs: [...new Set(padEndpoints.map((pad) => pad.ref).filter(Boolean))],
       pads: padEndpoints.map((pad) => pad.id || `${pad.ref}:${pad.pad}`),
       source: 'real_pad_centers',
@@ -215,7 +245,7 @@ function inferEndpoints(net, components, pads = []) {
     if (Object.values(component.pinMap || {}).includes(net.name)) refs.push(component.ref)
   }
   const matched = components.filter((component) => refs.includes(component.ref))
-  if (matched.length >= 2) return { start: pointFor(matched[0]), end: pointFor(matched[1]), refs, source: 'component_centers' }
+  if (matched.length >= 2) return { start: pointFor(matched[0]), end: pointFor(matched[1]), all: matched.map(pointFor), refs, source: 'component_centers' }
   if (matched.length === 1 && net.end) return { start: pointFor(matched[0]), end: net.end, refs, source: 'component_to_explicit_point' }
   return { start: null, end: null, refs, pads: [], source: 'missing' }
 }
@@ -403,6 +433,31 @@ function endpointsFromPads(net, pads) {
   const byNet = pads.filter((pad) => pad.netName === net.name || explicitPins.has(`${pad.ref}:${pad.pad}`) || explicitPins.has(`${pad.ref}:${pad.name}`))
   if (byNet.length >= 2) return farthestPair(byNet)
   return byNet
+}
+
+function allPadEndpoints(net, pads) {
+  const explicitPins = new Set((net.pins || []).map((pin) => `${pin.ref || pin.componentRef}:${pin.pin || pin.pad || pin.name}`))
+  return pads.filter((pad) => pad.netName === net.name || explicitPins.has(`${pad.ref}:${pad.pad}`) || explicitPins.has(`${pad.ref}:${pad.name}`))
+}
+
+function minimumSpanningLegs(points) {
+  if (points.length < 2) return []
+  const connected = [points[0]]
+  const remaining = points.slice(1)
+  const legs = []
+  while (remaining.length) {
+    let best = null
+    for (const start of connected) {
+      for (const end of remaining) {
+        const cost = heuristic(start, end)
+        if (!best || cost < best.cost) best = { start, end, cost }
+      }
+    }
+    legs.push([best.start, best.end])
+    connected.push(best.end)
+    remaining.splice(remaining.indexOf(best.end), 1)
+  }
+  return legs
 }
 
 function farthestPair(points) {

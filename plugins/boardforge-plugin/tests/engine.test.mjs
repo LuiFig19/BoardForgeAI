@@ -17,6 +17,7 @@ import { validateRoutingGeometry } from '../lib/routing-validation.mjs'
 import { scoreRoutingPlan } from '../lib/routing-quality.mjs'
 import { scanKiCadProject } from '../lib/kicad.mjs'
 import { runAutotracerPlanning } from '../lib/autotracer-engine.mjs'
+import { autorouteBoard } from '../lib/autorouter.mjs'
 
 test('validates a simple rectangular board outline', () => {
   const board = { outline: rectanglePoints(40, 30), mountingHoles: [{ id: 'MH1', x: 5, y: 5, diameterMm: 3 }] }
@@ -131,6 +132,55 @@ test('KiCad scanner feeds pad-centered endpoints into autotracer', async () => {
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }
+})
+
+test('KiCad scanner parses nested zones and footprint courtyard geometry', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-sexpr-scan-'))
+  try {
+    const projectDir = path.join(workspace, 'sexpr-scan')
+    await mkdir(projectDir, { recursive: true })
+    await writeFile(path.join(projectDir, 'sexpr-scan.kicad_pcb'), `(kicad_pcb (version 20240108) (generator "test")
+  (layers (0 "F.Cu" signal) (31 "B.Cu" signal) (44 "Edge.Cuts" user) (46 "F.CrtYd" user))
+  (net 0 "") (net 1 "GND")
+  (setup)
+  (gr_line (start 0 0) (end 30 0) (stroke (width 0.1) (type solid)) (layer "Edge.Cuts") (uuid "e1"))
+  (gr_line (start 30 0) (end 30 20) (stroke (width 0.1) (type solid)) (layer "Edge.Cuts") (uuid "e2"))
+  (gr_line (start 30 20) (end 0 20) (stroke (width 0.1) (type solid)) (layer "Edge.Cuts") (uuid "e3"))
+  (gr_line (start 0 20) (end 0 0) (stroke (width 0.1) (type solid)) (layer "Edge.Cuts") (uuid "e4"))
+  (footprint "Package_QFN:QFN-16" (layer "F.Cu")
+    (at 10 10 90)
+    (property "Reference" "U1" (at 0 0 0) (layer "F.SilkS"))
+    (property "Value" "MCU" (at 0 1 0) (layer "F.Fab"))
+    (fp_rect (start -2 -2) (end 2 2) (stroke (width 0.05) (type solid)) (fill none) (layer "F.CrtYd") (uuid "c1"))
+    (pad "1" smd roundrect (at -1 0 90) (size 0.4 1.2) (layers "F.Cu" "F.Paste" "F.Mask") (net 1 "GND"))
+  )
+  (zone (net 1) (net_name "GND") (layer "F.Cu") (uuid "z1")
+    (polygon (pts (xy 1 1) (xy 29 1) (xy 29 19) (xy 1 19)))
+  )
+)`, 'utf8')
+    await writeFile(path.join(projectDir, 'sexpr-scan.kicad_pro'), '{}', 'utf8')
+    const scan = await scanKiCadProject(projectDir)
+    assert.equal(scan.footprints[0].hasCourtyard, true)
+    assert.equal(scan.footprints[0].courtyards.length, 1)
+    assert.equal(scan.zones[0].polygon.length, 4)
+    assert.equal(scan.pads[0].shape, 'roundrect')
+    assert.equal(scan.pads[0].rotation, 180)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('autorouter creates multiple route legs for multi-terminal nets', () => {
+  const board = { widthMm: 60, heightMm: 30, layerCount: 2, outline: rectanglePoints(60, 30), mountingHoles: [] }
+  const pads = [
+    { id: 'J1:1', ref: 'J1', pad: '1', x: 6, y: 15, widthMm: 0.8, heightMm: 0.8, netName: 'SDA' },
+    { id: 'U1:4', ref: 'U1', pad: '4', x: 30, y: 10, widthMm: 0.8, heightMm: 0.8, netName: 'SDA' },
+    { id: 'U2:2', ref: 'U2', pad: '2', x: 52, y: 18, widthMm: 0.8, heightMm: 0.8, netName: 'SDA' },
+  ]
+  const plan = autorouteBoard({ board, pads, nets: [{ name: 'SDA' }], profile: getManufacturerProfile('jlcpcb'), options: { gridMm: 1 } })
+  const sdaRoutes = plan.routes.filter((route) => route.net === 'SDA')
+  assert.equal(sdaRoutes.length, 2)
+  assert.equal(sdaRoutes.every((route) => route.multiTerminal?.totalEndpoints === 3), true)
 })
 
 test('component binding validation reports critical pin coverage and repair actions', async () => {
