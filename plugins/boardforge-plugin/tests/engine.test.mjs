@@ -702,13 +702,38 @@ test('noise map detects noisy and sensitive region coupling', async () => {
       components: [
         { ref: 'U1', group: 'REGULATOR', value: 'buck regulator', x: 10, y: 10, width: 5, height: 5 },
         { ref: 'U2', group: 'SENSOR', value: 'precision ADC sensor', x: 12, y: 11, width: 4, height: 4 },
+        { ref: 'U3', group: 'RF_MODULE', value: 'ESP32 WiFi antenna', x: 18, y: 10, width: 8, height: 6 },
       ],
-      nets: [{ name: 'ADC_IN' }],
+      nets: [{ name: 'ADC_IN' }, { name: 'USB_DP' }, { name: 'RF_FEED' }],
     },
   }, process.cwd())
   assert.equal(output.status, 'NOISE_MAP_NEEDS_REVIEW')
   assert.ok(output.noiseMap.noisyRegions.length >= 1)
+  assert.ok(output.noiseMap.criticalRoutes.some((route) => route.net === 'USB_DP' && /return/i.test(route.viaPolicy)))
+  assert.ok(output.noiseMap.copperKeepoutRules.some((rule) => rule.allowCopper === false))
   assert.ok(output.warnings.some((issue) => issue.code === 'NOISE_REGION_OVERLAP'))
+})
+
+test('copper pour planner creates ground strategy, keepouts, and stitching intent', async () => {
+  const output = await executeJob({
+    id: 'copper_pour_gate',
+    type: 'plan_copper_pours',
+    input: {
+      board: { widthMm: 46, heightMm: 28, layerCount: 4, outline: rectanglePoints(46, 28) },
+      nets: [{ name: 'GND' }, { name: 'AGND' }, { name: '3V3' }, { name: 'VBAT' }],
+      components: [
+        { ref: 'U1', group: 'ADC_SENSOR', value: 'precision analog ADC', x: 18, y: 12, width: 5, height: 5 },
+        { ref: 'U2', group: 'RF_MODULE', value: 'BLE antenna', x: 34, y: 12, width: 8, height: 6 },
+        { ref: 'J1', group: 'USB_CONNECTOR', value: 'USB-C', x: 5, y: 14, width: 8, height: 6 },
+      ],
+      maxStitchingVias: 20,
+    },
+  }, process.cwd())
+  assert.ok(['COPPER_POUR_PLAN_READY_NEEDS_DRC', 'COPPER_POUR_PLAN_NEEDS_REVIEW'].includes(output.status))
+  assert.ok(output.copperPourPlan.pours.some((pour) => pour.net === 'GND' && pour.copperRole === 'reference_ground'))
+  assert.ok(output.copperPourPlan.starGroundBridges.some((bridge) => bridge.nets.includes('AGND')))
+  assert.ok(output.copperPourPlan.avoidZones.some((zone) => zone.kind === 'antenna_rf_keepout' && zone.allowCopper === false))
+  assert.ok(output.copperPourPlan.stitchingVias.some((via) => /local return/.test(via.reason)))
 })
 
 test('manufacturer rules and project review summarize production blockers', async () => {
