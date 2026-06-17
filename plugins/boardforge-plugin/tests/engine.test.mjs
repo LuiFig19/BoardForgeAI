@@ -15,6 +15,8 @@ import { parseFootprintCourtyardFromText, parseFootprintPadsFromText, parseSymbo
 import { scorePlacement } from '../lib/placement.mjs'
 import { validateRoutingGeometry } from '../lib/routing-validation.mjs'
 import { scoreRoutingPlan } from '../lib/routing-quality.mjs'
+import { scanKiCadProject } from '../lib/kicad.mjs'
+import { runAutotracerPlanning } from '../lib/autotracer-engine.mjs'
 
 test('validates a simple rectangular board outline', () => {
   const board = { outline: rectanglePoints(40, 30), mountingHoles: [{ id: 'MH1', x: 5, y: 5, diameterMm: 3 }] }
@@ -83,6 +85,52 @@ test('parses KiCad symbol pins and footprint pads for compatibility checks', () 
   assert.deepEqual(parseSymbolPinsFromText(symbolText, 'Device:R').map((pin) => pin.number), ['1', '2'])
   assert.deepEqual(parseFootprintPadsFromText(footprintText).map((pad) => pad.name), ['1', '2'])
   assert.equal(parseFootprintCourtyardFromText(footprintText).width, 2)
+})
+
+test('KiCad scanner feeds pad-centered endpoints into autotracer', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-scan-route-'))
+  try {
+    const projectDir = path.join(workspace, 'scan-route')
+    await mkdir(projectDir, { recursive: true })
+    await writeFile(path.join(projectDir, 'scan-route.kicad_pcb'), `(kicad_pcb (version 20240108) (generator "test")
+  (layers (0 "F.Cu" signal) (31 "B.Cu" signal) (44 "Edge.Cuts" user))
+  (net 0 "")
+  (net 1 "SIG")
+  (setup)
+  (gr_line (start 0 0) (end 40 0) (stroke (width 0.1) (type solid)) (layer "Edge.Cuts") (uuid "e1"))
+  (gr_line (start 40 0) (end 40 22) (stroke (width 0.1) (type solid)) (layer "Edge.Cuts") (uuid "e2"))
+  (gr_line (start 40 22) (end 0 22) (stroke (width 0.1) (type solid)) (layer "Edge.Cuts") (uuid "e3"))
+  (gr_line (start 0 22) (end 0 0) (stroke (width 0.1) (type solid)) (layer "Edge.Cuts") (uuid "e4"))
+  (footprint "Connector:TestPad" (layer "F.Cu")
+    (at 7 11 0)
+    (property "Reference" "J1" (at 0 0 0) (layer "F.SilkS"))
+    (property "Value" "PAD" (at 0 1 0) (layer "F.Fab"))
+    (pad "1" smd rect (at 0 0) (size 1.4 1.4) (layers "F.Cu" "F.Paste" "F.Mask") (net 1 "SIG"))
+  )
+  (footprint "Connector:TestPad" (layer "F.Cu")
+    (at 33 11 0)
+    (property "Reference" "J2" (at 0 0 0) (layer "F.SilkS"))
+    (property "Value" "PAD" (at 0 1 0) (layer "F.Fab"))
+    (pad "1" smd rect (at 0 0) (size 1.4 1.4) (layers "F.Cu" "F.Paste" "F.Mask") (net 1 "SIG"))
+  )
+)`, 'utf8')
+    await writeFile(path.join(projectDir, 'scan-route.kicad_pro'), '{}', 'utf8')
+    const scan = await scanKiCadProject(projectDir)
+    assert.equal(scan.boardOutline.length, 4)
+    assert.equal(scan.pads.length, 2)
+    assert.equal(scan.pads[0].netName, 'SIG')
+    const result = runAutotracerPlanning('autotrace_board', {
+      scan,
+      profile: getManufacturerProfile('jlcpcb'),
+      layerStack: { layerCount: 2 },
+    })
+    assert.equal(['AUTOTRACE_PLANNED_NEEDS_DRC', 'AUTOTRACE_PARTIAL_NEEDS_REVIEW'].includes(result.status) || ['planned', 'partial'].includes(result.status), true)
+    assert.ok(result.createdTracks.length > 0)
+    assert.equal(result.routingPlan.routes.find((route) => route.net === 'SIG').start.x, 7)
+    assert.equal(result.routingPlan.routes.find((route) => route.net === 'SIG').end.x, 33)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
 })
 
 test('component binding validation reports critical pin coverage and repair actions', async () => {

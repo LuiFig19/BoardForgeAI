@@ -44,9 +44,13 @@ export function runAutotrace(context = {}, mode = 'full_board') {
   }
 
   const selectedNets = selectNetsForMode(job.nets, mode)
-  const routingPlan = autorouteBoard({
+  const routingPlan = {
+    ...autorouteBoard({
     board: job.boardOutline,
     components: job.components,
+    pads: job.pads,
+    existingTracks: job.existingTracks,
+    existingVias: job.existingVias,
     nets: selectedNets,
     profile: job.manufacturerProfile,
     options: {
@@ -54,7 +58,11 @@ export function runAutotrace(context = {}, mode = 'full_board') {
       routingMode: mode,
       layerCount: job.layerStack.layers.length || job.boardOutline.layerCount,
     },
-  })
+    }),
+    pads: job.pads,
+    existingTracks: job.existingTracks,
+    existingVias: job.existingVias,
+  }
   const routeValidation = validateRoutingGeometry({ board: job.boardOutline, components: job.components, routingPlan, profile: job.manufacturerProfile })
   const routeQuality = scoreRoutingPlan({ routingPlan, profile: job.manufacturerProfile, powerTree: context.powerTree || null })
   const routeObjects = materializeRouteObjects(job.boardOutline, routingPlan)
@@ -79,6 +87,7 @@ export function runAutotrace(context = {}, mode = 'full_board') {
     noiseReport: buildNoiseReport(job, routingPlan),
     manufacturerReport: buildManufacturerReport(job, routingPlan, internalViolations),
     internalViolations,
+    componentMoveSuggestions: suggestPlacementMoves(job, internalViolations, unroutedNets),
     remainingIssues: [...internalViolations, ...unroutedNets.map((net) => issue('ERROR', 'NET_UNROUTED', `${net.net} was not routed.`, net))],
     routingScore: buildRoutingScore(job, routedNets, unroutedNets, internalViolations, warnings),
     humanReviewChecklist: checklist(job, fullyRouted),
@@ -105,10 +114,12 @@ export function finalizeAutotraceWithDrc(result, drcResult = null) {
 }
 
 function normalizeAutoTraceJob(context, mode) {
-  const board = context.board || context.boardOutline || {}
+  const scanBoard = context.scan?.boardOutline?.length ? { ...(context.board || {}), outline: context.scan.boardOutline, boardSize: context.scan.boardSize } : null
+  const board = scanBoard || context.board || context.boardOutline || {}
   const layerStack = normalizeLayerStack(context.layerStack || context.stackup || {}, board)
-  const components = normalizeComponents(context.components || context.footprints || [])
-  const nets = assignNetsToClasses(normalizeNets(context.nets || context.netlist?.nets || context.requirements?.nets || [], components))
+  const components = normalizeComponents(context.components?.length ? context.components : context.scan?.footprints?.length ? context.scan.footprints : context.footprints || [])
+  const pads = normalizePads(context.pads?.length ? context.pads : context.scan?.pads || [], components)
+  const nets = assignNetsToClasses(normalizeNets(context.nets?.length ? context.nets : context.scan?.nets?.length ? netsFromScan(context.scan, pads) : context.netlist?.nets || context.requirements?.nets || [], components, pads))
   return {
     jobId: context.jobId || context.id || `autotrace_${Date.now()}`,
     projectId: context.projectId || context.projectPath || 'local-project',
@@ -120,7 +131,7 @@ function normalizeAutoTraceJob(context, mode) {
     boardOutline: { ...board, layerCount: layerStack.layers.length || board.layerCount || 2 },
     components,
     footprints: context.footprints || components,
-    pads: context.pads || [],
+    pads,
     nets,
     netLabels: context.netLabels || [],
     existingTracks: context.existingTracks || context.scan?.tracks || [],
@@ -415,6 +426,30 @@ function checklist(job, fullyRouted) {
   ]
 }
 
+function suggestPlacementMoves(job, violations = [], unroutedNets = []) {
+  const suggestions = []
+  const codes = new Set(violations.map((item) => item.code))
+  const affectedRefs = new Set()
+  for (const violation of violations) {
+    for (const ref of violation.details?.refs || []) affectedRefs.add(ref)
+    if (violation.details?.component) affectedRefs.add(violation.details.component)
+    if (violation.details?.ref) affectedRefs.add(violation.details.ref)
+  }
+  for (const net of unroutedNets) {
+    for (const ref of net.refs || net.endpointRefs || []) affectedRefs.add(ref)
+  }
+  if (codes.has('ROUTE_PAD_CLEARANCE') || codes.has('ROUTE_ROUTE_CLEARANCE')) suggestions.push({ action: 'increase_routing_channel', reason: 'Routing conflicts need more clearance between pads/traces; move nearby passives away from dense channels before reroute.' })
+  if (codes.has('ROUTE_SEGMENT_CROSSES_BOARD_EDGE')) suggestions.push({ action: 'move_endpoint_or_expand_outline', reason: 'A routed segment crosses Edge.Cuts; move the endpoint inward, add a notch/channel, or expand the outline.' })
+  if (codes.has('COMPONENTS_OVERLAP')) suggestions.push({ action: 'repair_component_overlap', reason: 'Overlapping components must be separated before routing.' })
+  if (unroutedNets.length) suggestions.push({ action: 'ripup_reroute_or_move_components', reason: `${unroutedNets.length} net(s) remain unrouted; move endpoints closer or allow more layers/vias.`, affectedRefs: [...affectedRefs] })
+  const dense = affectedRefs.size ? job.components.filter((component) => affectedRefs.has(component.ref)).map((component) => ({ ref: component.ref, x: component.x, y: component.y, suggestion: edgeConnector(component) ? 'keep on board edge but clear adjacent routing channel' : 'nudge away from congested channel by 1-3 mm' })) : []
+  return { suggestions, affectedComponents: dense, humanReviewRequired: Boolean(suggestions.length) }
+}
+
+function edgeConnector(component) {
+  return /USB|RJ45|CONN|JST|HEADER|XT\d|TERMINAL/i.test(`${component.ref} ${component.footprint || ''} ${component.value || ''}`)
+}
+
 function normalizeLayerStack(stackup, board) {
   const count = Number(stackup.layerCount || board.layerCount || 2)
   const names = count >= 6 ? ['F.Cu', 'In1.Cu', 'In2.Cu', 'In3.Cu', 'In4.Cu', 'B.Cu'] : count >= 4 ? ['F.Cu', 'In1.Cu', 'In2.Cu', 'B.Cu'] : ['F.Cu', 'B.Cu'].slice(0, count)
@@ -429,13 +464,57 @@ function preferredClassesForLayer(name) {
 }
 
 function normalizeComponents(components) {
-  return (components || []).map((component) => ({ ...component, ref: component.ref || component.reference || component.designator || '', width: Number(component.width || component.widthMm || component.size?.widthMm || 2), height: Number(component.height || component.heightMm || component.size?.heightMm || 2), x: numberOr(component.x, component.at?.x), y: numberOr(component.y, component.at?.y), pinMap: component.pinMap || {} }))
+  return (components || []).map((component) => {
+    const pinMap = { ...(component.pinMap || {}) }
+    for (const pad of component.pads || []) {
+      if (pad.netName && (pad.pad || pad.name)) pinMap[pad.pad || pad.name] = pad.netName
+    }
+    return { ...component, ref: component.ref || component.reference || component.designator || '', width: Number(component.width || component.widthMm || component.size?.widthMm || 2), height: Number(component.height || component.heightMm || component.size?.heightMm || 2), x: numberOr(component.x, component.at?.x), y: numberOr(component.y, component.at?.y), pinMap }
+  })
 }
 
-function normalizeNets(nets, components) {
+function normalizePads(pads, components) {
+  const byRef = new Map(components.map((component) => [component.ref, component]))
+  return (pads || []).map((pad) => {
+    const component = byRef.get(pad.ref)
+    return {
+      ...pad,
+      ref: pad.ref,
+      pad: pad.pad || pad.name,
+      name: pad.name || pad.pad,
+      x: numberOr(pad.x, component?.x),
+      y: numberOr(pad.y, component?.y),
+      widthMm: Number(pad.widthMm || pad.width || 0.6),
+      heightMm: Number(pad.heightMm || pad.height || 0.6),
+      netName: pad.netName || pad.net,
+    }
+  }).filter((pad) => Number.isFinite(pad.x) && Number.isFinite(pad.y))
+}
+
+function normalizeNets(nets, components, pads = []) {
   const mapped = components.flatMap((component) => Object.values(component.pinMap || {}).filter(Boolean).map((name) => ({ name })))
-  const base = [...(nets || []), ...mapped]
-  return [...new Map(base.map((net) => [typeof net === 'string' ? net : net.name, typeof net === 'string' ? { name: net } : net]).filter(([name]) => name)).values()]
+  const padMapped = pads.filter((pad) => pad.netName).map((pad) => ({ name: pad.netName, pins: [{ ref: pad.ref, pin: pad.pad }] }))
+  const base = [...(nets || []), ...mapped, ...padMapped]
+  const byName = new Map()
+  for (const raw of base) {
+    const net = typeof raw === 'string' ? { name: raw } : raw
+    if (!net?.name) continue
+    const existing = byName.get(net.name) || { name: net.name, pins: [] }
+    byName.set(net.name, { ...existing, ...net, pins: mergePins(existing.pins, net.pins) })
+  }
+  return [...byName.values()]
+}
+
+function netsFromScan(scan, pads) {
+  return (scan.nets || []).filter((net) => net.name && net.name !== '').map((net) => ({
+    name: net.name,
+    pins: pads.filter((pad) => pad.netName === net.name).map((pad) => ({ ref: pad.ref, pin: pad.pad })),
+  }))
+}
+
+function mergePins(a = [], b = []) {
+  const byKey = new Map([...a, ...b].map((pin) => [`${pin.ref || ''}:${pin.pin || pin.pad || ''}`, pin]))
+  return [...byKey.values()].filter((pin) => pin.ref || pin.pin || pin.pad)
 }
 
 function hasPlacement(component) {

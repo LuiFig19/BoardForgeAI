@@ -2011,9 +2011,10 @@ async function autotracerJob(job, workspace, profile) {
   const context = {
     ...(state || {}),
     ...(job.input || {}),
-    board: job.input?.board || state?.board || boardFromJob(job),
-    components,
-    nets: job.input?.nets || state?.canonicalNetModelReport?.canonicalNetModel?.nets || state?.netlist?.nets || state?.requirements?.nets || [],
+    board: job.input?.board || state?.board || (scan?.boardOutline?.length ? { ...boardFromJob(job), outline: scan.boardOutline, layerCount: scan.layerCount || boardFromJob(job).layerCount } : boardFromJob(job)),
+    components: components?.length ? components : scan?.footprints || [],
+    pads: job.input?.pads || scan?.pads || [],
+    nets: job.input?.nets || state?.canonicalNetModelReport?.canonicalNetModel?.nets || state?.netlist?.nets || state?.requirements?.nets || scan?.nets || [],
     scan,
     profile,
     manufacturerProfileObject: profile,

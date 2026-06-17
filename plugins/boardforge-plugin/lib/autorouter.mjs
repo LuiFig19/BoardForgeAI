@@ -5,13 +5,19 @@ import { createDesignIntent, planViasForRoute } from './design-rules.mjs'
 const defaultGridMm = 1
 const routeOrder = ['BATTERY', 'POWER_HIGH_CURRENT', 'POWER_LOW_CURRENT', 'USB_DIFF', 'ETHERNET_DIFF', 'CAN_DIFF', 'CRYSTAL', 'CLOCK', 'SPI', 'I2C', 'UART', 'SENSOR', 'ANALOG', 'DEFAULT']
 
-export function autorouteBoard({ board, components = [], nets = [], profile = {}, options = {} }) {
+export function autorouteBoard({ board, components = [], nets = [], pads = [], existingTracks = [], existingVias = [], profile = {}, options = {} }) {
   const gridMm = Number(options.gridMm || defaultGridMm)
   const layerCount = Number(options.layerCount || board.layerCount || 2)
   const classified = assignNetsToClasses(nets).sort((a, b) => priority(a) - priority(b))
   const designIntent = createDesignIntent({ ...board, layerCount }, components, classified, profile)
-  const obstacles = [...componentObstacles(components, profile, options), ...zoneTraceObstacles(designIntent.zones || [])]
+  const obstacles = [
+    ...componentObstacles(components, profile, options),
+    ...padObstacles(pads, profile, options),
+    ...mountingHoleObstacles(board.mountingHoles || [], profile),
+    ...zoneTraceObstacles(designIntent.zones || []),
+  ]
   const occupied = new Set()
+  reserveExistingCopper(occupied, existingTracks, existingVias, gridMm)
   const routes = []
   const warnings = []
   const errors = []
@@ -22,7 +28,7 @@ export function autorouteBoard({ board, components = [], nets = [], profile = {}
     if (net.className === 'GROUND') continue
     const mate = diffMateFor(net, classified)
     if (mate && !processed.has(mate.name)) {
-      const pairRoutes = routeDifferentialPair({ net, mate, board, components, profile, options, designIntent, obstacles, occupied, gridMm, layerCount })
+      const pairRoutes = routeDifferentialPair({ net, mate, board, components, pads, profile, options, designIntent, obstacles, occupied, gridMm, layerCount })
       routes.push(...pairRoutes.routes)
       warnings.push(...pairRoutes.warnings)
       processed.add(net.name)
@@ -30,7 +36,7 @@ export function autorouteBoard({ board, components = [], nets = [], profile = {}
       for (const route of pairRoutes.routes.filter((item) => item.status === 'routed')) reserveRoute(route, occupied, gridMm)
       continue
     }
-    const endpoints = inferEndpoints(net, components)
+    const endpoints = inferEndpoints(net, components, pads)
     const start = net.start || endpoints.start
     const end = net.end || endpoints.end
     if (!start || !end) {
@@ -73,10 +79,10 @@ export function autorouteBoard({ board, components = [], nets = [], profile = {}
   }
 }
 
-function routeDifferentialPair({ net, mate, board, components, profile, options, designIntent, obstacles, occupied, gridMm, layerCount }) {
+function routeDifferentialPair({ net, mate, board, components, pads, profile, options, designIntent, obstacles, occupied, gridMm, layerCount }) {
   const warnings = []
-  const firstEndpoints = inferEndpoints(net, components)
-  const secondEndpoints = inferEndpoints(mate, components)
+  const firstEndpoints = inferEndpoints(net, components, pads)
+  const secondEndpoints = inferEndpoints(mate, components, pads)
   const firstStart = net.start || firstEndpoints.start
   const firstEnd = net.end || firstEndpoints.end
   const secondStart = mate.start || secondEndpoints.start
@@ -161,21 +167,57 @@ function componentObstacles(components, profile, options) {
     .map((component) => ({ ref: component.ref, polygon: rectCorners(component, clearance), clearance }))
 }
 
+function padObstacles(pads, profile, options) {
+  const clearance = Number(options.padClearanceMm || profile.minClearanceMm || 0.15)
+  return pads
+    .filter((pad) => Number.isFinite(pad.x) && Number.isFinite(pad.y) && pad.widthMm && pad.heightMm)
+    .map((pad) => ({
+      ref: pad.ref,
+      pad: pad.pad || pad.name,
+      netName: pad.netName,
+      polygon: rectPolygon(pad.x, pad.y, pad.widthMm + clearance * 2, pad.heightMm + clearance * 2),
+      clearance,
+      kind: 'pad',
+    }))
+}
+
+function mountingHoleObstacles(holes, profile) {
+  const clearance = Number(profile.mountingHoleEdgeClearanceMm || 0.8)
+  return holes
+    .filter((hole) => Number.isFinite(hole.x) && Number.isFinite(hole.y) && hole.diameterMm)
+    .map((hole) => ({
+      ref: hole.id,
+      polygon: rectPolygon(hole.x, hole.y, hole.diameterMm + clearance * 2, hole.diameterMm + clearance * 2),
+      clearance,
+      kind: 'mounting_hole',
+    }))
+}
+
 function zoneTraceObstacles(zones) {
   return zones
     .filter((zone) => zone.allowCopper === false || zone.allowTraces === false)
     .map((zone) => ({ ref: zone.id, kind: zone.kind, polygon: zone.polygon || [], clearance: 0 }))
 }
 
-function inferEndpoints(net, components) {
+function inferEndpoints(net, components, pads = []) {
+  const padEndpoints = endpointsFromPads(net, pads)
+  if (padEndpoints.length >= 2) {
+    return {
+      start: padEndpoints[0],
+      end: padEndpoints[1],
+      refs: [...new Set(padEndpoints.map((pad) => pad.ref).filter(Boolean))],
+      pads: padEndpoints.map((pad) => pad.id || `${pad.ref}:${pad.pad}`),
+      source: 'real_pad_centers',
+    }
+  }
   const refs = []
   for (const component of components) {
     if (Object.values(component.pinMap || {}).includes(net.name)) refs.push(component.ref)
   }
   const matched = components.filter((component) => refs.includes(component.ref))
-  if (matched.length >= 2) return { start: pointFor(matched[0]), end: pointFor(matched[1]), refs }
-  if (matched.length === 1 && net.end) return { start: pointFor(matched[0]), end: net.end, refs }
-  return { start: null, end: null, refs }
+  if (matched.length >= 2) return { start: pointFor(matched[0]), end: pointFor(matched[1]), refs, source: 'component_centers' }
+  if (matched.length === 1 && net.end) return { start: pointFor(matched[0]), end: net.end, refs, source: 'component_to_explicit_point' }
+  return { start: null, end: null, refs, pads: [], source: 'missing' }
 }
 
 function routed(net, start, end, endpoints, path, layer, layerCount, board, designIntent, profile, options, vias = []) {
@@ -265,6 +307,28 @@ function reserveRoute(route, occupied, gridMm) {
   }
 }
 
+function reserveExistingCopper(occupied, tracks, vias, gridMm) {
+  for (const track of tracks || []) {
+    const layer = track.layer || 'F.Cu'
+    for (const point of sampledSegment(track.start, track.end, gridMm)) occupied.add(`${layer}:${key(snap(point, gridMm))}`)
+  }
+  for (const via of vias || []) {
+    for (const layer of via.layers?.length ? via.layers : ['F.Cu', 'B.Cu']) occupied.add(`${layer}:${key(snap(via, gridMm))}`)
+  }
+}
+
+function sampledSegment(start, end, gridMm) {
+  if (!start || !end) return []
+  const length = heuristic(start, end)
+  const steps = Math.max(1, Math.ceil(length / gridMm))
+  const points = []
+  for (let index = 0; index <= steps; index += 1) {
+    const t = index / steps
+    points.push({ x: round(start.x + (end.x - start.x) * t), y: round(start.y + (end.y - start.y) * t) })
+  }
+  return points
+}
+
 function occupiedPenalty(point, occupied, layer) {
   return occupied.has(`${layer}:${key(point)}`) ? 10 : 0
 }
@@ -332,6 +396,39 @@ function routeLength(points) {
 
 function pointFor(component) {
   return { x: Number(component.x || 0), y: Number(component.y || 0) }
+}
+
+function endpointsFromPads(net, pads) {
+  const explicitPins = new Set((net.pins || []).map((pin) => `${pin.ref || pin.componentRef}:${pin.pin || pin.pad || pin.name}`))
+  const byNet = pads.filter((pad) => pad.netName === net.name || explicitPins.has(`${pad.ref}:${pad.pad}`) || explicitPins.has(`${pad.ref}:${pad.name}`))
+  if (byNet.length >= 2) return farthestPair(byNet)
+  return byNet
+}
+
+function farthestPair(points) {
+  let best = [points[0], points[1]]
+  let bestDistance = -1
+  for (let a = 0; a < points.length; a += 1) {
+    for (let b = a + 1; b < points.length; b += 1) {
+      const distance = heuristic(points[a], points[b])
+      if (distance > bestDistance) {
+        bestDistance = distance
+        best = [points[a], points[b]]
+      }
+    }
+  }
+  return best
+}
+
+function rectPolygon(x, y, width, height) {
+  const halfW = width / 2
+  const halfH = height / 2
+  return [
+    { x: x - halfW, y: y - halfH },
+    { x: x + halfW, y: y - halfH },
+    { x: x + halfW, y: y + halfH },
+    { x: x - halfW, y: y + halfH },
+  ]
 }
 
 function diffMateFor(net, nets) {

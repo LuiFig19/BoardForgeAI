@@ -72,20 +72,214 @@ export async function scanKiCadProject(projectPath) {
   if (!pcbFile) return { projectName: path.basename(root), projectFile: proFile ? path.join(root, proFile) : null, schematicFiles: schFiles.map((file) => path.join(root, file)), pcbFile: null, layerCount: 0, layers: [], netClasses: [], nets: [], footprints: [], tracks: [], vias: [], zones: [], mountingHoles: [], errors: [{ severity: 'ERROR', code: 'PCB_FILE_MISSING', message: 'No .kicad_pcb file was found.' }], warnings: [] }
   const content = await readFile(path.join(root, pcbFile), 'utf8')
   const layers = [...content.matchAll(/\(\d+\s+"([^"]+)"\s+([^)]+)\)/g)].map((match) => ({ name: match[1], type: match[2].trim() }))
-  const footprints = [...content.matchAll(/\(footprint\s+"([^"]+)"[\s\S]*?\(at\s+([-\d.]+)\s+([-\d.]+)/g)].map((match, index) => ({ id: `fp_${index + 1}`, footprint: match[1], x: Number(match[2]), y: Number(match[3]) }))
+  const nets = [...content.matchAll(/\(net\s+(\d+)\s+"([^"]+)"\)/g)].map((match) => ({ number: Number(match[1]), name: match[2] }))
+  const netByNumber = new Map(nets.map((net) => [net.number, net.name]))
+  const footprints = parseFootprints(content, netByNumber)
+  const boardOutline = edgeCutsOutline(content)
+  const pads = footprints.flatMap((footprint) => footprint.pads.map((pad) => ({
+    ...pad,
+    ref: footprint.ref,
+    footprint: footprint.footprint,
+  })))
+  const tracks = parseTracks(content, netByNumber)
+  const vias = parseVias(content, netByNumber)
+  const zones = parseZones(content, netByNumber)
+  const mountingHoles = parseMountingHoles(content)
+  const bounds = boardOutline.length ? polygonBounds(boardOutline) : null
   return {
     projectName: path.basename(root), projectFile: proFile ? path.join(root, proFile) : null, schematicFiles: schFiles.map((file) => path.join(root, file)), pcbFile: path.join(root, pcbFile), kicadVersion: content.match(/\(version\s+(\d+)\)/)?.[1],
-    boardSize: null,
+    boardSize: bounds ? { widthMm: round(bounds.maxX - bounds.minX), heightMm: round(bounds.maxY - bounds.minY), bounds } : null,
+    boardOutline,
     layerCount: layers.filter((layer) => layer.type.includes('signal')).length,
     layers,
     netClasses: [...content.matchAll(/\(net_class\s+"([^"]+)"/g)].map((match) => ({ name: match[1] })),
-    nets: [...content.matchAll(/\(net\s+(\d+)\s+"([^"]+)"\)/g)].map((match) => ({ number: Number(match[1]), name: match[2] })),
+    nets,
     footprints,
-    tracks: [...content.matchAll(/\(segment\s+\(start\s+([-\d.]+)\s+([-\d.]+)\)\s+\(end\s+([-\d.]+)\s+([-\d.]+)\)\s+\(width\s+([-\d.]+)/g)].map((match, index) => ({ id: `track_${index + 1}`, start: { x: Number(match[1]), y: Number(match[2]) }, end: { x: Number(match[3]), y: Number(match[4]) }, widthMm: Number(match[5]) })),
-    vias: [...content.matchAll(/\(via\s+[\s\S]*?\(at\s+([-\d.]+)\s+([-\d.]+)\)[\s\S]*?\(size\s+([-\d.]+)\)[\s\S]*?\(drill\s+([-\d.]+)/g)].map((match, index) => ({ id: `via_${index + 1}`, x: Number(match[1]), y: Number(match[2]), diameterMm: Number(match[3]), drillMm: Number(match[4]) })),
-    zones: [...content.matchAll(/\(zone\s+\(net\s+(\d+)\)\s+\(net_name\s+"([^"]+)"/g)].map((match, index) => ({ id: `zone_${index + 1}`, netNumber: Number(match[1]), netName: match[2] })),
-    mountingHoles: [...content.matchAll(/\(gr_circle\s+\(center\s+([-\d.]+)\s+([-\d.]+)\)\s+\(end\s+([-\d.]+)\s+([-\d.]+)\)[\s\S]*?\(layer\s+"Edge.Cuts"\)/g)].map((match, index) => ({ id: `hole_${index + 1}`, x: Number(match[1]), y: Number(match[2]), diameterMm: round(Math.hypot(Number(match[3]) - Number(match[1]), Number(match[4]) - Number(match[2])) * 2) })),
+    pads,
+    tracks,
+    vias,
+    zones,
+    mountingHoles,
+    routeObstacleSummary: {
+      pads: pads.length,
+      tracks: tracks.length,
+      vias: vias.length,
+      zones: zones.length,
+      mountingHoles: mountingHoles.length,
+      edgeCutPoints: boardOutline.length,
+    },
     errors: [],
     warnings: footprints.length && !content.includes('(model') ? [{ severity: 'WARNING', code: 'MISSING_3D_MODEL_HINT', message: `${footprints.length} footprints may be missing 3D models.` }] : [],
   }
+}
+
+function parseFootprints(content, netByNumber) {
+  return sExprBlocks(content, '(footprint').map((block, index) => {
+    const footprint = block.match(/^\(footprint\s+"([^"]+)"/)?.[1] || `unknown_${index + 1}`
+    const at = block.match(/\(at\s+([-\d.]+)\s+([-\d.]+)(?:\s+([-\d.]+))?/)
+    const ref = block.match(/\(property\s+"Reference"\s+"([^"]+)"/)?.[1] || block.match(/\(fp_text\s+reference\s+"([^"]+)"/)?.[1] || `FP${index + 1}`
+    const x = Number(at?.[1] || 0)
+    const y = Number(at?.[2] || 0)
+    const rotation = Number(at?.[3] || 0)
+    const pads = parsePads(block, { ref, footprint, x, y, rotation }, netByNumber)
+    const bounds = padBounds(pads, x, y)
+    return {
+      id: `fp_${index + 1}`,
+      ref,
+      footprint,
+      value: block.match(/\(property\s+"Value"\s+"([^"]+)"/)?.[1] || null,
+      x,
+      y,
+      rotation,
+      width: round(bounds.widthMm || footprintWidthHint(footprint)),
+      height: round(bounds.heightMm || footprintHeightHint(footprint)),
+      pads,
+      padCount: pads.length,
+      modelCount: [...block.matchAll(/\(model\s+"?([^"\s)]+)"?/g)].length,
+      hasCourtyard: /\(fp_(?:line|rect|poly)[\s\S]*?\(layer\s+"[FB]\.CrtYd"\)/.test(block),
+    }
+  })
+}
+
+function parsePads(footprintBlock, footprint, netByNumber) {
+  return sExprBlocks(footprintBlock, '(pad').map((block, index) => {
+    const name = block.match(/^\(pad\s+"([^"]*)"/)?.[1] || `${index + 1}`
+    const at = block.match(/\(at\s+([-\d.]+)\s+([-\d.]+)(?:\s+([-\d.]+))?/)
+    const size = block.match(/\(size\s+([-\d.]+)\s+([-\d.]+)\)/)
+    const net = block.match(/\(net\s+(\d+)\s+"([^"]*)"\)/)
+    const local = { x: Number(at?.[1] || 0), y: Number(at?.[2] || 0) }
+    const center = transformLocalPoint(local, footprint)
+    const shape = block.match(/^\(pad\s+"[^"]*"\s+\S+\s+(\S+)/)?.[1] || 'unknown'
+    const layers = [...block.matchAll(/"([^"]*\.Cu|[^"]*\.Mask|[^"]*\.Paste)"/g)].map((match) => match[1])
+    return {
+      id: `${footprint.ref}:${name}`,
+      pad: name,
+      name,
+      shape,
+      x: center.x,
+      y: center.y,
+      localX: local.x,
+      localY: local.y,
+      rotation: round((footprint.rotation || 0) + Number(at?.[3] || 0)),
+      widthMm: Number(size?.[1] || 0),
+      heightMm: Number(size?.[2] || 0),
+      netNumber: net ? Number(net[1]) : null,
+      netName: net?.[2] || (net ? netByNumber.get(Number(net[1])) : null) || null,
+      layers,
+      throughHole: /^\(pad\s+"[^"]*"\s+thru_hole/.test(block),
+    }
+  })
+}
+
+function parseTracks(content, netByNumber) {
+  return [...content.matchAll(/\(segment\s+\(start\s+([-\d.]+)\s+([-\d.]+)\)\s+\(end\s+([-\d.]+)\s+([-\d.]+)\)\s+\(width\s+([-\d.]+)\)\s+\(layer\s+"([^"]+)"\)\s+\(net\s+(\d+)\)/g)]
+    .map((match, index) => ({ id: `track_${index + 1}`, start: { x: Number(match[1]), y: Number(match[2]) }, end: { x: Number(match[3]), y: Number(match[4]) }, widthMm: Number(match[5]), layer: match[6], netNumber: Number(match[7]), netName: netByNumber.get(Number(match[7])) || null }))
+}
+
+function parseVias(content, netByNumber) {
+  return sExprBlocks(content, '(via').map((block, index) => {
+    const at = block.match(/\(at\s+([-\d.]+)\s+([-\d.]+)\)/)
+    const size = block.match(/\(size\s+([-\d.]+)\)/)
+    const drill = block.match(/\(drill\s+([-\d.]+)\)/)
+    const net = block.match(/\(net\s+(\d+)\)/)
+    const layers = [...block.matchAll(/"([^"]+\.Cu)"/g)].map((match) => match[1])
+    return { id: `via_${index + 1}`, x: Number(at?.[1] || 0), y: Number(at?.[2] || 0), diameterMm: Number(size?.[1] || 0), drillMm: Number(drill?.[1] || 0), layers, netNumber: net ? Number(net[1]) : null, netName: net ? netByNumber.get(Number(net[1])) || null : null, viaType: /\(type\s+microvia\)/.test(block) ? 'microvia' : 'through' }
+  })
+}
+
+function parseZones(content, netByNumber) {
+  return sExprBlocks(content, '(zone').map((block, index) => {
+    const net = block.match(/\(net\s+(\d+)\)/)
+    const layer = block.match(/\(layer\s+"([^"]+)"\)/)?.[1] || null
+    const polygon = [...block.matchAll(/\(xy\s+([-\d.]+)\s+([-\d.]+)\)/g)].map((match) => ({ x: Number(match[1]), y: Number(match[2]) }))
+    const netNumber = net ? Number(net[1]) : null
+    return { id: `zone_${index + 1}`, netNumber, netName: block.match(/\(net_name\s+"([^"]+)"/)?.[1] || netByNumber.get(netNumber) || null, layer, polygon }
+  })
+}
+
+function parseMountingHoles(content) {
+  const edgeCircles = [...content.matchAll(/\(gr_circle\s+\(center\s+([-\d.]+)\s+([-\d.]+)\)\s+\(end\s+([-\d.]+)\s+([-\d.]+)\)[\s\S]*?\(layer\s+"Edge.Cuts"\)/g)]
+    .map((match, index) => ({ id: `hole_${index + 1}`, x: Number(match[1]), y: Number(match[2]), diameterMm: round(Math.hypot(Number(match[3]) - Number(match[1]), Number(match[4]) - Number(match[2])) * 2) }))
+  const npths = sExprBlocks(content, '(pad').filter((block) => /np_thru_hole/.test(block)).map((block, index) => {
+    const at = block.match(/\(at\s+([-\d.]+)\s+([-\d.]+)/)
+    const drill = block.match(/\(drill\s+([-\d.]+)/)
+    return { id: `npth_${index + 1}`, x: Number(at?.[1] || 0), y: Number(at?.[2] || 0), diameterMm: Number(drill?.[1] || 0) }
+  })
+  return [...edgeCircles, ...npths]
+}
+
+function edgeCutsOutline(content) {
+  const lines = [...content.matchAll(/\(gr_line\s+\(start\s+([-\d.]+)\s+([-\d.]+)\)\s+\(end\s+([-\d.]+)\s+([-\d.]+)\)[\s\S]*?\(layer\s+"Edge.Cuts"\)/g)]
+    .map((match) => ({ start: { x: Number(match[1]), y: Number(match[2]) }, end: { x: Number(match[3]), y: Number(match[4]) } }))
+  if (!lines.length) return []
+  const ordered = [lines[0].start, lines[0].end]
+  const remaining = lines.slice(1)
+  while (remaining.length) {
+    const last = ordered[ordered.length - 1]
+    const index = remaining.findIndex((line) => samePoint(line.start, last) || samePoint(line.end, last))
+    if (index < 0) break
+    const [line] = remaining.splice(index, 1)
+    ordered.push(samePoint(line.start, last) ? line.end : line.start)
+  }
+  const deduped = ordered.filter((point, index, list) => index === 0 || !samePoint(point, list[index - 1]))
+  if (deduped.length > 2 && samePoint(deduped[0], deduped[deduped.length - 1])) deduped.pop()
+  return deduped
+}
+
+function sExprBlocks(content, token) {
+  const blocks = []
+  let start = content.indexOf(token)
+  while (start >= 0) {
+    const end = findClosingParen(content, start)
+    if (end < 0) break
+    blocks.push(content.slice(start, end + 1))
+    start = content.indexOf(token, end + 1)
+  }
+  return blocks
+}
+
+function findClosingParen(text, start) {
+  let depth = 0
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === '(') depth += 1
+    if (text[index] === ')') depth -= 1
+    if (depth === 0) return index
+  }
+  return -1
+}
+
+function transformLocalPoint(local, footprint) {
+  const radians = ((footprint.rotation || 0) * Math.PI) / 180
+  const x = local.x * Math.cos(radians) - local.y * Math.sin(radians)
+  const y = local.x * Math.sin(radians) + local.y * Math.cos(radians)
+  return { x: round(footprint.x + x), y: round(footprint.y + y) }
+}
+
+function padBounds(pads, fallbackX, fallbackY) {
+  if (!pads.length) return { widthMm: 0, heightMm: 0 }
+  const minX = Math.min(...pads.map((pad) => pad.x - pad.widthMm / 2), fallbackX)
+  const maxX = Math.max(...pads.map((pad) => pad.x + pad.widthMm / 2), fallbackX)
+  const minY = Math.min(...pads.map((pad) => pad.y - pad.heightMm / 2), fallbackY)
+  const maxY = Math.max(...pads.map((pad) => pad.y + pad.heightMm / 2), fallbackY)
+  return { widthMm: maxX - minX, heightMm: maxY - minY }
+}
+
+function footprintWidthHint(name) {
+  if (/RJ45/i.test(name)) return 16
+  if (/USB/i.test(name)) return 9
+  if (/QFN|TQFP|QFP/i.test(name)) return 8
+  if (/0603|0402|0805/i.test(name)) return 1.6
+  return 3
+}
+
+function footprintHeightHint(name) {
+  if (/RJ45/i.test(name)) return 14
+  if (/USB/i.test(name)) return 7
+  if (/QFN|TQFP|QFP/i.test(name)) return 8
+  if (/0603|0402|0805/i.test(name)) return 0.9
+  return 3
+}
+
+function samePoint(a, b) {
+  return Math.abs(a.x - b.x) < 0.001 && Math.abs(a.y - b.y) < 0.001
 }
