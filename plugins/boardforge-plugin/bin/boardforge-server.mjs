@@ -23,6 +23,7 @@ const routes = {
   'POST /jobs/list-board-categories': 'list_board_categories',
   'POST /jobs/plan-category': 'plan_board_category',
   'POST /jobs/validate-schematic-graph': 'validate_schematic_graph',
+  'POST /jobs/synthesize-schematic': 'synthesize_schematic_design',
   'POST /jobs/routing-readiness': 'check_routing_readiness',
   'POST /jobs/power-routing': 'calculate_power_routing',
   'POST /jobs/via-strategy': 'select_via_strategy',

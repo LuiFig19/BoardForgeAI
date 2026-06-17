@@ -22,6 +22,7 @@ import { buildWorkflowPreset } from './workflow-presets.mjs'
 import { buildKiCadRules, writeKiCadRules } from './kicad-rules-writer.mjs'
 import { buildComponentDatabase, enrichComponents } from './component-database.mjs'
 import { boardforgeNetlistFromComponents, generateSchematicModel, kicadSchematicFromModel } from './schematic-generator.mjs'
+import { synthesizeSchematicDesign } from './schematic-synthesizer.mjs'
 import { applySafeDrcRepairs, planDrcRepairs } from './drc-repair.mjs'
 import { applySafeErcRepairs, planErcRepairs } from './erc-repair.mjs'
 import { applyInteractiveEdits } from './interactive-edits.mjs'
@@ -55,7 +56,7 @@ import { buildNoiseMap } from './noise-map.mjs'
 import { summarizeManufacturerRules } from './manufacturer-rules-summary.mjs'
 import { generateProjectReviewReport } from './project-review-report.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'generate_routing_report', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'synthesize_schematic_design', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'generate_routing_report', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -94,6 +95,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'list_board_categories') return result(job, 'BOARD_CATEGORIES_LISTED', [], [], { categories: listBoardCategories(), humanReviewRequired: false })
   if (job.type === 'plan_board_category') return boardCategoryPlanJob(job, workspace)
   if (job.type === 'validate_schematic_graph') return schematicGraphJob(job, workspace)
+  if (job.type === 'synthesize_schematic_design') return schematicSynthesisJob(job, workspace)
   if (job.type === 'check_routing_readiness') return routingReadinessJob(job, workspace, profile)
   if (job.type === 'calculate_power_routing') return powerRoutingJob(job, workspace, profile)
   if (job.type === 'select_via_strategy') return viaStrategyJob(job, workspace, profile)
@@ -1334,12 +1336,52 @@ async function manufacturingManifestJob(job, workspace) {
   return result(job, manifest.status, manifest.warnings, manifest.blockers, { manifest, generatedFiles: [manifest.outputFile].filter(Boolean), humanReviewRequired: true })
 }
 
+async function schematicSynthesisJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const rawComponents = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const components = rawComponents.some((component) => Object.keys(component.pinMap || {}).length)
+    ? rawComponents
+    : await enrichComponents({ workspace, components: rawComponents, input: job.input || state?.requirements || {} })
+  const nets = job.input?.nets || state?.requirementsPlan?.nets || state?.requirements?.nets || state?.netlist?.nets || []
+  const synthesis = synthesizeSchematicDesign({
+    board,
+    components,
+    nets,
+    interfaces: job.input?.interfaces || state?.requirementsPlan?.interfaces || state?.requirements?.interfaces || [],
+    input: { ...(state?.requirements || {}), ...(job.input || {}) },
+  })
+  const generatedFiles = []
+  if (projectDir && !job.dryRun) {
+    const synthesisFile = path.join(projectDir, 'boardforge-schematic-synthesis.json')
+    const componentsFile = path.join(projectDir, 'boardforge-components.json')
+    const netlistFile = path.join(projectDir, 'boardforge-netlist.json')
+    const netlist = boardforgeNetlistFromComponents(synthesis.components, synthesis.nets)
+    await writeFile(synthesisFile, JSON.stringify(synthesis, null, 2), 'utf8')
+    await writeFile(componentsFile, JSON.stringify(synthesis.components, null, 2), 'utf8')
+    await writeFile(netlistFile, JSON.stringify(netlist, null, 2), 'utf8')
+    generatedFiles.push(synthesisFile, componentsFile, netlistFile)
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: synthesis.status,
+      schematicSynthesis: synthesis,
+      components: normalizeComponents(synthesis.components),
+      netlist,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), ...generatedFiles])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Synthesized schematic graph with ${synthesis.components.length} components and ${synthesis.nets.length} nets.`,
+    }))
+  }
+  return result(job, synthesis.status, synthesis.warnings, synthesis.errors, { synthesis, generatedFiles, humanReviewRequired: true })
+}
+
 async function generateNetlistJob(job, workspace) {
   const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
   const state = projectDir ? await readProjectState(projectDir) : null
-  const rawComponents = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const rawComponents = job.input?.components || state?.schematicSynthesis?.components || await readRichComponents(projectDir) || state?.components || []
   const components = rawComponents.some((component) => Object.keys(component.pinMap || {}).length) ? rawComponents : await enrichComponents({ workspace, components: rawComponents, input: job.input || {} })
-  const nets = assignNetsToClasses(job.input?.nets || state?.requirements?.nets || [])
+  const nets = assignNetsToClasses(job.input?.nets || state?.schematicSynthesis?.nets || state?.requirements?.nets || [])
   const netlist = boardforgeNetlistFromComponents(components, nets)
   const status = netlist.warnings.length ? 'NETLIST_GENERATED_NEEDS_REVIEW' : 'NETLIST_GENERATED_NEEDS_ERC'
   if (projectDir && !job.dryRun) {
@@ -1405,9 +1447,9 @@ async function generateSchematicJob(job, workspace) {
   const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
   const state = projectDir ? await readProjectState(projectDir) : null
   const board = job.input?.board || state?.board || boardFromJob(job)
-  const rawComponents = job.input?.components || state?.components || []
-  const components = await enrichComponents({ workspace, components: rawComponents, input: job.input || {} })
-  const schematicModel = generateSchematicModel(board, components, job.input || state?.requirements || {})
+  const rawComponents = job.input?.components || state?.schematicSynthesis?.components || state?.components || []
+  const components = rawComponents.some((component) => Object.keys(component.pinMap || {}).length) ? rawComponents : await enrichComponents({ workspace, components: rawComponents, input: job.input || {} })
+  const schematicModel = generateSchematicModel(board, components, { ...(state?.requirements || {}), ...(job.input || {}), nets: job.input?.nets || state?.schematicSynthesis?.nets || state?.requirements?.nets || [] })
   const generatedFiles = []
   if (projectDir && !job.dryRun) {
     const files = await findKiCadProjectFiles(projectDir)

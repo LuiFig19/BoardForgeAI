@@ -54,6 +54,12 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { components: plan.components, nets: plan.nets },
     })
     assert.ok(['SCHEMATIC_GRAPH_NEEDS_FIX', 'SCHEMATIC_GRAPH_NEEDS_REVIEW', 'SCHEMATIC_GRAPH_READY_NEEDS_ERC'].includes(schematicGraph.status))
+    const schematicSynthesis = await postJson(`http://127.0.0.1:${port}/jobs/synthesize-schematic`, {
+      id: 'server_schematic_synthesis',
+      input: { components: plan.components, nets: plan.nets, interfaces: ['USB', 'I2C', 'SWD'] },
+    })
+    assert.ok(['SCHEMATIC_SYNTHESIS_BLOCKED', 'SCHEMATIC_SYNTHESIS_NEEDS_REVIEW', 'SCHEMATIC_SYNTHESIS_READY_NEEDS_ERC'].includes(schematicSynthesis.status))
+    assert.ok(schematicSynthesis.synthesis.graph.edges.length > 0)
     const mission = await postJson(`http://127.0.0.1:${port}/jobs/plan-mission`, {
       id: 'server_mission',
       input: { projectName: 'Server drone', prompt: 'drone that flies 15 miles and lasts 30 minutes' },

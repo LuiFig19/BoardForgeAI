@@ -22,6 +22,7 @@ export function buildWorkflowPreset(input = {}) {
     step('sync_component_database', { projectPath: slug(base.projectName) }, 'Enrich BOM parts with pin maps, LCSC/MPN, footprints, models, and alternates.'),
     step('generate_design_constraints', { projectPath: slug(base.projectName) }, 'Write reusable BoardForge placement/routing/manufacturing constraints.'),
     step('generate_kicad_rules', { projectPath: slug(base.projectName) }, 'Write KiCad custom rules from BoardForge net classes, diff pairs, and keepouts.'),
+    step('synthesize_schematic_design', { projectPath: slug(base.projectName) }, 'Build the component, pin, power, support-passive, and net graph before writing KiCad schematic objects.'),
     step('generate_schematic', { projectPath: slug(base.projectName) }, 'Generate review-required schematic objects before ERC.'),
     step('validate_schematic_graph', { projectPath: slug(base.projectName) }, 'Validate graph-level schematic intent, power pins, support components, and differential-pair members before placement/routing.'),
     step('optimize_placement', { projectPath: slug(base.projectName), templateId: base.templateId }, 'Repair placement constraints before copper.'),

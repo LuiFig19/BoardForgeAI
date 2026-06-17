@@ -58,6 +58,7 @@ export const pluginJobTypeSchema = z.enum([
   'list_board_categories',
   'plan_board_category',
   'validate_schematic_graph',
+  'synthesize_schematic_design',
   'check_routing_readiness',
   'calculate_power_routing',
   'select_via_strategy',
