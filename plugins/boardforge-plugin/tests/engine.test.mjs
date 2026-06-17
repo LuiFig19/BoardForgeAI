@@ -838,6 +838,7 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
   assert.ok(preset.workflowPreset.exportStepsAfterValidation.some((step) => step.type === 'validate_jlcpcb_package'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_fanout'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_copper_pours'))
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'autotrace_board'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'analyze_routing_congestion'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'validate_power_integrity'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'score_production_readiness'))
@@ -1333,6 +1334,48 @@ test('advanced board suite classifies complex boards and adds HDI return-path cr
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }
+})
+
+test('autotracer blocks broken geometry and plans real routed KiCad copper objects honestly', async () => {
+  const board = { widthMm: 60, heightMm: 34, layerCount: 4, outline: rectanglePoints(60, 34), mountingHoles: [{ id: 'H1', x: 5, y: 5, diameterMm: 3 }] }
+  const components = [
+    { ref: 'J1', group: 'CONNECTOR', value: 'USB-C', x: 7, y: 17, width: 4, height: 4, pinMap: { '1': 'SIG', 'D+': 'USB_DP', 'D-': 'USB_DN', GND: 'GND' } },
+    { ref: 'U1', group: 'MCU', value: 'ESP32-S3', x: 48, y: 17, width: 5, height: 5, pinMap: { '1': 'SIG', USB_DP: 'USB_DP', USB_DN: 'USB_DN', GND: 'GND' } },
+  ]
+  const blocked = await executeJob({
+    id: 'autotrace_blocked',
+    type: 'autotrace_board',
+    dryRun: true,
+    input: { board: { widthMm: 20, heightMm: 10, outline: [] }, components, nets: [{ name: 'SIG' }], layerStack: { layerCount: 2 } },
+  }, process.cwd())
+  assert.equal(blocked.status, 'AUTOTRACE_FAILED')
+  assert.ok(blocked.autotraceResult.reportMarkdown.includes('Routing blocked before trace generation'))
+
+  const routed = await executeJob({
+    id: 'autotrace_simple',
+    type: 'autotrace_board',
+    dryRun: true,
+    input: { board, components, nets: [{ name: 'SIG' }, { name: 'USB_DP' }, { name: 'USB_DN' }, { name: 'GND' }], layerStack: { layerCount: 4 } },
+  }, process.cwd())
+  assert.ok(['AUTOTRACE_PLANNED_NEEDS_DRC', 'AUTOTRACE_PARTIAL_NEEDS_REVIEW'].includes(routed.status))
+  assert.ok(routed.autotraceResult.createdTracks.length > 0)
+  assert.ok(routed.autotraceResult.netClassReport.nets.some((net) => net.name === 'USB_DP' && net.className === 'USB_DIFF'))
+  assert.ok(routed.autotraceResult.differentialPairReport.pairs.some((pair) => pair.nets.includes('USB_DP')))
+
+  const traceWidth = await executeJob({
+    id: 'trace_width',
+    type: 'calculate_trace_width',
+    input: { netName: 'VBAT', currentA: 4, manufacturerProfile: 'JLCPCB_STANDARD' },
+  }, process.cwd())
+  assert.equal(traceWidth.status, 'TRACE_WIDTH_CALCULATED')
+  assert.equal(traceWidth.traceWidthCalculation.traceWidth.preferCopperPour, true)
+
+  const via = await executeJob({
+    id: 'via_check',
+    type: 'validate_via_manufacturability',
+    input: { board, vias: [{ x: 10, y: 10, diameterMm: 0.2, drillMm: 0.1, viaType: 'through' }] },
+  }, process.cwd())
+  assert.equal(via.status, 'VIA_MANUFACTURABILITY_BLOCKED')
 })
 
 test('advanced jobs build component database, schematic model, interactive edits, and DRC repair plan', async () => {

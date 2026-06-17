@@ -51,6 +51,7 @@ export function buildWorkflowPreset(input = {}) {
     step('compile_routing_execution_strategy', { projectPath: slug(base.projectName) }, 'Order escape routing, critical nets, power copper, signal completion, DRC loops, and release proof.'),
     step('analyze_routing_congestion', { projectPath: slug(base.projectName) }, 'Map routing channel congestion before autorouting and layer decisions.'),
     step('check_routing_readiness', { projectPath: slug(base.projectName) }, 'Block copper until outline, placement, net classes, schematic graph, stackup, and routing prechecks are acceptable.'),
+    step('autotrace_board', { projectPath: slug(base.projectName), writeCopper: false }, 'Run full-board autotrace planning and report blockers without writing copper until explicitly approved.'),
     step('generate_routing_plan', { projectPath: slug(base.projectName) }, 'Generate partial route plan with via/copper/keepout policy.'),
     step('plan_diff_pair_tuning', { projectPath: slug(base.projectName) }, 'Plan length/spacing tuning for USB, Ethernet, CAN, RF, and other critical pairs.'),
     step('audit_return_path_integrity', { projectPath: slug(base.projectName) }, 'Audit ground reference, split/keepout crossings, sensitive-net via policy, and return-via requirements.'),

@@ -265,6 +265,24 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { projectPath: 'server-project', prompt: 'compact industrial USB Ethernet RF sensor with PoE isolation and blind vias', nets: [{ name: '5V' }, { name: '3V3' }, { name: 'USB_DP' }, { name: 'USB_DN' }, { name: 'GND' }] },
     })
     assert.ok(['ADVANCED_BOARD_SUITE_BLOCKED', 'ADVANCED_BOARD_SUITE_NEEDS_REVIEW', 'ADVANCED_BOARD_SUITE_READY'].includes(advancedSuite.status))
+    const traceWidth = await postJson(`http://127.0.0.1:${port}/jobs/calculate-trace-width`, {
+      id: 'server_trace_width',
+      input: { netName: 'VBAT', currentA: 5 },
+    })
+    assert.equal(traceWidth.status, 'TRACE_WIDTH_CALCULATED')
+    const autotrace = await postJson(`http://127.0.0.1:${port}/jobs/autotrace`, {
+      id: 'server_autotrace',
+      dryRun: true,
+      input: {
+        board: { widthMm: 50, heightMm: 30, layerCount: 2, outline: [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 30 }, { x: 0, y: 30 }] },
+        components: [
+          { ref: 'J1', x: 5, y: 10, width: 3, height: 3, pinMap: { '1': 'SIG' } },
+          { ref: 'U1', x: 42, y: 22, width: 3, height: 3, pinMap: { '1': 'SIG' } },
+        ],
+        nets: [{ name: 'SIG' }],
+      },
+    })
+    assert.ok(['AUTOTRACE_PLANNED_NEEDS_DRC', 'AUTOTRACE_PARTIAL_NEEDS_REVIEW'].includes(autotrace.status))
     const routeReport = await postJson(`http://127.0.0.1:${port}/jobs/routing-report`, {
       id: 'server_route_report',
       input: { nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }], board: { widthMm: 40, heightMm: 30 } },

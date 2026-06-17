@@ -83,10 +83,12 @@ import {
 } from './production-workflows.mjs'
 import { productionReadinessJobTypes, runProductionReadinessJob } from './production-readiness-suite.mjs'
 import { advancedBoardJobTypes, runAdvancedBoardJob } from './advanced-board-suite.mjs'
+import { autotracerJobTypes, finalizeAutotraceWithDrc, runAutotracerPlanning } from './autotracer-engine.mjs'
 
 export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'synthesize_schematic_design', 'validate_schematic_pcb_sync', 'apply_schematic_pcb_sync', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'ingest_reference_design', 'synthesize_circuit_blocks', 'plan_production_pipeline', 'build_verified_demo_recipe', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'plan_pin_map_repairs', 'apply_pin_map_repairs', 'validate_3d_model_coverage', 'audit_bom_sourcing', 'validate_manufacturing_readiness', 'validate_jlcpcb_package', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'solve_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'analyze_routing_congestion', 'plan_escape_routing', 'plan_diff_pair_tuning', 'validate_power_integrity', 'analyze_thermal_bottlenecks', 'validate_assembly_orientation', 'estimate_board_cost', 'generate_engineering_questions', 'score_production_readiness', 'build_release_gate_report', 'generate_routing_plan', 'generate_routing_report', 'plan_copper_pours', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'plan_autoroute_repair_loop', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 for (const type of productionReadinessJobTypes) allowedJobTypes.add(type)
 for (const type of advancedBoardJobTypes) allowedJobTypes.add(type)
+for (const type of autotracerJobTypes) allowedJobTypes.add(type)
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -142,6 +144,7 @@ export async function executeJob(job, workspace) {
   if (['ingest_reference_design', 'synthesize_circuit_blocks', 'solve_placement', 'plan_autoroute_repair_loop', 'build_verified_demo_recipe', 'plan_production_pipeline'].includes(job.type)) return productionWorkflowJob(job, workspace)
   if (productionReadinessJobTypes.includes(job.type)) return productionReadinessSuiteJob(job, workspace, profile)
   if (advancedBoardJobTypes.includes(job.type)) return advancedBoardSuiteJob(job, workspace, profile)
+  if (autotracerJobTypes.includes(job.type)) return autotracerJob(job, workspace, profile)
   if (job.type === 'plan_requirements') return planRequirementsJob(job, workspace)
   if (job.type === 'plan_pin_assignments') return pinAssignmentsJob(job, workspace)
   if (job.type === 'plan_power_tree') return powerTreePlanJob(job, workspace)
@@ -2000,12 +2003,102 @@ async function advancedBoardSuiteJob(job, workspace, profile) {
   return result(job, output.status, output.warnings || [], output.errors || [], { [key]: output, generatedFiles: outputFile && !job.dryRun ? [outputFile] : [], humanReviewRequired: output.humanReviewRequired !== false })
 }
 
+async function autotracerJob(job, workspace, profile) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const scan = projectDir && existsSync(projectDir) ? await safeScanProject(projectDir) : null
+  const context = {
+    ...(state || {}),
+    ...(job.input || {}),
+    board: job.input?.board || state?.board || boardFromJob(job),
+    components,
+    nets: job.input?.nets || state?.canonicalNetModelReport?.canonicalNetModel?.nets || state?.netlist?.nets || state?.requirements?.nets || [],
+    scan,
+    profile,
+    manufacturerProfileObject: profile,
+  }
+  let output = runAutotracerPlanning(job.type, context)
+  const generatedFiles = []
+  const shouldWriteCopper = ['autotrace_board', 'autotrace_critical_nets', 'autotrace_power', 'autotrace_signals', 'autotrace_diff_pairs', 'autotrace_remaining_nets', 'repair_routing', 'reroute_failed_nets'].includes(job.type) && output.createdTracks?.length && !job.dryRun && job.input?.writeCopper !== false
+  if (shouldWriteCopper) {
+    const kicad = await getKiCadContext(job, workspace, 'pcb')
+    if (kicad.blocked) return kicad.blocked
+    const write = await applyRoutingPlanToPcb({ pcbFile: kicad.files.pcbFile, board: context.board, routingPlan: output.routingPlan, components })
+    generatedFiles.push(kicad.files.pcbFile)
+    if (job.input?.runDrc !== false && kicad.detected?.available) {
+      const reportFile = path.join(kicad.files.projectDir, 'reports', 'autotrace-drc.json')
+      const drc = await runDrc({ pcbFile: kicad.files.pcbFile, outputFile: reportFile, kicadCliPath: kicad.detected.path })
+      await updateValidationState(kicad.files.projectDir, job.type, 'autotraceDrc', drc)
+      output = finalizeAutotraceWithDrc(output, drc)
+      generatedFiles.push(reportFile)
+    } else {
+      output = { ...output, status: output.status === 'planned' ? 'needs_human_review' : output.status, warnings: [...(output.warnings || []), { severity: 'WARNING', code: 'KICAD_DRC_NOT_RUN', message: 'Copper was written but KiCad DRC was not run; do not claim routed/fab-ready.' }] }
+    }
+    output.writeResult = write
+  }
+  const key = autotracerStateKey(job.type)
+  const outputFile = projectDir ? path.join(projectDir, `${keyToFileName(key)}.json`) : null
+  if (outputFile && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    generatedFiles.push(outputFile)
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      [key]: output,
+      routing: {
+        ...(current.routing || {}),
+        autotrace: output.routingPlan || current.routing?.autotrace,
+        autotraceResult: output,
+        drcRequired: shouldWriteCopper && !output.drcResult,
+      },
+      generatedFiles: [...new Set([...(current.generatedFiles || []), ...generatedFiles])],
+      lastJobType: job.type,
+      lastHistoryMessage: `${job.type} completed with status ${output.status}.`,
+    }))
+  }
+  return result(job, autotracerPluginStatus(output.status), output.warnings || [], output.errors || output.remainingIssues || [], { [key]: output, autotraceResult: output, routingPlan: output.routingPlan, generatedFiles: [...new Set(generatedFiles)], humanReviewRequired: true })
+}
+
 async function safeScanProject(projectDir) {
   try {
     return await scanKiCadProject(projectDir)
   } catch {
     return null
   }
+}
+
+function autotracerStateKey(type) {
+  return {
+    autotrace_board: 'autotraceBoard',
+    autotrace_critical_nets: 'autotraceCriticalNets',
+    autotrace_power: 'autotracePower',
+    autotrace_signals: 'autotraceSignals',
+    autotrace_diff_pairs: 'autotraceDiffPairs',
+    autotrace_remaining_nets: 'autotraceRemainingNets',
+    repair_routing: 'autotraceRepair',
+    reroute_failed_nets: 'autotraceRerouteFailedNets',
+    run_routing_drc: 'autotraceDrc',
+    calculate_trace_width: 'traceWidthCalculation',
+    validate_trace_width: 'traceWidthValidation',
+    detect_power_neckdowns: 'powerNeckdownReport',
+    create_power_pour: 'powerPourPlan',
+    select_via_type: 'autotraceViaSelection',
+    validate_via_manufacturability: 'autotraceViaManufacturability',
+  }[type] || 'autotrace'
+}
+
+function autotracerPluginStatus(status) {
+  return {
+    not_started: 'AUTOTRACE_NOT_STARTED',
+    scanned: 'AUTOTRACE_SCANNED',
+    planned: 'AUTOTRACE_PLANNED_NEEDS_DRC',
+    partial: 'AUTOTRACE_PARTIAL_NEEDS_REVIEW',
+    fully_routed: 'AUTOTRACE_FULLY_ROUTED_DRC_PASSED',
+    failed: 'AUTOTRACE_FAILED',
+    needs_placement_changes: 'AUTOTRACE_NEEDS_PLACEMENT_CHANGES',
+    needs_human_review: 'AUTOTRACE_NEEDS_HUMAN_REVIEW',
+  }[status] || status
 }
 
 function advancedBoardStateKey(type) {

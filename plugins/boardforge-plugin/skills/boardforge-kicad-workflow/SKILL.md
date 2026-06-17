@@ -76,6 +76,21 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `audit_creepage_clearance`
 - `plan_bringup_reliability_matrix`
 - `run_advanced_board_suite`
+- `autotrace_board`
+- `autotrace_critical_nets`
+- `autotrace_power`
+- `autotrace_signals`
+- `autotrace_diff_pairs`
+- `autotrace_remaining_nets`
+- `repair_routing`
+- `reroute_failed_nets`
+- `run_routing_drc`
+- `calculate_trace_width`
+- `validate_trace_width`
+- `detect_power_neckdowns`
+- `create_power_pour`
+- `select_via_type`
+- `validate_via_manufacturability`
 - `plan_requirements`
 - `plan_pin_assignments`
 - `plan_power_tree`
@@ -210,6 +225,11 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `audit_creepage_clearance` for PoE, mains, isolated, surge, relay, terminal block, high-voltage, industrial, BMS, charger, or field-I/O boards.
 - Run `plan_bringup_reliability_matrix` before release gates so rail checks, interface tests, thermal soak, ESD/surge review, and production fixture requirements are explicit.
 - Run `run_advanced_board_suite` before release scoring on complex boards.
+- Run `autotrace_board` only after schematic/netlist, component placement, board outline, stackup, manufacturer profile, assets, and routing readiness are acceptable.
+- Prefer `autotrace_critical_nets`, `autotrace_power`, `autotrace_diff_pairs`, and `autotrace_signals` when debugging a hard board instead of blindly rerouting everything.
+- Run `calculate_trace_width`, `validate_trace_width`, `detect_power_neckdowns`, `select_via_type`, and `validate_via_manufacturability` on power/high-current/HDI designs before copper is trusted.
+- Treat `AUTOTRACE_PLANNED_NEEDS_DRC` as not finished. A board is not fully routed until `AUTOTRACE_FULLY_ROUTED_DRC_PASSED` is returned.
+- Do not call a routing result fab-ready unless autotrace, KiCad DRC, manufacturer gates, and export/package gates pass.
 - Run `build_verified_demo_recipe` for repeatable local demo boards and `plan_production_pipeline` when Codex needs the full ordered path from questions to release gates.
 - Run `generate_manufacturing_manifest` before Gerber/drill/BOM/CPL handoff or JLCPCB packaging so Codex has one explicit artifact list and blocker list.
 - Run `plan_requirements` when the user gives a hardware description and Codex needs a structured BOM/net/circuit plan before KiCad generation.
@@ -271,6 +291,10 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `audit_creepage_clearance` checks high-voltage/isolation inference, minimum clearance, field connectors, and required isolation zones.
 - `plan_bringup_reliability_matrix` creates rail, interface, thermal, ESD/surge, fixture, and production bring-up acceptance checks.
 - `run_advanced_board_suite` combines architecture, HDI, return path, creepage, and bring-up reliability audits with a release-risk score.
+- `autotrace_board` orchestrates BoardForge routing readiness, net classification, deterministic A* routing, diff-pair pairing checks, power/fab/via validation, real KiCad copper writing, KiCad DRC when available, and an honest routing report.
+- `autotrace_critical_nets`, `autotrace_power`, `autotrace_signals`, `autotrace_diff_pairs`, and `autotrace_remaining_nets` run scoped routing modes for debug and staged routing.
+- `repair_routing` and `reroute_failed_nets` rerun the controlled router over existing state instead of freestyle-editing copper.
+- `calculate_trace_width`, `validate_trace_width`, `detect_power_neckdowns`, `create_power_pour`, `select_via_type`, and `validate_via_manufacturability` provide trace-width, pour, and via safety gates.
 - `plan_requirements` writes or returns a requirements plan with reusable circuit blocks, components, nets, constraints, and assumptions for constrained board families.
 - `plan_pin_assignments` writes or returns `boardforge-pin-assignments.json` with controller pin maps, peripheral pin maps, interface inference, boot/reset/debug review, unassigned-net warnings, and conflict blockers.
 - `plan_power_tree` writes or returns `boardforge-power-tree.json` with input sources, rails, regulator topology, rail current budget, decoupling requirements, sequencing rules, thermal review, and manufacturing gates.
@@ -417,6 +441,21 @@ Supported endpoints:
 - `POST /jobs/creepage-clearance`
 - `POST /jobs/bringup-reliability-matrix`
 - `POST /jobs/advanced-board-suite`
+- `POST /jobs/autotrace`
+- `POST /jobs/autotrace-critical`
+- `POST /jobs/autotrace-power`
+- `POST /jobs/autotrace-signals`
+- `POST /jobs/autotrace-diff-pairs`
+- `POST /jobs/autotrace-remaining`
+- `POST /jobs/repair-routing`
+- `POST /jobs/reroute-failed-nets`
+- `POST /jobs/routing-drc`
+- `POST /jobs/calculate-trace-width`
+- `POST /jobs/validate-trace-width`
+- `POST /jobs/detect-power-neckdowns`
+- `POST /jobs/create-power-pour`
+- `POST /jobs/select-via-type`
+- `POST /jobs/validate-via-manufacturability`
 - `POST /jobs/plan-requirements`
 - `POST /jobs/plan-pin-assignments`
 - `POST /jobs/plan-power-tree`
