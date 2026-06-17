@@ -25,6 +25,8 @@ test('MCP server exposes BoardForge tools and runs controlled jobs', async () =>
     assert.equal(listed.tools.some((tool) => tool.name === 'interactive_edit'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'audit_component_library'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'run_project_preflight'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'list_board_categories'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'plan_board_category'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'build_workflow_preset'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'run_boardforge_workflow'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'plan_mission_requirements'), true)
@@ -42,6 +44,8 @@ test('MCP server exposes BoardForge tools and runs controlled jobs', async () =>
     assert.equal(listed.tools.some((tool) => tool.name === 'generate_design_constraints'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'generate_kicad_rules'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'score_routing_quality'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'generate_routing_report'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'classify_nets'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'autoroute_board'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'autoroute_and_apply'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'autoroute_drc_iteration'), true)
@@ -57,6 +61,16 @@ test('MCP server exposes BoardForge tools and runs controlled jobs', async () =>
     const statusPayload = JSON.parse(status.content[0].text)
     assert.equal(statusPayload.status, 'ok')
     assert.equal(statusPayload.workspace, workspace)
+
+    const category = await client.request('tools/call', {
+      name: 'plan_board_category',
+      arguments: {
+        id: 'mcp_category',
+        input: { projectName: 'MCP Motor', prompt: 'motor controller with MOSFETs gate driver shunt and CAN', manufacturerProfile: 'JLCPCB_STANDARD' },
+      },
+    })
+    const categoryPayload = JSON.parse(category.content[0].text)
+    assert.equal(categoryPayload.categoryPlan.category.id, 'motor_controller')
 
     const outline = await client.request('tools/call', {
       name: 'create_outline_board',

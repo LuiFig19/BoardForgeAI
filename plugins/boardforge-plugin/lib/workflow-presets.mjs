@@ -1,5 +1,8 @@
+import { buildCategoryPlan } from './board-categories.mjs'
+
 export function buildWorkflowPreset(input = {}) {
   const preset = input.preset || inferPreset(input)
+  const categoryPlan = buildCategoryPlan({ ...input, preset })
   const base = {
     projectName: input.projectName || presetName(preset),
     templateId: input.templateId || templateForPreset(preset),
@@ -7,8 +10,10 @@ export function buildWorkflowPreset(input = {}) {
     layerCount: input.layerCount || (preset.includes('poe') ? 4 : 2),
     prompt: input.prompt || promptForPreset(preset),
     interfaces: input.interfaces || interfacesForPreset(preset),
+    stackup: input.stackup || 'standard manufacturer stackup selected during plan_stackup',
   }
   const steps = [
+    step('plan_board_category', base, 'Infer the universal PCB category, required decisions, net classes, placement priorities, and routing priorities.'),
     ...(preset === 'drone_flight_controller' ? [step('plan_mission_requirements', base, 'Convert flight mission goals into user decisions, aircraft assumptions, electronics architecture, and board families.')] : []),
     step('plan_requirements', base, 'Convert user intent into components, nets, and assumptions.'),
     step('plan_power_tree', base, 'Budget input rails, regulators, decoupling, sequencing, and thermal constraints.'),
@@ -23,6 +28,7 @@ export function buildWorkflowPreset(input = {}) {
     step('plan_fanout', { projectPath: slug(base.projectName) }, 'Plan package escape, via strategy, and routing preconditions before copper.'),
     step('generate_routing_plan', { projectPath: slug(base.projectName) }, 'Generate partial route plan with via/copper/keepout policy.'),
     step('autoroute_drc_iteration', { projectPath: slug(base.projectName) }, 'Attempt controlled autorouting and immediately run KiCad DRC.'),
+    step('generate_routing_report', { projectPath: slug(base.projectName) }, 'Report routed/unrouted nets, blockers, diff-pair status, power route status, and next fixes.'),
     step('run_dfm_checks', { projectPath: slug(base.projectName) }, 'Run board, placement, fanout, power, assembly, and fab DFM checks.'),
     step('run_project_preflight', { projectPath: slug(base.projectName) }, 'Aggregate scan, component, binding, netlist, and manufacturing gates.'),
     step('run_kicad_erc', { projectPath: slug(base.projectName) }, 'Run local KiCad ERC.'),
@@ -34,6 +40,7 @@ export function buildWorkflowPreset(input = {}) {
   return {
     status: 'WORKFLOW_PRESET_READY_NEEDS_REVIEW',
     preset,
+    categoryPlan,
     projectPath: slug(base.projectName),
     baseInput: base,
     steps,
@@ -56,6 +63,11 @@ function step(type, input, why) {
 function inferPreset(input) {
   const text = `${input.projectName || ''} ${input.prompt || ''} ${input.templateId || ''}`.toLowerCase()
   if (/poe|ethernet/.test(text)) return 'poe_esp32_sensor'
+  if (/motor controller|esc|inverter|gate driver|mosfet|bldc|foc/.test(text)) return 'motor_controller'
+  if (/bms|battery charger|charge controller/.test(text)) return 'battery_charger_bms'
+  if (/industrial|relay|terminal block|rs485|isolat/.test(text)) return 'industrial_io'
+  if (/compute module|carrier|cm4|sodimm|mipi|pcie|hdmi/.test(text)) return 'compute_module_carrier'
+  if (/usb|type-c|type c/.test(text)) return 'usb_device'
   if (/drone|flight|esc/.test(text)) return 'drone_flight_controller'
   return 'esp32_sensor'
 }
@@ -63,16 +75,27 @@ function inferPreset(input) {
 function templateForPreset(preset) {
   if (preset === 'poe_esp32_sensor') return 'ESP32_S3_POE_SENSOR'
   if (preset === 'drone_flight_controller') return 'DRONE_FC_30X30'
+  if (preset === 'usb_device') return 'ESP32_S3_SENSOR'
   return 'ESP32_S3_SENSOR'
 }
 
 function promptForPreset(preset) {
+  if (preset === 'motor_controller') return 'Motor controller / ESC concept with MCU, gate driver, MOSFET power stage, shunts, current sensing, DC bus input, motor phase outputs, thermal copper, high-current routing constraints, and DRC-required KiCad output.'
+  if (preset === 'battery_charger_bms') return 'Battery charger / BMS concept with charger IC, protection FETs, current sense, thermistor, battery connector, regulated rails, thermal/high-current constraints, and manufacturing review gates.'
+  if (preset === 'industrial_io') return 'Industrial I/O controller with terminal blocks, isolated inputs/outputs, surge protection, RS485/CAN option, regulated logic rails, isolation boundary, and wide-clearance manufacturing rules.'
+  if (preset === 'compute_module_carrier') return 'Compute module carrier with locked module connector, power sequencing, USB, Ethernet, MIPI/PCIe placeholders, high-speed routing intent, and human SI/PI review gates.'
+  if (preset === 'usb_device') return 'USB-C device board with MCU, ESD protection, regulator, oscillator, SWD/debug, short USB differential pair routing, and KiCad ERC/DRC gates.'
   if (preset === 'poe_esp32_sensor') return 'ESP32-S3 PoE Ethernet environmental sensor with USB-C debug, I2C sensor connector, SWD, 3V3 regulation, RJ45 edge placement, and manufacturing review gates.'
   if (preset === 'drone_flight_controller') return 'Long-range drone flight controller with STM32 MCU, IMU, barometer, blackbox flash, USB-C, GPS/GNSS connector, receiver/telemetry UART, ESC connector, voltage/current sensing, 3V3 regulator, vibration-sensitive sensor placement, and compact routing.'
   return 'ESP32-S3 USB-C environmental sensor board with I2C sensor connector, SWD, 3V3 regulator, mounting holes, and review-required KiCad outputs.'
 }
 
 function interfacesForPreset(preset) {
+  if (preset === 'motor_controller') return ['PWM', 'CAN', 'current sense', 'motor phase']
+  if (preset === 'battery_charger_bms') return ['battery', 'I2C', 'temperature sense']
+  if (preset === 'industrial_io') return ['RS485', 'CAN', 'digital input', 'relay output']
+  if (preset === 'compute_module_carrier') return ['USB', 'Ethernet', 'MIPI', 'PCIe', 'power sequencing']
+  if (preset === 'usb_device') return ['USB', 'SWD']
   if (preset === 'poe_esp32_sensor') return ['USB', 'Ethernet', 'I2C', 'SWD']
   if (preset === 'drone_flight_controller') return ['USB', 'SPI', 'I2C', 'UART', 'GPS', 'Telemetry', 'CAN']
   return ['USB', 'I2C', 'SWD']

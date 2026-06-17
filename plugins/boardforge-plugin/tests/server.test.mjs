@@ -38,6 +38,11 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.equal(plan.status, 'REQUIREMENTS_PLAN_READY_NEEDS_REVIEW')
     assert.ok(plan.components.length > 0)
+    const category = await postJson(`http://127.0.0.1:${port}/jobs/plan-category`, {
+      id: 'server_category',
+      input: { projectName: 'Server industrial IO', prompt: 'industrial RS485 isolated terminal block relay controller', manufacturerProfile: 'JLCPCB_STANDARD' },
+    })
+    assert.equal(category.categoryPlan.category.id, 'industrial_io')
     const pins = await postJson(`http://127.0.0.1:${port}/jobs/plan-pin-assignments`, {
       id: 'server_pins',
       input: { components: plan.components, nets: plan.nets, interfaces: ['USB', 'I2C', 'SWD'] },
@@ -96,6 +101,12 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.ok(['ROUTING_QUALITY_NEEDS_FIX', 'ROUTING_QUALITY_NEEDS_REVIEW', 'ROUTING_QUALITY_READY_NEEDS_DRC'].includes(routeScore.status))
     assert.equal(typeof routeScore.routeQuality.score, 'number')
+    const routeReport = await postJson(`http://127.0.0.1:${port}/jobs/routing-report`, {
+      id: 'server_route_report',
+      input: { nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }], board: { widthMm: 40, heightMm: 30 } },
+    })
+    assert.ok(['ROUTING_REPORT_NEEDS_FIX', 'ROUTING_REPORT_PARTIAL_NEEDS_REVIEW', 'ROUTING_REPORT_READY_NEEDS_DRC'].includes(routeReport.status))
+    assert.equal(typeof routeReport.routingReport.summary.totalNets, 'number')
     const autoroute = await postJson(`http://127.0.0.1:${port}/jobs/autoroute`, {
       id: 'server_autoroute',
       input: {

@@ -45,8 +45,10 @@ import { runDfmChecks } from './dfm-checker.mjs'
 import { planSignalIntegrity } from './signal-integrity-planner.mjs'
 import { planPinAssignments } from './pin-assignment-planner.mjs'
 import { planTestStrategy } from './test-strategy-planner.mjs'
+import { buildCategoryPlan, listBoardCategories } from './board-categories.mjs'
+import { buildRoutingReport } from './routing-report.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'generate_routing_report', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -82,6 +84,8 @@ export async function executeJob(job, workspace) {
   if (job.type === 'diff_project_snapshot') return diffProjectSnapshotJob(job, workspace)
   if (job.type === 'restore_project_snapshot') return restoreProjectSnapshotJob(job, workspace)
   if (job.type === 'run_project_preflight') return projectPreflightJob(job, workspace)
+  if (job.type === 'list_board_categories') return result(job, 'BOARD_CATEGORIES_LISTED', [], [], { categories: listBoardCategories(), humanReviewRequired: false })
+  if (job.type === 'plan_board_category') return boardCategoryPlanJob(job, workspace)
   if (job.type === 'build_workflow_preset') return workflowPresetJob(job, workspace)
   if (job.type === 'run_boardforge_workflow') return runBoardForgeWorkflowJob(job, workspace)
   if (job.type === 'plan_mission_requirements') return missionRequirementsJob(job, workspace)
@@ -118,7 +122,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'find_missing_footprints') return missingFootprintsJob(job, workspace)
   if (job.type === 'link_3d_models') return link3dModelsJob(job, workspace)
   if (job.type === 'create_net_classes') return result(job, 'NET_CLASSES_CREATED', [], [], { netClasses: createNetClasses(profile), humanReviewRequired: true })
-  if (job.type === 'validate_net_classes' || job.type === 'report_unclassified_nets') return validateNetClassesJob(job)
+  if (['classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets'].includes(job.type)) return validateNetClassesJob(job)
   if (job.type === 'generate_placement_plan' || job.type === 'optimize_placement') return placementPlanJob(job, profile)
   if (job.type === 'apply_placement_plan' || job.type === 'move_component' || job.type === 'fix_component_overlap' || job.type === 'fix_component_off_board') return applyPlacementJob(job, workspace, profile)
   if (job.type === 'autoroute_board') return autorouteBoardJob(job, workspace, profile)
@@ -127,6 +131,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'apply_routing_plan') return applyRoutingPlanJob(job, workspace, profile)
   if (job.type === 'validate_routing_geometry') return routingGeometryJob(job, profile)
   if (job.type === 'score_routing_quality') return routingQualityJob(job, profile)
+  if (job.type === 'generate_routing_report') return routingReportJob(job, profile)
   if (['generate_routing_plan', 'report_unrouted_nets', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes'].includes(job.type)) return routingPlanJob(job)
   if (job.type === 'run_full_self_review') return selfReviewJob(job, profile)
   if (job.type === 'scan_kicad_project' || job.type === 'summarize_project') return scanProjectJob(job, workspace)
@@ -608,6 +613,26 @@ async function runBoardForgeWorkflowJob(job, workspace) {
   }
   const finalFiles = outputFile ? [...new Set([...report.generatedFiles, outputFile])] : report.generatedFiles
   return result(job, status, report.warnings, report.blockers, { workflowRun: { ...report, generatedFiles: finalFiles }, generatedFiles: finalFiles, humanReviewRequired: true })
+}
+
+async function boardCategoryPlanJob(job, workspace) {
+  const output = buildCategoryPlan(job.input || {})
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-category-plan.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      categoryPlan: output,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Planned board category ${output.category.id} with ${output.decisions.required.length} required decisions.`,
+    }))
+  }
+  const warnings = output.manufacturingWarnings.map((message) => ({ severity: 'WARNING', code: 'CATEGORY_REVIEW_WARNING', message }))
+  const errors = output.decisions.required.map((item) => ({ severity: 'ERROR', code: 'CATEGORY_DECISION_REQUIRED', message: item.prompt, details: item }))
+  return result(job, output.status, warnings, errors, { categoryPlan: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
 }
 
 function summarizeStepResult(step, output) {
@@ -1430,6 +1455,15 @@ function routingQualityJob(job, profile) {
   const routingPlan = job.input?.routingPlan || generateRoutingPlan(assignNetsToClasses(job.input?.nets || []), { ...job.input, layerCount: job.input?.layerCount || board.layerCount, board, components: job.input?.components || [], profile })
   const routeQuality = scoreRoutingPlan({ routingPlan, profile, powerTree: job.input?.powerTree || null })
   return result(job, routeQuality.status, routeQuality.warnings, routeQuality.errors, { routingPlan, routeQuality, humanReviewRequired: true })
+}
+
+function routingReportJob(job, profile) {
+  const board = boardFromJob(job)
+  const components = job.input?.components || []
+  const nets = assignNetsToClasses(job.input?.nets || [])
+  const routingPlan = job.input?.routingPlan || generateRoutingPlan(nets, { ...job.input, layerCount: job.input?.layerCount || board.layerCount, board, components, profile })
+  const report = buildRoutingReport({ ...job.input, board, components, nets, routingPlan, profile })
+  return result(job, report.status, report.warnings, report.blockers, { routingReport: report, routingPlan, humanReviewRequired: true })
 }
 
 async function autorouteBoardJob(job, workspace, profile) {

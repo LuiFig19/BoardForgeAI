@@ -1,5 +1,6 @@
 import { planMissionRequirements } from './mission-planner.mjs'
 import { planRequirements } from './requirements-planner.mjs'
+import { buildCategoryPlan } from './board-categories.mjs'
 
 const groupRules = [
   ['MCU', /stm32|esp32|rp2040|mcu|microcontroller|processor/i],
@@ -11,6 +12,24 @@ const groupRules = [
   ['RECEIVER', /receiver|elrs|crsf|rc input|sb[u]?s/i],
   ['TELEMETRY', /telemetry|sik|lora|modem|radio/i],
   ['CURRENT_SENSOR', /current|ina|hall|shunt|power monitor/i],
+  ['GATE_DRIVER', /gate driver|drv83|drv8|ir21|half bridge driver/i],
+  ['MOSFET', /mosfet|fet|power stage|half bridge/i],
+  ['SHUNT', /shunt|milliohm|mohm/i],
+  ['CAN_TRANSCEIVER', /can transceiver|tja105|sn65hvd23|mcp256/i],
+  ['RS485_TRANSCEIVER', /rs485|485 transceiver|max3485|sn65hvd/i],
+  ['TERMINAL_BLOCK', /terminal|phoenix|screw connector|field connector/i],
+  ['ISOLATOR', /isolator|opto|optocoupler|adum|iso/i],
+  ['RELAY_OR_DRIVER', /relay|load driver|low side|high side switch/i],
+  ['TVS', /tvs|esd|surge|protection diode/i],
+  ['CHARGER_IC', /charger|bq24|mcp738|charge controller/i],
+  ['PROTECTION_FET', /protection fet|ideal diode|load switch/i],
+  ['THERMISTOR', /thermistor|ntc|temperature/i],
+  ['LED_DRIVER', /led driver|neopixel|ws2812|pwm led/i],
+  ['MODULE_CONNECTOR', /module connector|sodimm|board-to-board|mezzanine|compute module/i],
+  ['MIPI_CONNECTOR', /mipi|csi|dsi|camera connector|display connector/i],
+  ['ETHERNET_PHY', /ethernet phy|lan8720|dp838|ksz/i],
+  ['RJ45', /rj45|magjack|ethernet jack/i],
+  ['POE_FRONT_END', /poe|802\.3af|802\.3at|pd controller|power over ethernet/i],
   ['REGULATOR', /regulator|buck|ldo|dc-dc|bec/i],
   ['ESC_CONNECTOR', /esc|motor signal|4-in-1/i],
   ['SWD', /swd|jtag|debug|program/i],
@@ -44,6 +63,24 @@ const missionFunctions = {
   ],
 }
 
+const categoryFunctions = {
+  embedded_controller: [['MCU', 'controller'], ['REGULATOR', 'regulated rails'], ['SWD', 'debug/programming access']],
+  iot_sensor: [['MCU', 'controller'], ['REGULATOR', 'regulated rails'], ['SENSOR_CONNECTOR', 'sensor interface'], ['USB', 'configuration/debug']],
+  usb_device: [['USB', 'USB-C connector'], ['TVS', 'USB ESD protection'], ['MCU', 'controller'], ['REGULATOR', 'regulated rail']],
+  ethernet_device: [['RJ45', 'Ethernet connector'], ['ETHERNET_PHY', 'Ethernet PHY/controller'], ['REGULATOR', 'regulated rails']],
+  poe_device: [['RJ45', 'PoE RJ45/MagJack'], ['ETHERNET_PHY', 'Ethernet PHY/controller'], ['POE_FRONT_END', 'PoE front end'], ['REGULATOR', 'regulated rails']],
+  robotics_controller: [['MCU', 'controller'], ['CAN_TRANSCEIVER', 'CAN field bus'], ['REGULATOR', 'regulated rails'], ['POWER_INPUT', 'power input']],
+  motor_controller: [['GATE_DRIVER', 'gate driver'], ['MOSFET', 'power MOSFET stage'], ['SHUNT', 'current shunt'], ['CURRENT_SENSOR', 'current sensing'], ['POWER_INPUT', 'battery/DC bus input']],
+  battery_charger_bms: [['CHARGER_IC', 'charger/BMS controller'], ['PROTECTION_FET', 'battery protection switching'], ['CURRENT_SENSOR', 'current sensing'], ['THERMISTOR', 'temperature sensing']],
+  led_controller: [['LED_DRIVER', 'LED driver'], ['MOSFET', 'LED output switching'], ['POWER_INPUT', 'LED power input']],
+  industrial_io: [['TERMINAL_BLOCK', 'field terminal connector'], ['ISOLATOR', 'isolation barrier'], ['TVS', 'surge/ESD protection'], ['REGULATOR', 'logic power']],
+  compute_module_carrier: [['MODULE_CONNECTOR', 'compute module connector'], ['REGULATOR', 'power sequencing/regulation'], ['USB', 'USB interface'], ['RJ45', 'Ethernet connector']],
+  mixed_signal: [['MCU', 'controller'], ['REGULATOR', 'quiet rails'], ['SENSOR_CONNECTOR', 'analog/sensor interface']],
+  high_current_power: [['POWER_INPUT', 'high-current power input'], ['CURRENT_SENSOR', 'current sensing'], ['MOSFET', 'power switching/protection']],
+  drone_flight_controller: missionFunctions.drone_fc_core,
+  drone_aio: [['MCU', 'flight controller MCU'], ['IMU', 'motion sensing'], ['GATE_DRIVER', 'ESC gate driver'], ['MOSFET', 'ESC MOSFETs'], ['CURRENT_SENSOR', 'battery current sensing']],
+}
+
 export function intakeUserBom(input = {}) {
   const rows = parseBomInput(input)
   const components = rows.map((row, index) => normalizeBomRow(row, index))
@@ -65,13 +102,14 @@ export function intakeUserBom(input = {}) {
 export function auditUserBom(input = {}) {
   const intake = input.intake || intakeUserBom(input)
   const missionPlan = input.missionPlan || planMissionRequirements(input)
+  const categoryPlan = input.categoryPlan || buildCategoryPlan(input)
   const requirementsPlan = input.requirementsPlan || missionPlan.requirementsPlan || planRequirements(input)
   const components = intake.components || []
   const normalizedGroups = new Set(components.map((component) => component.group))
-  const requiredFunctions = requiredFunctionsFor(requirementsPlan, missionPlan)
+  const requiredFunctions = requiredFunctionsFor(requirementsPlan, missionPlan, categoryPlan)
   const gaps = requiredFunctions
     .filter(([group]) => !normalizedGroups.has(group))
-    .map(([group, purpose]) => ({ group, purpose, severity: group === 'GNSS' || group === 'CURRENT_SENSOR' ? 'ERROR' : 'WARNING' }))
+    .map(([group, purpose]) => ({ group, purpose, severity: criticalMissingGroup(group, categoryPlan?.category?.id) ? 'ERROR' : 'WARNING' }))
   const compatibility = components.map((component) => auditComponent(component, missionPlan))
   const powerBudget = estimatePowerBudget(components, input, missionPlan)
   const substitutions = components.filter((component) => needsSubstitution(component)).map((component) => ({
@@ -96,6 +134,7 @@ export function auditUserBom(input = {}) {
     status: errors.length ? 'USER_BOM_AUDIT_NEEDS_FIX' : warnings.length || questions.length ? 'USER_BOM_AUDIT_NEEDS_REVIEW' : 'USER_BOM_AUDIT_READY_NEEDS_REVIEW',
     intake,
     missionPlan,
+    categoryPlan,
     requirementsPlan,
     components,
     missingFunctions: gaps,
@@ -215,9 +254,11 @@ function userBomWorkflow(input) {
   ]
 }
 
-function requiredFunctionsFor(requirementsPlan, missionPlan) {
+function requiredFunctionsFor(requirementsPlan, missionPlan, categoryPlan) {
   const selected = new Set([...(requirementsPlan.selectedCircuits || []), ...(missionPlan.architecture?.architectureType?.includes('long_range') ? ['long_range_uav_support'] : [])])
-  return [...selected].flatMap((id) => missionFunctions[id] || [])
+  const fromCircuits = [...selected].flatMap((id) => missionFunctions[id] || [])
+  const categoryId = categoryPlan?.category?.id
+  return dedupeFunctions([...fromCircuits, ...(categoryFunctions[categoryId] || [])])
 }
 
 function clarificationQuestions({ missionPlan, gaps, compatibility, powerBudget, input }) {
@@ -234,6 +275,18 @@ function defaultPinMapFor(group) {
   if (group === 'RECEIVER') return { VCC: '5V', GND: 'GND', TX: 'RC_RX', RX: 'RC_TX' }
   if (group === 'TELEMETRY') return { VCC: '5V', GND: 'GND', TX: 'TEL_RX', RX: 'TEL_TX' }
   if (group === 'CURRENT_SENSOR') return { VIN: 'VBAT', VOUT: 'VBAT_SENSE', GND: 'GND', OUT: 'CURRENT_SENSE' }
+  if (group === 'GATE_DRIVER') return { VCC: '12V', GND: 'GND', HIN: 'PWM_A', LIN: 'PWM_B', HO: 'GATE_A', LO: 'GATE_B' }
+  if (group === 'MOSFET') return { D: 'VBAT', S: 'PHASE_A', G: 'GATE_A' }
+  if (group === 'SHUNT') return { 1: 'VBAT', 2: 'CURRENT_SENSE' }
+  if (group === 'CAN_TRANSCEIVER') return { CANH: 'CANH', CANL: 'CANL', TXD: 'CAN_TX', RXD: 'CAN_RX', VCC: '3V3', GND: 'GND' }
+  if (group === 'RS485_TRANSCEIVER') return { A: 'RS485_A', B: 'RS485_B', DI: 'RS485_TX', RO: 'RS485_RX', VCC: '3V3', GND: 'GND' }
+  if (group === 'ETHERNET_PHY') return { TXP: 'ETH_TX_P', TXN: 'ETH_TX_N', RXP: 'ETH_RX_P', RXN: 'ETH_RX_N', VDD: '3V3', GND: 'GND' }
+  if (group === 'RJ45') return { TXP: 'ETH_TX_P', TXN: 'ETH_TX_N', RXP: 'ETH_RX_P', RXN: 'ETH_RX_N' }
+  if (group === 'POE_FRONT_END') return { VDD: 'POE_VDD', RTN: 'POE_RTN', OUT: 'VIN', GND: 'GND' }
+  if (group === 'MODULE_CONNECTOR') return { VCC: '5V', GND: 'GND', USB_DP: 'USB_DP', USB_DN: 'USB_DN', PCIE_TX_P: 'PCIE_TX_P', PCIE_TX_N: 'PCIE_TX_N' }
+  if (group === 'CHARGER_IC') return { VIN: 'CHARGE_IN', BAT: 'VBAT', TS: 'THERMISTOR', GND: 'GND' }
+  if (group === 'THERMISTOR') return { 1: 'THERMISTOR', 2: 'GND' }
+  if (group === 'LED_DRIVER') return { VIN: 'VIN', OUT: 'LED_CH1', PWM: 'PWM_LED1', GND: 'GND' }
   if (group === 'REGULATOR') return { VIN: 'VBAT', GND: 'GND', OUT: '5V' }
   if (group === 'POWER_INPUT') return { VIN: 'VBAT', GND: 'GND' }
   if (group === 'ESC_CONNECTOR') return { GND: 'GND', VBAT: 'VBAT', M1: 'MOTOR_1', M2: 'MOTOR_2', M3: 'MOTOR_3', M4: 'MOTOR_4' }
@@ -333,4 +386,26 @@ function slug(name) {
 
 function issue(severity, code, message, details = {}) {
   return { severity, code, message, details }
+}
+
+function dedupeFunctions(functions) {
+  const seen = new Set()
+  return functions.filter(([group]) => {
+    if (seen.has(group)) return false
+    seen.add(group)
+    return true
+  })
+}
+
+function criticalMissingGroup(group, categoryId) {
+  const alwaysCritical = new Set(['MCU', 'GNSS', 'CURRENT_SENSOR', 'REGULATOR'])
+  const byCategory = {
+    motor_controller: new Set(['GATE_DRIVER', 'MOSFET', 'SHUNT', 'CURRENT_SENSOR', 'POWER_INPUT']),
+    battery_charger_bms: new Set(['CHARGER_IC', 'PROTECTION_FET', 'CURRENT_SENSOR', 'THERMISTOR']),
+    poe_device: new Set(['RJ45', 'ETHERNET_PHY', 'POE_FRONT_END', 'REGULATOR']),
+    ethernet_device: new Set(['RJ45', 'ETHERNET_PHY']),
+    industrial_io: new Set(['TERMINAL_BLOCK', 'ISOLATOR', 'TVS']),
+    compute_module_carrier: new Set(['MODULE_CONNECTOR', 'REGULATOR']),
+  }
+  return alwaysCritical.has(group) || byCategory[categoryId]?.has(group)
 }

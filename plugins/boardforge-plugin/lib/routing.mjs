@@ -1,7 +1,7 @@
 import { netClassProfiles } from './net-classes.mjs'
 import { createDesignIntent, planViasForRoute } from './design-rules.mjs'
 
-const routingOrder = ['BATTERY', 'POWER_HIGH_CURRENT', 'POWER_LOW_CURRENT', 'USB_DIFF', 'ETHERNET_DIFF', 'CAN_DIFF', 'CRYSTAL', 'CLOCK', 'SPI', 'I2C', 'UART', 'SENSOR', 'ANALOG', 'DEFAULT']
+const routingOrder = ['HIGH_VOLTAGE', 'BATTERY', 'MOTOR_PHASE', 'POWER_HIGH_CURRENT', 'SWITCHING_NODE', 'CRYSTAL', 'CLOCK', 'USB_DIFF', 'ETHERNET_DIFF', 'MIPI_DIFF', 'PCIe_DIFF', 'LVDS_DIFF', 'CAN_DIFF', 'RS485_DIFF', 'RF', 'ANTENNA', 'ANALOG', 'SENSOR', 'POWER_LOW_CURRENT', 'SPI', 'I2C', 'UART', 'DEBUG', 'RESET', 'BOOT', 'DEFAULT']
 
 export function generateRoutingPlan(nets, options = {}) {
   const layerCount = options.layerCount || 2
@@ -102,6 +102,11 @@ function strategyForClass(className, layerCount) {
   if (className === 'USB_DIFF') return 'short same-layer differential pair, impedance reviewed in KiCad'
   if (className === 'ETHERNET_DIFF') return 'short matched differential pairs from RJ45/magnetics to PHY'
   if (className === 'CRYSTAL') return 'short direct same-layer routes with guard clearance'
+  if (['MIPI_DIFF', 'PCIe_DIFF', 'LVDS_DIFF'].includes(className)) return 'high-speed differential intent, short same-reference-layer routes, human SI review required'
+  if (className === 'RS485_DIFF') return 'field-bus differential pair near connector with termination/protection review'
+  if (['RF', 'ANTENNA'].includes(className)) return 'RF/antenna route with keepouts, stitching, and reference-layout review'
+  if (className === 'SWITCHING_NODE') return 'keep switching node tiny, away from analog/RF/sensor routes'
+  if (className === 'HIGH_VOLTAGE' || className === 'ISOLATION_BOUNDARY') return 'wide clearance route respecting creepage/isolation boundary'
   if (['BATTERY', 'POWER_HIGH_CURRENT', 'MOTOR_PHASE'].includes(className)) return 'wide short copper, thermal/current reviewed'
   return 'short signal route after critical nets'
 }

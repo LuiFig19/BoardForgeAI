@@ -35,6 +35,31 @@ test('assigns USB and battery nets to strict classes', () => {
   assert.equal(nets.find((net) => net.name === 'SCL').className, 'I2C')
 })
 
+test('classifies advanced high-speed, field-bus, switching, and debug nets', () => {
+  const nets = assignNetsToClasses([
+    { name: 'RS485_A' },
+    { name: 'MIPI_D0_P' },
+    { name: 'PCIE_TX_N' },
+    { name: 'SWCLK' },
+    { name: 'NRST' },
+    { name: 'BOOT0' },
+    { name: 'PHASE_A' },
+    { name: 'SW' },
+    { name: 'ANTENNA_FEED' },
+    { name: 'POE_VDD' },
+  ])
+  assert.equal(nets.find((net) => net.name === 'RS485_A').className, 'RS485_DIFF')
+  assert.equal(nets.find((net) => net.name === 'MIPI_D0_P').className, 'MIPI_DIFF')
+  assert.equal(nets.find((net) => net.name === 'PCIE_TX_N').className, 'PCIe_DIFF')
+  assert.equal(nets.find((net) => net.name === 'SWCLK').className, 'DEBUG')
+  assert.equal(nets.find((net) => net.name === 'NRST').className, 'RESET')
+  assert.equal(nets.find((net) => net.name === 'BOOT0').className, 'BOOT')
+  assert.equal(nets.find((net) => net.name === 'PHASE_A').className, 'MOTOR_PHASE')
+  assert.equal(nets.find((net) => net.name === 'SW').className, 'SWITCHING_NODE')
+  assert.equal(nets.find((net) => net.name === 'ANTENNA_FEED').className, 'ANTENNA')
+  assert.equal(nets.find((net) => net.name === 'POE_VDD').className, 'HIGH_VOLTAGE')
+})
+
 test('detects off-board components', () => {
   const board = { outline: rectanglePoints(20, 20), mountingHoles: [] }
   const issues = validatePlacement(board, [{ ref: 'U1', x: 21, y: 10, width: 6, height: 6 }], getManufacturerProfile())
@@ -385,6 +410,89 @@ test('requirements planner expands prompts into circuit components and nets', as
   assert.ok(plan.nets.some((net) => net.name === 'ETH_TX_P'))
 })
 
+test('universal board category planner does not default serious boards to drones', async () => {
+  const motor = await executeJob({
+    id: 'category_motor',
+    type: 'plan_board_category',
+    input: {
+      projectName: '12S BLDC inverter',
+      prompt: 'Build a compact 12S motor controller with gate drivers, MOSFETs, current sensing, CAN, thermal copper and blind via option',
+      layerCount: 6,
+      manufacturerProfile: 'JLCPCB_STANDARD',
+    },
+  }, process.cwd())
+  assert.equal(motor.status, 'BOARD_CATEGORY_PLAN_NEEDS_USER_DECISIONS')
+  assert.equal(motor.categoryPlan.category.id, 'motor_controller')
+  assert.ok(motor.categoryPlan.netClasses.includes('MOTOR_PHASE'))
+  assert.ok(motor.categoryPlan.routingPriorities.some((item) => /battery|motor phase/i.test(item)))
+
+  const carrier = await executeJob({
+    id: 'category_carrier',
+    type: 'plan_board_category',
+    input: { projectName: 'CM4 carrier', prompt: 'compute module carrier with USB, Ethernet, MIPI CSI, PCIe, power sequencing', layerCount: 8, manufacturerProfile: 'ADVANCED_HDI_REVIEW', stackup: 'manufacturer impedance stackup' },
+  }, process.cwd())
+  assert.equal(carrier.categoryPlan.category.id, 'compute_module_carrier')
+  assert.ok(carrier.categoryPlan.netClasses.includes('MIPI_DIFF'))
+  assert.ok(carrier.warnings.some((issue) => /SI\/PI|MIPI|PCIe/i.test(issue.message)))
+
+  const listed = await executeJob({ id: 'category_list', type: 'list_board_categories', input: {} }, process.cwd())
+  assert.equal(listed.status, 'BOARD_CATEGORIES_LISTED')
+  assert.ok(listed.categories.some((category) => category.id === 'industrial_io'))
+})
+
+test('requirements planner selects serious non-drone circuit blocks', async () => {
+  const motor = await executeJob({
+    id: 'motor_req',
+    type: 'plan_requirements',
+    input: { projectName: 'Motor controller', prompt: '12S BLDC motor controller with gate driver MOSFET power stage shunt current sense CAN debug' },
+  }, process.cwd())
+  assert.equal(motor.status, 'REQUIREMENTS_PLAN_READY_NEEDS_REVIEW')
+  assert.ok(motor.selectedCircuits.includes('motor_controller_power_stage'))
+  assert.ok(motor.components.some((component) => component.group === 'GATE_DRIVER'))
+  assert.ok(motor.nets.some((net) => net.name === 'PHASE_A'))
+
+  const carrier = await executeJob({
+    id: 'carrier_req',
+    type: 'plan_requirements',
+    input: { projectName: 'Module carrier', prompt: 'compute module carrier board with USB Ethernet MIPI PCIe and power sequencing' },
+  }, process.cwd())
+  assert.ok(carrier.selectedCircuits.includes('compute_module_carrier'))
+  assert.ok(carrier.nets.some((net) => net.name === 'MIPI_D0_P'))
+})
+
+test('user BOM audit applies category-specific gaps outside drone workflows', async () => {
+  const audit = await executeJob({
+    id: 'motor_bom_audit',
+    type: 'audit_user_bom',
+    input: {
+      projectName: 'User motor controller',
+      prompt: '12S motor controller with gate drivers MOSFETs shunt current sensing',
+      bomText: 'Ref,Value,MPN,Package\nU1,STM32 MCU,STM32G4,QFN-48\nJ1,XT60 power input,XT60,Connector',
+    },
+  }, process.cwd())
+  assert.equal(audit.status, 'USER_BOM_AUDIT_NEEDS_FIX')
+  assert.equal(audit.userBomAudit.categoryPlan.category.id, 'motor_controller')
+  assert.ok(audit.missingFunctions.some((gap) => gap.group === 'GATE_DRIVER'))
+  assert.ok(audit.errors.some((issue) => issue.code === 'USER_BOM_MISSION_FUNCTION_MISSING'))
+})
+
+test('routing report summarizes critical unresolved nets honestly', async () => {
+  const report = await executeJob({
+    id: 'routing_report',
+    type: 'generate_routing_report',
+    input: {
+      board: { widthMm: 50, heightMm: 32, layerCount: 4, outline: rectanglePoints(50, 32) },
+      nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }, { name: 'GND' }],
+      components: [{ ref: 'J1', group: 'USB', x: 5, y: 16, width: 9, height: 7, pinMap: { A6: 'USB_DP', A7: 'USB_DN', A1: 'GND' } }],
+    },
+  }, process.cwd())
+  assert.equal(report.status, 'ROUTING_REPORT_NEEDS_FIX')
+  assert.equal(report.routingReport.summary.totalNets, 3)
+  assert.ok(report.routingReport.criticalNets.some((net) => net.net === 'USB_DP'))
+  assert.ok(report.errors.some((issue) => issue.code === 'CRITICAL_NET_UNROUTED_OR_MISSING_ENDPOINT'))
+  assert.ok(report.routingReport.nextActions.length > 0)
+})
+
 test('mission planner handles long range drone goals before KiCad generation', async () => {
   const plan = await executeJob({
     id: 'mission_drone',
@@ -608,7 +716,8 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
   }, process.cwd())
   assert.equal(preset.status, 'WORKFLOW_PRESET_READY_NEEDS_REVIEW')
   assert.equal(preset.workflowPreset.preset, 'poe_esp32_sensor')
-  assert.equal(preset.workflowPreset.steps[0].type, 'plan_requirements')
+  assert.equal(preset.workflowPreset.steps[0].type, 'plan_board_category')
+  assert.equal(preset.workflowPreset.steps[1].type, 'plan_requirements')
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_power_tree'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_design_constraints'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_kicad_rules'))
@@ -621,7 +730,8 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
     input: { projectName: 'Long Range Drone', prompt: 'drone that flies 15 miles and lasts 30 minutes' },
   }, process.cwd())
   assert.equal(dronePreset.workflowPreset.preset, 'drone_flight_controller')
-  assert.equal(dronePreset.workflowPreset.steps[0].type, 'plan_mission_requirements')
+  assert.equal(dronePreset.workflowPreset.steps[0].type, 'plan_board_category')
+  assert.equal(dronePreset.workflowPreset.steps[1].type, 'plan_mission_requirements')
   assert.ok(dronePreset.workflowPreset.steps.some((step) => step.type === 'autoroute_drc_iteration'))
 })
 

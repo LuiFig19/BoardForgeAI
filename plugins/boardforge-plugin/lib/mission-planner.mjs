@@ -1,4 +1,5 @@
 import { planRequirements } from './requirements-planner.mjs'
+import { buildCategoryPlan } from './board-categories.mjs'
 
 export function planMissionRequirements(input = {}) {
   const text = normalize([input.prompt, input.notes, input.projectName, input.boardType].join(' '))
@@ -11,7 +12,8 @@ export function planMissionRequirements(input = {}) {
     environment: input.environment || inferEnvironment(text),
   }
   const decisions = decisionQuestions(mission, input)
-  const architecture = architectureForMission(mission, text, input)
+  const categoryPlan = buildCategoryPlan(input)
+  const architecture = architectureForMission(mission, text, input, categoryPlan)
   const boardSpecs = boardSpecsForMission(mission, architecture, input)
   const requirementsPlan = planRequirements({
     ...input,
@@ -27,12 +29,14 @@ export function planMissionRequirements(input = {}) {
     feasibility,
     decisions,
     architecture,
+    categoryPlan,
     boardSpecs,
     requirementsPlan,
     controlledWorkflow: workflowForMission(architecture, input),
     assumptions: [
       'BoardForge designs electronics and KiCad outputs; airframe, propeller, motor, battery, RF compliance, and flight testing remain system-level engineering decisions.',
-      'Long-range UAV electronics must be validated against local radio, aviation, and safety regulations before flight.',
+      ...(mission.vehicle.includes('drone') || mission.vehicle.includes('uav') ? ['Long-range UAV electronics must be validated against local radio, aviation, and safety regulations before flight.'] : []),
+      `${categoryPlan.category.name} outputs are review-required until KiCad ERC/DRC and manufacturing gates pass.`,
       ...feasibility.assumptions,
     ],
     humanReviewRequired: true,
@@ -81,7 +85,10 @@ function decisionQuestions(mission, input) {
   return { required, optional, count: required.length + optional.length }
 }
 
-function architectureForMission(mission, text, input) {
+function architectureForMission(mission, text, input, categoryPlan) {
+  if (!mission.vehicle.includes('drone') && !mission.vehicle.includes('uav') && !/flight/.test(text)) {
+    return architectureForCategory(categoryPlan, input)
+  }
   const longRange = (mission.rangeMiles || 0) >= 5 || /long range|15 miles|telemetry|return to home/.test(text)
   const interfaces = ['USB', 'SPI', 'I2C', 'UART', ...(longRange ? ['GPS', 'Telemetry', 'CAN'] : [])]
   return {
@@ -108,6 +115,28 @@ function architectureForMission(mission, text, input) {
   }
 }
 
+function architectureForCategory(categoryPlan, input) {
+  const category = categoryPlan.category
+  return {
+    projectName: input.projectName || category.name,
+    templateId: category.defaultPreset || null,
+    architectureType: category.id,
+    requirementPrompt: [
+      category.name,
+      category.expectedComponents.join(', '),
+      category.interfaces.join(', '),
+      ...(input.prompt ? [input.prompt] : []),
+    ].join(', '),
+    interfaces: category.interfaces,
+    boardFamilies: [category.id],
+    constraints: [
+      ...category.placementPriorities,
+      ...category.routingPriorities,
+      ...category.mechanicalConstraints,
+    ],
+  }
+}
+
 function boardSpecsForMission(mission, architecture, input) {
   const layerCount = input.layerCount || ((mission.rangeMiles || 0) >= 5 ? 4 : 2)
   return {
@@ -115,7 +144,7 @@ function boardSpecsForMission(mission, architecture, input) {
     targetCad: 'KiCad',
     manufacturer: input.manufacturer || 'JLCPCB',
     boardType: architecture.architectureType,
-    outline: input.outline || '30.5 x 30.5 mm flight-controller mounting unless user specifies another frame',
+    outline: input.outline || (architecture.architectureType.includes('flight_controller') ? '30.5 x 30.5 mm flight-controller mounting unless user specifies another frame' : 'user-specified mechanical envelope required before final placement/routing'),
     requiredReports: ['ERC', 'DRC', 'BOM', 'CPL', 'Gerbers', 'drill files', 'JLCPCB package'],
     exportGate: 'Do not export manufacturing package until ERC/DRC reports and component bindings are acceptable.',
   }
