@@ -688,6 +688,8 @@ async function runVerifiedDemoJob(job, workspace) {
     poe_sensor: 'ETHERNET_MONITOR',
     motor_controller: 'MOTOR_CONTROLLER',
   }[preset] || 'ESP32_S3_SENSOR'
+  const commonInput = { ...(job.input || {}) }
+  for (const key of ['projectPath', 'preset', 'templateId', 'continueOnBlocked', 'diagnosticAllowIncompleteSchematic']) delete commonInput[key]
   const executed = []
   const generatedFiles = []
   let stoppedAt = null
@@ -697,6 +699,7 @@ async function runVerifiedDemoJob(job, workspace) {
   ].map((step, index) => ({ ...step, index: index + 1 }))
   for (const step of executionSteps) {
     const stepInput = {
+      ...commonInput,
       ...(step.input || {}),
       ...(step.type === 'create_kicad_project' ? { projectName, templateId } : { projectPath: projectName }),
       ...(step.type === 'generate_schematic' && job.input?.diagnosticAllowIncompleteSchematic ? { allowIncompleteSchematic: true } : {}),

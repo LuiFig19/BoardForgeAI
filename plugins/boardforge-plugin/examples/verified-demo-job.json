@@ -1,0 +1,15 @@
+{
+  "id": "job_verified_demo_usb_sensor",
+  "type": "run_verified_demo",
+  "allowOverwrite": true,
+  "input": {
+    "projectPath": "boardforge-verified-demo-usb-sensor",
+    "preset": "usb_sensor",
+    "templateId": "ESP32_S3_SENSOR",
+    "continueOnBlocked": true,
+    "diagnosticAllowIncompleteSchematic": true,
+    "manufacturerProfile": "JLCPCB_STANDARD",
+    "powerInput": "VUSB",
+    "approveHighThermalRisk": true
+  }
+}

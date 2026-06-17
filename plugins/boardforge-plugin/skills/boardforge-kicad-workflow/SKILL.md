@@ -400,6 +400,8 @@ The local helper can be called as:
 node plugins/boardforge-plugin/bin/boardforge-plugin.mjs --job path/to/job.json --workspace path/to/workspace
 ```
 
+Use `plugins/boardforge-plugin/examples/verified-demo-job.json` to run the repeatable USB sensor proof path. It writes `boardforge-verified-demo-report.json` and stops on the first blocker by default.
+
 Current MVP implements outline generation, outline validation, schematic object generation, net classes, placement planning, real KiCad footprint placement for templates, component pin-map net assignment, routing planning, review-required copper writing, self-review, KiCad project scanning, KiCad CLI DRC/ERC, Gerber/drill/CPL/BOM export, and gated JLCPCB packaging.
 
 ## Local Tool Server
