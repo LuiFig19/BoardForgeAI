@@ -1431,6 +1431,27 @@ test('production readiness suite builds canonical model, audits assets and gates
   }
 })
 
+test('placement legality blocks off-board overlaps and RF hot-zone conflicts', async () => {
+  const board = { widthMm: 22, heightMm: 14, layerCount: 4, outline: rectanglePoints(22, 14), mountingHoles: [{ id: 'MH1', x: 3, y: 3, diameterMm: 2.2 }] }
+  const components = [
+    { ref: 'J1', group: 'USB_CONNECTOR', value: 'USB-C', x: 11, y: 7, width: 8, height: 6, pinMap: { VBUS: '5V', GND: 'GND' } },
+    { ref: 'U1', group: 'RF_MODULE', value: 'WiFi BLE module', x: 15, y: 7, width: 9, height: 8, pinMap: { VDD: '3V3', GND: 'GND', ANT: 'RF_FEED' } },
+    { ref: 'U2', group: 'BUCK', value: 'switching regulator', x: 16, y: 7, width: 6, height: 5, pinMap: { IN: '5V', OUT: '3V3', GND: 'GND' } },
+    { ref: 'C1', group: 'CAP', value: 'decoupling cap', x: 2.5, y: 3, width: 2, height: 1.2, pinMap: { '1': '3V3', '2': 'GND' } },
+  ]
+  const output = await executeJob({
+    id: 'placement_gate_bad',
+    type: 'audit_placement_legality',
+    input: { board, components, clearanceMm: 0.4 },
+  }, process.cwd())
+  assert.equal(output.status, 'PLACEMENT_LEGALITY_BLOCKED')
+  assert.ok(output.errors.some((issue) => issue.code === 'COMPONENT_OVERLAP'))
+  assert.ok(output.errors.some((issue) => issue.code === 'CONNECTOR_NOT_SERVICEABLE_ON_EDGE'))
+  assert.ok(output.errors.some((issue) => issue.code === 'HOT_PART_INSIDE_RF_KEEPOUT'))
+  assert.ok(output.placementLegalityReport.placementLegality.gates.some((gate) => gate.name === 'rf_hot_keepouts' && gate.status === 'blocked'))
+  assert.ok(output.placementLegalityReport.actions.includes('optimize_placement'))
+})
+
 test('advanced board suite classifies complex boards and adds HDI return-path creepage bring-up gates', async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-advanced-suite-test-'))
   try {

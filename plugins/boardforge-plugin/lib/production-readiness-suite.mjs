@@ -1,4 +1,4 @@
-import { pointInPolygon, rectsOverlap, round } from './geometry.mjs'
+import { pointInPolygon, polygonBounds, rectsOverlap, round } from './geometry.mjs'
 
 export const productionReadinessJobTypes = [
   'build_canonical_net_model',
@@ -101,28 +101,95 @@ export function auditPlacementLegality(context = {}) {
   const board = context.board || {}
   const components = normalizeComponents(context.components || [])
   const clearance = Number(context.clearanceMm || 0.35)
+  const bounds = boardBounds(board)
+  const boardArea = Math.max(1, (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY))
+  const componentArea = components.reduce((sum, component) => sum + component.width * component.height, 0)
+  const density = componentArea / boardArea
   const warnings = []
   const errors = []
+  const refs = new Set()
+  const connectorReports = []
+  const keepoutReports = []
+  const clearancePairs = []
+  if (!Array.isArray(board.outline) || board.outline.length < 3) errors.push(issue('ERROR', 'BOARD_OUTLINE_MISSING_FOR_PLACEMENT', 'Placement legality needs a real Edge.Cuts outline.'))
+  if (density > 0.62) errors.push(issue('ERROR', 'PLACEMENT_DENSITY_TOO_HIGH', 'Component area exceeds practical automated placement/routing density.', { density: round(density), maxRecommended: 0.62 }))
+  else if (density > 0.45) warnings.push(issue('WARNING', 'PLACEMENT_DENSITY_HIGH', 'Component density is high; use more layers, a larger board, or tighter reviewed packages.', { density: round(density), reviewAt: 0.45 }))
   for (const component of components) {
+    if (refs.has(component.ref)) errors.push(issue('ERROR', 'DUPLICATE_COMPONENT_REF', `${component.ref} appears more than once in placement.`, { ref: component.ref }))
+    refs.add(component.ref)
+    if (!component.width || !component.height) errors.push(issue('ERROR', 'COMPONENT_DIMENSIONS_MISSING', `${component.ref} needs package width and height before placement can be trusted.`, { ref: component.ref }))
     if (!hasPlacement(component)) {
       errors.push(issue('ERROR', 'COMPONENT_UNPLACED', `${component.ref} has no legal placement.`, { ref: component.ref }))
       continue
     }
-    if ((board.outline || []).length && corners(component).some((corner) => !pointInPolygon(corner, board.outline))) errors.push(issue('ERROR', 'COMPONENT_OFF_BOARD', `${component.ref} extends outside Edge.Cuts.`, { ref: component.ref }))
-    if (isConnector(component) && !nearBoardEdge(component, board, Math.max(3, clearance * 4))) warnings.push(issue('WARNING', 'CONNECTOR_NOT_ON_EDGE', `${component.ref} looks like a connector but is not on a board edge.`, { ref: component.ref }))
-    if (isHot(component) && components.some((other) => isRf(other) && distance(component, other) < 12)) warnings.push(issue('WARNING', 'HOT_PART_NEAR_RF', `${component.ref} is close to RF/antenna-sensitive placement.`, { ref: component.ref }))
+    const cornerFailures = (board.outline || []).length ? corners(component, clearance).filter((corner) => !pointInPolygon(corner, board.outline)) : []
+    if (cornerFailures.length) errors.push(issue('ERROR', 'COMPONENT_OFF_BOARD', `${component.ref} extends outside Edge.Cuts or violates board-edge clearance.`, { ref: component.ref, failedCorners: cornerFailures.length, clearanceMm: clearance }))
+    for (const hole of board.mountingHoles || []) {
+      const holeBox = { x: hole.x, y: hole.y, width: Number(hole.diameterMm || 0) + clearance * 2 + 1, height: Number(hole.diameterMm || 0) + clearance * 2 + 1 }
+      if (rectsOverlap(component, holeBox, 0)) errors.push(issue('ERROR', 'PLACEMENT_MOUNTING_HOLE_CONFLICT', `${component.ref} violates mounting-hole keepout ${hole.id || 'hole'}.`, { ref: component.ref, hole }))
+    }
+    if (isConnector(component)) {
+      const edgeDistance = nearestEdgeDistance(component, bounds)
+      const report = { ref: component.ref, edgeDistanceMm: round(edgeDistance), rotation: component.rotation || 0, serviceable: edgeDistance <= Math.max(2, clearance + Math.min(component.width, component.height) / 2 + 0.75) }
+      connectorReports.push(report)
+      if (!report.serviceable) errors.push(issue('ERROR', 'CONNECTOR_NOT_SERVICEABLE_ON_EDGE', `${component.ref} must sit on a board edge with shell/service clearance.`, report))
+    }
+    if (isRf(component)) {
+      const edgeDistance = nearestEdgeDistance(component, bounds)
+      const rfReport = { ref: component.ref, edgeDistanceMm: round(edgeDistance), copperKeepoutMm: Number(component.keepoutMm || context.rfKeepoutMm || 8) }
+      keepoutReports.push(rfReport)
+      if (edgeDistance > 10 && !component.externalAntenna) warnings.push(issue('WARNING', 'RF_ANTENNA_NOT_EDGE_EXPOSED', `${component.ref} is RF/antenna-related but is not near a board edge.`, rfReport))
+      for (const other of components) {
+        if (other.ref === component.ref) continue
+        if (isHot(other) && distance(component, other) < rfReport.copperKeepoutMm + Math.max(other.width, other.height) / 2) errors.push(issue('ERROR', 'HOT_PART_INSIDE_RF_KEEPOUT', `${other.ref} is too close to RF/antenna component ${component.ref}.`, { rf: component.ref, hot: other.ref, distanceMm: round(distance(component, other)), keepoutMm: rfReport.copperKeepoutMm }))
+      }
+    }
+    if (isHot(component)) {
+      for (const other of components.filter(isSensitive)) {
+        if (other.ref !== component.ref && distance(component, other) < 8) warnings.push(issue('WARNING', 'HOT_PART_NEAR_SENSITIVE_COMPONENT', `${component.ref} is close to sensitive component ${other.ref}.`, { hot: component.ref, sensitive: other.ref, distanceMm: round(distance(component, other)) }))
+      }
+    }
   }
   for (let a = 0; a < components.length; a += 1) {
     for (let b = a + 1; b < components.length; b += 1) {
-      if (hasPlacement(components[a]) && hasPlacement(components[b]) && rectsOverlap(components[a], components[b], clearance)) errors.push(issue('ERROR', 'COMPONENT_OVERLAP', `${components[a].ref} overlaps or violates clearance to ${components[b].ref}.`, { refs: [components[a].ref, components[b].ref], clearanceMm: clearance }))
+      if (hasPlacement(components[a]) && hasPlacement(components[b]) && rectsOverlap(components[a], components[b], clearance)) {
+        const pair = { refs: [components[a].ref, components[b].ref], clearanceMm: clearance }
+        clearancePairs.push(pair)
+        errors.push(issue('ERROR', 'COMPONENT_OVERLAP', `${components[a].ref} overlaps or violates clearance to ${components[b].ref}.`, pair))
+      }
     }
   }
+  for (const passive of components.filter(isSupportPassive)) {
+    const nearestActive = components.filter((component) => !isSupportPassive(component) && !isConnector(component)).map((component) => ({ ref: component.ref, distanceMm: distance(passive, component) })).sort((a, b) => a.distanceMm - b.distanceMm)[0]
+    if (nearestActive && nearestActive.distanceMm > 10) warnings.push(issue('WARNING', 'SUPPORT_PASSIVE_TOO_FAR_FROM_ACTIVE', `${passive.ref} is far from the active device it probably supports.`, { passive: passive.ref, nearestActiveRef: nearestActive.ref, distanceMm: round(nearestActive.distanceMm) }))
+  }
+  const gates = [
+    gate('outline', !errors.some((item) => item.code === 'BOARD_OUTLINE_MISSING_FOR_PLACEMENT')),
+    gate('component_dimensions', !errors.some((item) => item.code === 'COMPONENT_DIMENSIONS_MISSING')),
+    gate('inside_edge_cuts', !errors.some((item) => item.code === 'COMPONENT_OFF_BOARD')),
+    gate('clearance_no_overlap', !errors.some((item) => item.code === 'COMPONENT_OVERLAP')),
+    gate('mounting_keepouts', !errors.some((item) => item.code === 'PLACEMENT_MOUNTING_HOLE_CONFLICT')),
+    gate('connectors_serviceable', !errors.some((item) => item.code === 'CONNECTOR_NOT_SERVICEABLE_ON_EDGE')),
+    gate('rf_hot_keepouts', !errors.some((item) => item.code === 'HOT_PART_INSIDE_RF_KEEPOUT')),
+    gate('density', !errors.some((item) => item.code === 'PLACEMENT_DENSITY_TOO_HIGH'), density > 0.45 ? 'review' : 'pass'),
+  ]
   return {
     status: errors.length ? 'PLACEMENT_LEGALITY_BLOCKED' : warnings.length ? 'PLACEMENT_LEGALITY_NEEDS_REVIEW' : 'PLACEMENT_LEGALITY_READY_NEEDS_DRC',
-    placementLegality: { checkedComponents: components.length, clearanceMm: clearance, board: { widthMm: board.widthMm, heightMm: board.heightMm, outlinePoints: board.outline?.length || 0 } },
+    placementLegality: {
+      checkedComponents: components.length,
+      clearanceMm: clearance,
+      density: round(density),
+      componentAreaMm2: round(componentArea),
+      boardAreaMm2: round(boardArea),
+      board: { widthMm: board.widthMm, heightMm: board.heightMm, outlinePoints: board.outline?.length || 0 },
+      gates,
+      connectorReports,
+      keepoutReports,
+      clearancePairs,
+    },
     warnings,
     errors,
-    actions: errors.length ? ['solve_placement', 'optimize_placement', 'apply_placement_plan'] : ['validate_placement', 'run_kicad_drc'],
+    actions: errors.length ? placementActions(errors) : warnings.length ? ['optimize_placement', 'audit_placement_legality', 'run_kicad_drc'] : ['validate_placement', 'run_kicad_drc'],
     humanReviewRequired: true,
   }
 }
@@ -272,16 +339,26 @@ function hasPlacement(component) {
   return Number.isFinite(component.x) && Number.isFinite(component.y) && component.width > 0 && component.height > 0
 }
 
-function corners(component) {
-  const halfW = component.width / 2
-  const halfH = component.height / 2
+function boardBounds(board) {
+  if (Array.isArray(board.outline) && board.outline.length >= 3) return polygonBounds(board.outline)
+  const width = Number(board.widthMm || board.width || 0)
+  const height = Number(board.heightMm || board.height || 0)
+  return { minX: 0, minY: 0, maxX: width, maxY: height }
+}
+
+function corners(component, clearance = 0) {
+  const halfW = component.width / 2 + clearance
+  const halfH = component.height / 2 + clearance
   return [{ x: component.x - halfW, y: component.y - halfH }, { x: component.x + halfW, y: component.y - halfH }, { x: component.x + halfW, y: component.y + halfH }, { x: component.x - halfW, y: component.y + halfH }]
 }
 
-function nearBoardEdge(component, board, threshold) {
-  const width = board.widthMm || Math.max(...(board.outline || []).map((point) => point.x), 0)
-  const height = board.heightMm || Math.max(...(board.outline || []).map((point) => point.y), 0)
-  return component.x < threshold || component.y < threshold || width - component.x < threshold || height - component.y < threshold
+function nearestEdgeDistance(component, bounds) {
+  return Math.min(
+    Math.abs(component.x - bounds.minX),
+    Math.abs(bounds.maxX - component.x),
+    Math.abs(component.y - bounds.minY),
+    Math.abs(bounds.maxY - component.y),
+  )
 }
 
 function isConnector(component) {
@@ -294,6 +371,30 @@ function isRf(component) {
 
 function isHot(component) {
   return /BUCK|BOOST|LDO|MOSFET|REG|SHUNT|INDUCTOR|MOTOR|HOT/i.test(`${component.ref} ${component.group || ''} ${component.value || ''}`)
+}
+
+function isSensitive(component) {
+  return /IMU|GYRO|ACCEL|MAG|SENSOR|ADC|ANALOG|CRYSTAL|XTAL|RF|ANT|WIFI|BLE|GNSS|LTE/i.test(`${component.ref} ${component.group || ''} ${component.value || ''}`)
+}
+
+function isSupportPassive(component) {
+  return /^(R|C|L|FB|Y)\d+/i.test(component.ref || '') || /RES|CAP|INDUCTOR|FERRITE|CRYSTAL/i.test(`${component.group || ''} ${component.value || ''}`)
+}
+
+function gate(name, pass, overrideStatus = null) {
+  return { name, status: overrideStatus || (pass ? 'pass' : 'blocked') }
+}
+
+function placementActions(errors) {
+  const codes = new Set(errors.map((item) => item.code))
+  return [
+    ...(codes.has('BOARD_OUTLINE_MISSING_FOR_PLACEMENT') ? ['create_outline_board', 'apply_edge_cuts'] : []),
+    ...(codes.has('COMPONENT_DIMENSIONS_MISSING') ? ['resolve_component_assets', 'sync_component_database'] : []),
+    ...(codes.has('COMPONENT_OFF_BOARD') || codes.has('COMPONENT_OVERLAP') || codes.has('PLACEMENT_MOUNTING_HOLE_CONFLICT') || codes.has('PLACEMENT_DENSITY_TOO_HIGH') ? ['solve_placement', 'optimize_placement', 'apply_placement_plan'] : []),
+    ...(codes.has('CONNECTOR_NOT_SERVICEABLE_ON_EDGE') ? ['move_component', 'solve_placement'] : []),
+    ...(codes.has('HOT_PART_INSIDE_RF_KEEPOUT') ? ['build_noise_map', 'optimize_placement'] : []),
+    'audit_placement_legality',
+  ]
 }
 
 function distance(a, b) {
