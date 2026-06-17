@@ -56,6 +56,7 @@ export function buildWorkflowPreset(input = {}) {
       step('export_drill_files', { projectPath: slug(base.projectName) }, 'Export drill files after DRC/ERC.'),
       step('export_bom', { projectPath: slug(base.projectName) }, 'Export BOM after schematic/component review.'),
       step('export_cpl', { projectPath: slug(base.projectName) }, 'Export CPL after placement review.'),
+      step('validate_jlcpcb_package', { projectPath: slug(base.projectName) }, 'Validate Gerbers, drill, BOM, CPL, DRC/ERC reports, and assembly refs before package/order.'),
       step('package_jlcpcb', { projectPath: slug(base.projectName) }, 'Package only when required artifacts exist and gates pass.'),
     ],
     safety: ['All writes stay inside workspace.', 'Exports remain blocked until validation artifacts exist.', 'Human review required before manufacturing.'],
@@ -64,7 +65,7 @@ export function buildWorkflowPreset(input = {}) {
 }
 
 function step(type, input, why) {
-  return { type, input, why, dryRunRecommended: ['export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb'].includes(type) }
+  return { type, input, why, dryRunRecommended: ['export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'validate_jlcpcb_package', 'package_jlcpcb'].includes(type) }
 }
 
 function inferPreset(input) {

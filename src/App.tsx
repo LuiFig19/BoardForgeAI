@@ -142,6 +142,7 @@ const pluginCommands = [
   'export_drill_files',
   'export_bom',
   'export_cpl',
+  'validate_jlcpcb_package',
   'package_jlcpcb',
   'summarize_project',
 ]

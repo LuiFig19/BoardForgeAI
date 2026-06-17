@@ -63,6 +63,7 @@ test('MCP server exposes BoardForge tools and runs controlled jobs', async () =>
     assert.equal(listed.tools.some((tool) => tool.name === 'generate_manufacturing_manifest'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'plan_erc_repairs'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'apply_safe_erc_repairs'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'validate_jlcpcb_package'), true)
 
     const status = await client.request('tools/call', { name: 'status', arguments: {} })
     const statusPayload = JSON.parse(status.content[0].text)

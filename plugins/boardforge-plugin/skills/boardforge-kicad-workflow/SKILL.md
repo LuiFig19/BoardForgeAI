@@ -83,6 +83,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `plan_erc_repairs`
 - `apply_safe_erc_repairs`
 - `validate_manufacturing_readiness`
+- `validate_jlcpcb_package`
 - `generate_manufacturing_manifest`
 - `find_missing_footprints`
 - `link_3d_models`
@@ -227,6 +228,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `generate_netlist` writes `boardforge-netlist.json` from component pin maps so Codex can review schematic/PCB connectivity before routing.
 - `run_design_audit` writes `boardforge-design-report.json`, combining netlist coverage, PCB pad-net audit, placement score, route prechecks, binding issues, and recommended next BoardForge actions.
 - `validate_manufacturing_readiness` checks DRC/ERC reports plus BOM/CPL artifacts and reports blockers before export/package workflows.
+- `validate_jlcpcb_package` writes `boardforge-jlcpcb-package-validation.json` and checks Gerbers, drill files, BOM, CPL, DRC/ERC reports, assembly refs, and BOM/CPL reference matching before package/order workflows.
 - `generate_manufacturing_manifest` writes `boardforge-manufacturing-manifest.json`, collecting required project files, stackup, assembly, binding, preflight, DRC/ERC, BOM, CPL, advanced-fab approval, blockers, and warnings.
 - `generate_schematic` writes review-required KiCad schematic objects into `.kicad_sch`, including symbols, footprint properties, wires, labels, global labels, and symbol instances. Run ERC after it.
 - `plan_erc_repairs` and `apply_safe_erc_repairs` classify ERC reports and apply only metadata-safe schematic repair notes; electrical connectivity fixes remain review-required.
@@ -252,7 +254,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Export jobs are validation-gated by default. Use `allowUnvalidatedExport: true` only for development artifacts that must not be called manufacturing-ready.
 - Manufacturing readiness also checks BOM/CPL columns, refs, values, coordinates, and placement rows.
 - If the schematic BOM is empty but placed components exist, `export_bom` writes a review-required BOM from `boardforge-components.json`.
-- `package_jlcpcb` creates a ZIP only when required Gerber, drill, BOM, CPL, DRC, and ERC report files exist, and it blocks if DRC/ERC reports contain errors.
+- `package_jlcpcb` creates a ZIP only when `validate_jlcpcb_package` has no blockers and required Gerber, drill, BOM, CPL, DRC, and ERC report files exist.
 
 ## Explicitly Not Complete Yet
 

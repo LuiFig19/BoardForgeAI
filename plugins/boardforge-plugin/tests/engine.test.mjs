@@ -826,6 +826,7 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_power_tree'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_design_constraints'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_kicad_rules'))
+  assert.ok(preset.workflowPreset.exportStepsAfterValidation.some((step) => step.type === 'validate_jlcpcb_package'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_fanout'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'run_dfm_checks'))
   assert.ok(preset.workflowPreset.exportStepsAfterValidation.some((step) => step.type === 'package_jlcpcb'))
@@ -1390,7 +1391,7 @@ test('library adapter indexes installed KiCad 10 footprints and resolves compone
 
 test('package_jlcpcb blocks when required export files are missing', async () => {
   const result = await executeJob({ id: 'pkg', type: 'package_jlcpcb', input: {} }, process.cwd())
-  assert.ok(['BLOCKED_MISSING_ADAPTER', 'NEEDS_FIX', 'PACKAGE_BLOCKED_MISSING_FILES'].includes(result.status))
+  assert.ok(['BLOCKED_MISSING_ADAPTER', 'NEEDS_FIX', 'PACKAGE_BLOCKED_MISSING_FILES', 'PACKAGE_BLOCKED_JLCPCB_VALIDATION'].includes(result.status))
   assert.deepEqual(result.generatedFiles, [])
 })
 
@@ -1427,9 +1428,13 @@ test('KiCad CLI adapter runs DRC and exports board files when KiCad is installed
     assert.equal(drill.status, 'DRILL_EXPORTED')
     const cpl = await executeJob({ id: 'cpl', type: 'export_cpl', input: { ...input, allowUnvalidatedExport: true } }, workspace)
     assert.equal(cpl.status, 'CPL_EXPORTED')
+    const jlcpcbValidation = await executeJob({ id: 'jlcpcb_validation', type: 'validate_jlcpcb_package', input }, workspace)
+    assert.ok(['JLCPCB_PACKAGE_BLOCKED', 'JLCPCB_PACKAGE_NEEDS_REVIEW', 'JLCPCB_PACKAGE_READY_NEEDS_FINAL_HUMAN_REVIEW'].includes(jlcpcbValidation.status))
+    assert.ok(jlcpcbValidation.generatedFiles.some((file) => file.endsWith('boardforge-jlcpcb-package-validation.json')))
     const pkg = await executeJob({ id: 'pkg', type: 'package_jlcpcb', input }, workspace)
-    assert.ok(['PACKAGE_BLOCKED_DRC_ERRORS', 'PACKAGE_BLOCKED_MISSING_FILES'].includes(pkg.status))
-    assert.deepEqual(pkg.generatedFiles, [])
+    assert.ok(['PACKAGE_BLOCKED_DRC_ERRORS', 'PACKAGE_BLOCKED_MISSING_FILES', 'PACKAGE_BLOCKED_JLCPCB_VALIDATION'].includes(pkg.status))
+    if (pkg.status === 'PACKAGE_BLOCKED_JLCPCB_VALIDATION') assert.ok(pkg.generatedFiles.some((file) => file.endsWith('boardforge-jlcpcb-package-validation.json')))
+    else assert.deepEqual(pkg.generatedFiles, [])
     const state = JSON.parse(await readFile(path.join(workspace, 'adapter-project', 'boardforge-project.json'), 'utf8'))
     assert.ok(['DRC_PASSED', 'DRC_NEEDS_FIX'].includes(state.validation.drc.status))
     assert.equal(state.validation.erc.status, 'ERC_PASSED')
@@ -1437,7 +1442,7 @@ test('KiCad CLI adapter runs DRC and exports board files when KiCad is installed
     assert.equal(state.exports.drill.status, 'DRILL_EXPORTED')
     assert.equal(state.exports.bom.status, 'BOM_EXPORTED_FROM_PLACEMENT_NEEDS_REVIEW')
     assert.equal(state.exports.cpl.status, 'CPL_EXPORTED')
-    assert.ok(['PACKAGE_BLOCKED_DRC_ERRORS', 'PACKAGE_BLOCKED_MISSING_FILES'].includes(state.exports.jlcpcb.status))
+    assert.ok(['PACKAGE_BLOCKED_DRC_ERRORS', 'PACKAGE_BLOCKED_MISSING_FILES', 'PACKAGE_BLOCKED_JLCPCB_VALIDATION'].includes(state.exports.jlcpcb.status))
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

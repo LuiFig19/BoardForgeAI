@@ -106,6 +106,12 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.ok(['MANUFACTURING_MANIFEST_BLOCKED', 'MANUFACTURING_MANIFEST_NEEDS_REVIEW', 'MANUFACTURING_MANIFEST_READY_NEEDS_REVIEW'].includes(manifest.status))
     assert.equal(manifest.generatedFiles.some((file) => file.endsWith('boardforge-manufacturing-manifest.json')), true)
+    const jlcpcbValidation = await postJson(`http://127.0.0.1:${port}/jobs/validate-jlcpcb-package`, {
+      id: 'server_jlcpcb_validation',
+      input: { projectPath: 'server-project' },
+    })
+    assert.ok(['JLCPCB_PACKAGE_BLOCKED', 'JLCPCB_PACKAGE_NEEDS_REVIEW', 'JLCPCB_PACKAGE_READY_NEEDS_FINAL_HUMAN_REVIEW'].includes(jlcpcbValidation.status))
+    assert.equal(jlcpcbValidation.generatedFiles.some((file) => file.endsWith('boardforge-jlcpcb-package-validation.json')), true)
     const routeScore = await postJson(`http://127.0.0.1:${port}/jobs/score-routing`, {
       id: 'server_route_score',
       input: { nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }], board: { widthMm: 40, heightMm: 30 } },
