@@ -23,6 +23,8 @@ const routes = {
   'POST /jobs/workflow-preset': 'build_workflow_preset',
   'POST /jobs/run-workflow': 'run_boardforge_workflow',
   'POST /jobs/plan-mission': 'plan_mission_requirements',
+  'POST /jobs/intake-bom': 'intake_user_bom',
+  'POST /jobs/audit-bom': 'audit_user_bom',
   'POST /jobs/plan-requirements': 'plan_requirements',
   'POST /jobs/plan-pin-assignments': 'plan_pin_assignments',
   'POST /jobs/plan-power-tree': 'plan_power_tree',

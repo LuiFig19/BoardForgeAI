@@ -50,6 +50,12 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.equal(mission.status, 'MISSION_PLAN_NEEDS_USER_DECISIONS')
     assert.equal(mission.missionPlan.requirementsPlan.selectedCircuits.includes('long_range_uav_support'), true)
+    const bomAudit = await postJson(`http://127.0.0.1:${port}/jobs/audit-bom`, {
+      id: 'server_bom_audit',
+      input: { projectName: 'Server drone', prompt: 'drone that flies 15 miles and lasts 30 minutes', bomText: 'Ref,Value,MPN,Package\\nU1,STM32 MCU,STM32F405,LQFP-64\\nU2,ICM-42688 IMU,ICM-42688,LGA-14' },
+    })
+    assert.ok(['USER_BOM_AUDIT_NEEDS_FIX', 'USER_BOM_AUDIT_NEEDS_REVIEW'].includes(bomAudit.status))
+    assert.equal(bomAudit.missingFunctions.some((gap) => gap.group === 'GNSS'), true)
     const stackup = await postJson(`http://127.0.0.1:${port}/jobs/plan-stackup`, {
       id: 'server_stackup',
       input: { projectName: 'Server HDI sensor', prompt: 'compact USB sensor with blind vias', layerCount: 6, manufacturerProfile: 'ADVANCED_HDI_REVIEW', allowBlindVias: true },

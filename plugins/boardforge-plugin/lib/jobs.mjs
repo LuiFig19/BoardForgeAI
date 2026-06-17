@@ -36,6 +36,7 @@ import { auditComponentLibraryCoverage } from './component-audit.mjs'
 import { buildProjectPreflight } from './project-preflight.mjs'
 import { planRequirements } from './requirements-planner.mjs'
 import { planMissionRequirements } from './mission-planner.mjs'
+import { auditUserBom, intakeUserBom } from './user-bom.mjs'
 import { compareManufacturerCapabilities, planStackup, scoreBoardComplexity } from './stackup-planner.mjs'
 import { planAssemblyAndMechanical } from './assembly-planner.mjs'
 import { planPowerTree } from './power-tree-planner.mjs'
@@ -45,7 +46,7 @@ import { planSignalIntegrity } from './signal-integrity-planner.mjs'
 import { planPinAssignments } from './pin-assignment-planner.mjs'
 import { planTestStrategy } from './test-strategy-planner.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -84,6 +85,8 @@ export async function executeJob(job, workspace) {
   if (job.type === 'build_workflow_preset') return workflowPresetJob(job, workspace)
   if (job.type === 'run_boardforge_workflow') return runBoardForgeWorkflowJob(job, workspace)
   if (job.type === 'plan_mission_requirements') return missionRequirementsJob(job, workspace)
+  if (job.type === 'intake_user_bom') return userBomIntakeJob(job, workspace)
+  if (job.type === 'audit_user_bom') return userBomAuditJob(job, workspace)
   if (job.type === 'plan_requirements') return planRequirementsJob(job, workspace)
   if (job.type === 'plan_pin_assignments') return pinAssignmentsJob(job, workspace)
   if (job.type === 'plan_power_tree') return powerTreePlanJob(job, workspace)
@@ -654,6 +657,50 @@ async function missionRequirementsJob(job, workspace) {
   return result(job, output.status, output.feasibility.warnings.map((message) => ({ severity: 'WARNING', code: 'MISSION_FEASIBILITY_REVIEW', message })), output.decisions.required.map((item) => ({ severity: 'ERROR', code: 'MISSION_DECISION_REQUIRED', message: item.prompt, details: item })), { missionPlan: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
 }
 
+async function userBomIntakeJob(job, workspace) {
+  const output = intakeUserBom(job.input || {})
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-user-bom.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await writeFile(path.join(projectDir, 'boardforge-components.json'), JSON.stringify(output.components, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      userBom: output,
+      components: normalizeComponents(output.components),
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile, path.join(projectDir, 'boardforge-components.json')])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Parsed user BOM with ${output.components.length} components.`,
+    }))
+  }
+  return result(job, output.status, output.warnings, output.errors, { userBom: output, components: output.components, nets: output.nets, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
+}
+
+async function userBomAuditJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const existing = projectDir ? await readUserBom(projectDir) : null
+  const output = auditUserBom({ ...job.input, intake: job.input?.intake || existing })
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-user-bom-audit.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await writeFile(path.join(projectDir, 'boardforge-components.json'), JSON.stringify(output.components, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      userBom: output.intake,
+      userBomAudit: output,
+      missionPlan: output.missionPlan || current.missionPlan,
+      requirementsPlan: output.requirementsPlan || current.requirementsPlan,
+      components: normalizeComponents(output.components),
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile, path.join(projectDir, 'boardforge-components.json')])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Audited user BOM with ${output.missingFunctions.length} mission gaps and ${output.questions.length} clarification questions.`,
+    }))
+  }
+  return result(job, output.status, output.warnings, output.errors, { userBomAudit: output, components: output.components, missingFunctions: output.missingFunctions, questions: output.questions, substitutions: output.substitutions, powerBudget: output.powerBudget, workflow: output.workflow, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
+}
+
 async function planRequirementsJob(job, workspace) {
   const output = planRequirements(job.input || {})
   const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
@@ -1156,6 +1203,15 @@ async function readRichComponents(projectDir) {
   if (!projectDir) return null
   try {
     return JSON.parse(await readFile(path.join(projectDir, 'boardforge-components.json'), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+async function readUserBom(projectDir) {
+  if (!projectDir) return null
+  try {
+    return JSON.parse(await readFile(path.join(projectDir, 'boardforge-user-bom.json'), 'utf8'))
   } catch {
     return null
   }

@@ -405,6 +405,58 @@ test('mission planner handles long range drone goals before KiCad generation', a
   assert.ok(plan.missionPlan.boardSpecs.recommendedLayerCount >= 4)
 })
 
+test('user BOM intake and audit verify parts against long range drone mission', async () => {
+  const bomText = [
+    'Ref,Value,MPN,Package,Qty',
+    'U1,STM32H743 flight controller MCU,STM32H743VIT6,LQFP-100,1',
+    'U2,ICM-42688-P IMU,ICM-42688-P,LGA-14,1',
+    'J1,USB-C receptacle,TYPE-C-31-M-12,USB-C-SMD,1',
+    'U10,5V buck regulator,MP1584,SOP-8,1',
+    'J50,4-in-1 ESC connector,PinHeader-1x08,PinHeader-1x08,1',
+  ].join('\n')
+  const intake = await executeJob({
+    id: 'intake_bom',
+    type: 'intake_user_bom',
+    input: { projectName: 'User Drone BOM', bomText },
+  }, process.cwd())
+  assert.ok(['USER_BOM_PARSED', 'USER_BOM_PARSED_NEEDS_REVIEW'].includes(intake.status))
+  assert.equal(intake.components.length, 5)
+  assert.ok(intake.components.some((component) => component.group === 'IMU'))
+  const audit = await executeJob({
+    id: 'audit_bom',
+    type: 'audit_user_bom',
+    input: {
+      projectName: 'User Drone BOM',
+      prompt: 'drone that flies 15 miles and lasts 30 minutes',
+      bomText,
+      battery: '4S 5000mAh LiPo',
+    },
+  }, process.cwd())
+  assert.equal(audit.status, 'USER_BOM_AUDIT_NEEDS_FIX')
+  assert.ok(audit.missingFunctions.some((gap) => gap.group === 'GNSS'))
+  assert.ok(audit.questions.some((question) => question.id === 'missing_functions'))
+  assert.ok(audit.workflow.some((step) => step.type === 'generate_schematic'))
+  assert.ok(audit.powerBudget.batteryWh > 0)
+})
+
+test('user BOM jobs persist normalized components into a KiCad project state', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-user-bom-test-'))
+  try {
+    await executeJob({ id: 'project', type: 'create_outline_board', allowOverwrite: true, input: { projectName: 'User BOM Project', widthMm: 50, heightMm: 35, layerCount: 4 } }, workspace)
+    const bomText = 'Ref,Value,MPN,Package\nU1,STM32 flight controller MCU,STM32F405RGT6,LQFP-64\nU2,ICM-42688-P IMU,ICM-42688-P,LGA-14\nJ60,GPS GNSS connector,PinHeader-1x06,PinHeader-1x06'
+    const intake = await executeJob({ id: 'project_bom_intake', type: 'intake_user_bom', input: { projectPath: 'user-bom-project', bomText } }, workspace)
+    assert.equal(intake.generatedFiles.some((file) => file.endsWith('boardforge-user-bom.json')), true)
+    const audit = await executeJob({ id: 'project_bom_audit', type: 'audit_user_bom', input: { projectPath: 'user-bom-project', prompt: 'long range drone 15 miles 30 minutes', battery: '4S 5000mAh' } }, workspace)
+    assert.equal(audit.generatedFiles.some((file) => file.endsWith('boardforge-user-bom-audit.json')), true)
+    const state = JSON.parse(await readFile(path.join(workspace, 'user-bom-project', 'boardforge-project.json'), 'utf8'))
+    assert.equal(state.userBom.components.length, 3)
+    assert.ok(state.userBomAudit.questions.length > 0)
+    assert.ok(state.components.some((component) => component.ref === 'J60'))
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
 test('pin assignment planner maps MCU interfaces and peripheral pins', async () => {
   const result = await executeJob({
     id: 'pin_assignments',
