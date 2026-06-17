@@ -18,8 +18,15 @@ export async function validateManufacturingReadiness(projectDir, options = {}) {
     ...stackup.errors,
   ]
   const warnings = [...drc.warnings, ...erc.warnings, ...bom.warnings, ...cpl.warnings, ...stackup.warnings]
+  const gates = releaseGates({ drc, erc, bom, cpl, stackup }, options)
   return {
     status: errors.length ? 'MANUFACTURING_READINESS_BLOCKED' : warnings.length ? 'MANUFACTURING_READINESS_NEEDS_REVIEW' : 'MANUFACTURING_READINESS_READY_NEEDS_REVIEW',
+    releaseProof: {
+      gates,
+      score: releaseScore(gates),
+      exportPolicy: exportPolicy(gates),
+      nextActions: nextActions(errors, warnings, gates),
+    },
     reports: { drc, erc },
     stackup,
     bom,
@@ -55,7 +62,14 @@ export async function validateExportGate(projectDir, kind, options = {}) {
   })
   if (options.allowUnvalidatedExport) return { allowed: true, readiness, warnings: [{ severity: 'WARNING', code: 'UNVALIDATED_EXPORT_ALLOWED', message: `${kind} export is allowed by explicit override, but validation is not clean.` }] }
   const blocking = readiness.errors.filter((issue) => issue.code !== 'BOM_MISSING' && issue.code !== 'CPL_MISSING')
-  return { allowed: blocking.length === 0, readiness, errors: blocking, warnings: readiness.warnings }
+  const requiredGateNames = requiredGatesFor(kind)
+  const failedGates = readiness.releaseProof.gates.filter((gate) => requiredGateNames.includes(gate.name) && gate.status === 'blocked')
+  return {
+    allowed: blocking.length === 0 && failedGates.length === 0,
+    readiness,
+    errors: [...blocking, ...failedGates.map((gate) => ({ severity: 'ERROR', code: `EXPORT_GATE_${gate.name.toUpperCase()}_BLOCKED`, message: gate.why, details: gate }))],
+    warnings: readiness.warnings,
+  }
 }
 
 async function readReport(file, label) {
@@ -80,6 +94,57 @@ function gateReport(report, label, required) {
   if (!required) return []
   if (!report.exists) return [{ severity: 'ERROR', code: `${label}_REPORT_MISSING`, message: `${label} report is required before this manufacturing step.` }]
   return report.errors
+}
+
+function releaseGates({ drc, erc, bom, cpl, stackup }, options) {
+  const requireErc = options.requireErc !== false
+  const requireDrc = options.requireDrc !== false
+  return [
+    gate('erc_report', !requireErc || erc.exists && erc.issueCounts.errors === 0, erc.exists ? `${erc.issueCounts.errors} ERC error(s), ${erc.issueCounts.warnings} warning(s).` : 'ERC report missing.'),
+    gate('drc_report', !requireDrc || drc.exists && drc.issueCounts.errors === 0, drc.exists ? `${drc.issueCounts.errors} DRC error(s), ${drc.issueCounts.warnings} warning(s).` : 'DRC report missing.'),
+    gate('bom_export', bom.exists && bom.errors.length === 0, bom.exists ? `${bom.rowCount} BOM row(s).` : 'BOM missing.'),
+    gate('cpl_export', cpl.exists && cpl.errors.length === 0, cpl.exists ? `${cpl.rowCount} CPL row(s).` : 'CPL missing.'),
+    gate('stackup_approval', stackup.errors.length === 0, stackup.exists ? 'Stackup reviewed by BoardForge gate.' : 'Stackup plan missing or limited.'),
+  ]
+}
+
+function gate(name, pass, why) {
+  return { name, status: pass ? 'passed' : 'blocked', why }
+}
+
+function releaseScore(gates) {
+  return Math.max(0, Math.round((gates.filter((gate) => gate.status === 'passed').length / Math.max(1, gates.length)) * 100))
+}
+
+function exportPolicy(gates) {
+  const blocked = gates.filter((gate) => gate.status === 'blocked').map((gate) => gate.name)
+  return {
+    gerbers: !blocked.includes('drc_report') && !blocked.includes('stackup_approval'),
+    drill: !blocked.includes('drc_report') && !blocked.includes('stackup_approval'),
+    bom: !blocked.includes('erc_report') && !blocked.includes('bom_export'),
+    cpl: !blocked.includes('drc_report') && !blocked.includes('cpl_export'),
+    jlcpcb: blocked.length === 0,
+  }
+}
+
+function requiredGatesFor(kind) {
+  if (kind === 'gerbers' || kind === 'drill') return ['drc_report', 'stackup_approval']
+  if (kind === 'bom') return ['erc_report', 'bom_export']
+  if (kind === 'cpl') return ['drc_report', 'cpl_export']
+  if (kind === 'jlcpcb') return ['erc_report', 'drc_report', 'bom_export', 'cpl_export', 'stackup_approval']
+  return []
+}
+
+function nextActions(errors, warnings, gates) {
+  const blocked = gates.filter((gate) => gate.status === 'blocked').map((gate) => gate.name)
+  return [
+    ...(blocked.includes('erc_report') ? ['run_kicad_erc'] : []),
+    ...(blocked.includes('drc_report') ? ['run_kicad_drc'] : []),
+    ...(blocked.includes('bom_export') ? ['export_bom'] : []),
+    ...(blocked.includes('cpl_export') ? ['export_cpl'] : []),
+    ...(blocked.includes('stackup_approval') ? ['plan_stackup'] : []),
+    ...(errors.length || warnings.length ? ['validate_jlcpcb_package'] : ['package_jlcpcb']),
+  ]
 }
 
 async function validateBom(file) {
