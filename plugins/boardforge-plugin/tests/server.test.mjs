@@ -65,6 +65,11 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { projectPath: 'server-project' },
     })
     assert.ok(['SCHEMATIC_PCB_SYNC_BLOCKED', 'SCHEMATIC_PCB_SYNC_NEEDS_REVIEW', 'SCHEMATIC_PCB_SYNC_READY_NEEDS_ERC_DRC'].includes(schematicPcbSync.status))
+    const applySchematicPcbSync = await postJson(`http://127.0.0.1:${port}/jobs/apply-schematic-pcb-sync`, {
+      id: 'server_schematic_pcb_sync_apply',
+      input: { projectPath: 'server-project' },
+    })
+    assert.ok(['PCB_NET_SYNC_APPLIED_NEEDS_DRC', 'PCB_NET_SYNC_NO_CHANGES'].includes(applySchematicPcbSync.status))
     const modelCoverage = await postJson(`http://127.0.0.1:${port}/jobs/validate-3d-models`, {
       id: 'server_model_coverage',
       input: { projectPath: 'server-project' },
@@ -110,6 +115,16 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { projectPath: 'server-project' },
     })
     assert.ok(['COMPONENT_LIBRARY_AUDIT_NEEDS_FIX', 'COMPONENT_LIBRARY_AUDIT_NEEDS_REVIEW', 'COMPONENT_LIBRARY_AUDIT_READY_NEEDS_REVIEW'].includes(audit.status))
+    const pinRepairs = await postJson(`http://127.0.0.1:${port}/jobs/plan-pin-map-repairs`, {
+      id: 'server_pin_repairs',
+      input: { projectPath: 'server-project' },
+    })
+    assert.ok(['PIN_MAP_REPAIR_NEEDS_REVIEW', 'PIN_MAP_REPAIR_READY_NEEDS_REVIEW', 'PIN_MAP_REPAIR_NO_ACTIONS'].includes(pinRepairs.status))
+    const appliedPinRepairs = await postJson(`http://127.0.0.1:${port}/jobs/apply-pin-map-repairs`, {
+      id: 'server_apply_pin_repairs',
+      input: { projectPath: 'server-project' },
+    })
+    assert.ok(['PIN_MAP_REPAIRS_APPLIED_NEEDS_BINDING_RECHECK', 'PIN_MAP_REPAIR_NEEDS_REVIEW', 'PIN_MAP_REPAIR_READY_NEEDS_REVIEW', 'PIN_MAP_REPAIR_NO_ACTIONS'].includes(appliedPinRepairs.status))
     const preflight = await postJson(`http://127.0.0.1:${port}/jobs/preflight`, {
       id: 'server_preflight',
       input: { projectPath: 'server-project' },
@@ -148,6 +163,12 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { nets: [{ name: 'USB_DP' }, { name: 'VBAT' }], board: { layerCount: 4 } },
     })
     assert.ok(['VIA_STRATEGY_BLOCKED', 'VIA_STRATEGY_NEEDS_REVIEW', 'VIA_STRATEGY_READY'].includes(viaStrategy.status))
+    const copperPours = await postJson(`http://127.0.0.1:${port}/jobs/copper-pours`, {
+      id: 'server_copper_pours',
+      input: { projectPath: 'server-project', nets: [{ name: 'GND' }, { name: '3V3' }], maxStitchingVias: 8 },
+    })
+    assert.ok(['COPPER_POUR_PLAN_READY_NEEDS_DRC', 'COPPER_POUR_PLAN_NEEDS_REVIEW'].includes(copperPours.status))
+    assert.equal(copperPours.generatedFiles.some((file) => file.endsWith('boardforge-copper-pour-plan.json')), true)
     const routeReport = await postJson(`http://127.0.0.1:${port}/jobs/routing-report`, {
       id: 'server_route_report',
       input: { nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }], board: { widthMm: 40, heightMm: 30 } },

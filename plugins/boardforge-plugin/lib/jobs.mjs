@@ -15,7 +15,7 @@ import { generateTemplateComponents, renderPlacedFootprints } from './components
 import { findMissingFootprints, link3dModels, resolveComponentAssets, searchLibraryAssets, syncKiCadLibraries } from './library-adapter.mjs'
 import { createProjectState, normalizeComponents, readProjectState, stateFileName, summarizeProjectState, updateProjectState } from './project-state.mjs'
 import { createDesignIntent, validateZones } from './design-rules.mjs'
-import { applyRoutingPlanToPcb } from './copper-writer.mjs'
+import { applyNetlistSyncToPcb, applyRoutingPlanToPcb } from './copper-writer.mjs'
 import { applyPlacementPlanToPcb } from './placement-writer.mjs'
 import { buildDesignConstraints } from './design-constraints.mjs'
 import { buildWorkflowPreset } from './workflow-presets.mjs'
@@ -33,6 +33,8 @@ import { validateJlcpcbPackage } from './jlcpcb-package-validator.mjs'
 import { validateSchematicPcbSync } from './schematic-pcb-sync.mjs'
 import { validate3dModelCoverage } from './model-coverage.mjs'
 import { auditBomSourcing } from './bom-sourcing-audit.mjs'
+import { applySafePinMapRepairs, planPinMapRepairs } from './pin-map-repair.mjs'
+import { planCopperPours } from './copper-pour-planner.mjs'
 import { validateRoutingGeometry } from './routing-validation.mjs'
 import { scoreRoutingPlan } from './routing-quality.mjs'
 import { runDesignAudit } from './design-audit.mjs'
@@ -60,7 +62,7 @@ import { buildNoiseMap } from './noise-map.mjs'
 import { summarizeManufacturerRules } from './manufacturer-rules-summary.mjs'
 import { generateProjectReviewReport } from './project-review-report.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'synthesize_schematic_design', 'validate_schematic_pcb_sync', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_3d_model_coverage', 'audit_bom_sourcing', 'validate_manufacturing_readiness', 'validate_jlcpcb_package', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'generate_routing_report', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'synthesize_schematic_design', 'validate_schematic_pcb_sync', 'apply_schematic_pcb_sync', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'plan_pin_map_repairs', 'apply_pin_map_repairs', 'validate_3d_model_coverage', 'audit_bom_sourcing', 'validate_manufacturing_readiness', 'validate_jlcpcb_package', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'generate_routing_report', 'plan_copper_pours', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -101,6 +103,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'validate_schematic_graph') return schematicGraphJob(job, workspace)
   if (job.type === 'synthesize_schematic_design') return schematicSynthesisJob(job, workspace)
   if (job.type === 'validate_schematic_pcb_sync') return schematicPcbSyncJob(job, workspace)
+  if (job.type === 'apply_schematic_pcb_sync') return applySchematicPcbSyncJob(job, workspace)
   if (job.type === 'check_routing_readiness') return routingReadinessJob(job, workspace, profile)
   if (job.type === 'calculate_power_routing') return powerRoutingJob(job, workspace, profile)
   if (job.type === 'select_via_strategy') return viaStrategyJob(job, workspace, profile)
@@ -130,6 +133,8 @@ export async function executeJob(job, workspace) {
   if (job.type === 'sync_component_database' || job.type === 'resolve_bom_parts') return componentDatabaseJob(job, workspace)
   if (job.type === 'audit_component_library') return componentLibraryAuditJob(job, workspace)
   if (job.type === 'validate_component_bindings') return validateComponentBindingsJob(job, workspace)
+  if (job.type === 'plan_pin_map_repairs') return pinMapRepairJob(job, workspace, false)
+  if (job.type === 'apply_pin_map_repairs') return pinMapRepairJob(job, workspace, true)
   if (job.type === 'validate_3d_model_coverage') return modelCoverageJob(job, workspace)
   if (job.type === 'audit_bom_sourcing') return bomSourcingAuditJob(job, workspace)
   if (job.type === 'validate_manufacturing_readiness') return manufacturingReadinessJob(job, workspace)
@@ -156,6 +161,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'validate_routing_geometry') return routingGeometryJob(job, profile)
   if (job.type === 'score_routing_quality') return routingQualityJob(job, profile)
   if (job.type === 'generate_routing_report') return routingReportJob(job, profile)
+  if (job.type === 'plan_copper_pours') return copperPourPlanJob(job, workspace, profile)
   if (['generate_routing_plan', 'report_unrouted_nets', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes'].includes(job.type)) return routingPlanJob(job)
   if (job.type === 'run_full_self_review') return selfReviewJob(job, profile)
   if (job.type === 'scan_kicad_project' || job.type === 'summarize_project') return scanProjectJob(job, workspace)
@@ -1331,6 +1337,31 @@ async function schematicPcbSyncJob(job, workspace) {
   return result(job, sync.status, sync.warnings, sync.errors, { sync, generatedFiles: [sync.outputFile].filter(Boolean), humanReviewRequired: true })
 }
 
+async function applySchematicPcbSyncJob(job, workspace) {
+  const context = await getKiCadContext(job, workspace, 'pcb')
+  if (context.blocked) return context.blocked
+  const state = await readProjectState(context.files.projectDir)
+  const components = job.input?.components || await readRichComponents(context.files.projectDir) || state?.components || []
+  const netlist = job.input?.netlist || state?.netlist || await readJsonIfExists(path.join(context.files.projectDir, 'boardforge-netlist.json'))
+  const output = await applyNetlistSyncToPcb({ pcbFile: context.files.pcbFile, components, netlist })
+  await updateProjectState(context.files.projectDir, async (current) => ({
+    ...current,
+    status: output.status,
+    schematicPcbSyncApply: output,
+    lastJobType: job.type,
+    lastHistoryMessage: `Applied PCB net sync for ${output.netCount} nets and ${output.componentCount} components.`,
+  }))
+  return result(job, output.status, [{ severity: 'WARNING', code: 'PCB_NET_SYNC_REQUIRES_DRC', message: 'PCB nets/pad assignments changed or were checked; run KiCad DRC before routing/export.' }], [], { syncApply: output, generatedFiles: output.changed ? [context.files.pcbFile] : [], humanReviewRequired: true })
+}
+
+async function readJsonIfExists(file) {
+  try {
+    return JSON.parse(await readFile(file, 'utf8'))
+  } catch {
+    return null
+  }
+}
+
 async function modelCoverageJob(job, workspace) {
   const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : workspace
   const state = await readProjectState(projectDir)
@@ -1345,6 +1376,28 @@ async function modelCoverageJob(job, workspace) {
     lastHistoryMessage: `Validated 3D model coverage for ${coverage.checked} components.`,
   }))
   return result(job, coverage.status, coverage.warnings, coverage.errors, { coverage, generatedFiles: [coverage.outputFile].filter(Boolean), humanReviewRequired: true })
+}
+
+async function pinMapRepairJob(job, workspace, applySafe) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : workspace
+  const state = await readProjectState(projectDir)
+  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const repairPlan = applySafe && (job.input?.repairPlan || state?.pinMapRepairPlan)
+    ? applySafePinMapRepairs(components, job.input?.repairPlan || state.pinMapRepairPlan)
+    : await planPinMapRepairs(components, { ...(job.input || {}), applySafe })
+  const outputFile = path.join(projectDir, applySafe ? 'boardforge-pin-map-repairs-applied.json' : 'boardforge-pin-map-repair-plan.json')
+  await writeFile(outputFile, JSON.stringify(repairPlan, null, 2), 'utf8')
+  if (applySafe && repairPlan.components) await writeFile(path.join(projectDir, 'boardforge-components.json'), JSON.stringify(repairPlan.components, null, 2), 'utf8')
+  await updateProjectState(projectDir, async (current) => ({
+    ...current,
+    status: repairPlan.status,
+    pinMapRepairPlan: repairPlan,
+    components: applySafe && repairPlan.components ? normalizeComponents(repairPlan.components) : current.components,
+    generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile, applySafe ? path.join(projectDir, 'boardforge-components.json') : null].filter(Boolean))],
+    lastJobType: job.type,
+    lastHistoryMessage: `${applySafe ? 'Applied' : 'Planned'} ${repairPlan.repairs?.length || 0} pin-map repair actions.`,
+  }))
+  return result(job, repairPlan.status, repairPlan.warnings || [], repairPlan.errors || [], { repairPlan, generatedFiles: [outputFile], humanReviewRequired: true })
 }
 
 async function bomSourcingAuditJob(job, workspace) {
@@ -1740,6 +1793,30 @@ function routingReportJob(job, profile) {
   const routingPlan = job.input?.routingPlan || generateRoutingPlan(nets, { ...job.input, layerCount: job.input?.layerCount || board.layerCount, board, components, profile })
   const report = buildRoutingReport({ ...job.input, board, components, nets, routingPlan, profile })
   return result(job, report.status, report.warnings, report.blockers, { routingReport: report, routingPlan, humanReviewRequired: true })
+}
+
+async function copperPourPlanJob(job, workspace, profile) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const nets = assignNetsToClasses(job.input?.nets || state?.netlist?.nets || state?.requirements?.nets || [])
+  const copperPourPlan = planCopperPours({ board, components, nets, profile, options: job.input || {} })
+  if (projectDir && !job.dryRun) {
+    const outputFile = path.join(projectDir, 'boardforge-copper-pour-plan.json')
+    await writeFile(outputFile, JSON.stringify(copperPourPlan, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: copperPourPlan.status,
+      copperPourPlan,
+      designIntent: { ...(current.designIntent || {}), copperPours: copperPourPlan.pours, stitchingVias: copperPourPlan.stitchingVias },
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Planned ${copperPourPlan.pours.length} copper pours and ${copperPourPlan.stitchingVias.length} stitching vias.`,
+    }))
+    return result(job, copperPourPlan.status, copperPourPlan.warnings, copperPourPlan.errors, { copperPourPlan, generatedFiles: [outputFile], humanReviewRequired: true })
+  }
+  return result(job, copperPourPlan.status, copperPourPlan.warnings, copperPourPlan.errors, { copperPourPlan, generatedFiles: [], humanReviewRequired: true })
 }
 
 async function autorouteBoardJob(job, workspace, profile) {

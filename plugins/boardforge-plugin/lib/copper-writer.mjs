@@ -35,8 +35,41 @@ export async function applyRoutingPlanToPcb({ pcbFile, board, routingPlan, compo
   }
 }
 
+export async function applyNetlistSyncToPcb({ pcbFile, components = [], netlist = null }) {
+  const original = await readFile(pcbFile, 'utf8')
+  const netNames = [...new Set([
+    ...componentNetNames(components),
+    ...(netlist?.nets || []).map((net) => net.name),
+  ].filter(Boolean))]
+  const { content, netNumbers } = ensureNets(original, netNames)
+  const withPadNets = assignPadNets(content, componentsWithNetlistPins(components, netlist), netNumbers)
+  const changed = withPadNets !== original
+  if (changed) await writeFile(pcbFile, withPadNets, 'utf8')
+  return {
+    status: changed ? 'PCB_NET_SYNC_APPLIED_NEEDS_DRC' : 'PCB_NET_SYNC_NO_CHANGES',
+    pcbFile,
+    netCount: netNames.length,
+    componentCount: components.length,
+    changed,
+    humanReviewRequired: true,
+  }
+}
+
 function componentNetNames(components) {
   return components.flatMap((component) => Object.values(component.pinMap || {}).filter(Boolean))
+}
+
+function componentsWithNetlistPins(components, netlist) {
+  if (!netlist?.nets?.length) return components
+  const byRef = new Map(components.map((component) => [component.ref, { ...component, pinMap: { ...(component.pinMap || {}) } }]))
+  for (const net of netlist.nets || []) {
+    for (const pin of net.pins || []) {
+      const component = byRef.get(pin.ref)
+      if (!component || !pin.pin) continue
+      component.pinMap[pin.pin] = net.name
+    }
+  }
+  return [...byRef.values()]
 }
 
 function assignPadNets(content, components, netNumbers) {
@@ -126,6 +159,18 @@ export function materializeRouteObjects(board, routingPlan) {
       thermalRelief: Boolean(pour.thermalRelief),
       polygon: board.outline.map((point) => ({ x: round(point.x), y: round(point.y) })),
       avoidZones: pour.avoidZones || [],
+    })
+  }
+  for (const via of routingPlan.designIntent?.stitchingVias || []) {
+    vias.push({
+      net: via.net || 'GND',
+      x: via.x,
+      y: via.y,
+      diameterMm: via.diameterMm || 0.45,
+      drillMm: via.drillMm || 0.2,
+      layers: via.layers || ['F.Cu', 'B.Cu'],
+      viaType: via.viaType || 'through',
+      reason: via.reason || 'stitching via',
     })
   }
   return { segments, vias, zones }

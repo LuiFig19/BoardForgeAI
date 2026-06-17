@@ -30,6 +30,7 @@ test('MCP server exposes BoardForge tools and runs controlled jobs', async () =>
     assert.equal(listed.tools.some((tool) => tool.name === 'validate_schematic_graph'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'synthesize_schematic_design'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'validate_schematic_pcb_sync'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'apply_schematic_pcb_sync'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'check_routing_readiness'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'calculate_power_routing'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'select_via_strategy'), true)
@@ -67,6 +68,9 @@ test('MCP server exposes BoardForge tools and runs controlled jobs', async () =>
     assert.equal(listed.tools.some((tool) => tool.name === 'validate_jlcpcb_package'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'validate_3d_model_coverage'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'audit_bom_sourcing'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'plan_pin_map_repairs'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'apply_pin_map_repairs'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'plan_copper_pours'), true)
 
     const status = await client.request('tools/call', { name: 'status', arguments: {} })
     const statusPayload = JSON.parse(status.content[0].text)

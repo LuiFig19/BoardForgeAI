@@ -48,6 +48,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `validate_schematic_graph`
 - `synthesize_schematic_design`
 - `validate_schematic_pcb_sync`
+- `apply_schematic_pcb_sync`
 - `check_routing_readiness`
 - `calculate_power_routing`
 - `select_via_strategy`
@@ -78,6 +79,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `resolve_bom_parts`
 - `audit_component_library`
 - `validate_component_bindings`
+- `plan_pin_map_repairs`
+- `apply_pin_map_repairs`
 - `validate_3d_model_coverage`
 - `audit_bom_sourcing`
 - `generate_netlist`
@@ -102,6 +105,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `fix_component_overlap`
 - `fix_mounting_hole_conflicts`
 - `generate_routing_plan`
+- `plan_copper_pours`
 - `autoroute_board`
 - `autoroute_and_apply`
 - `autoroute_drc_iteration`
@@ -145,9 +149,12 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `synthesize_schematic_design` before `generate_schematic` when a project has requirements, a BOM, or generated components. It normalizes components, pin maps, power rails, support passives, and the net graph.
 - Run `validate_schematic_graph` before placement/routing to catch missing power pins, ground pins, support components, weak net endpoints, and broken differential pairs.
 - Run `validate_schematic_pcb_sync` after schematic/netlist generation and after copper/pad-net writes to catch mismatched KiCad schematic labels, BoardForge netlist nets, PCB net declarations, and PCB pad assignments.
+- Run `plan_pin_map_repairs` after component binding validation if pin-map keys do not match symbol pins or footprint pads. Use `apply_pin_map_repairs` only for safe mechanical key rewrites; rerun binding validation afterward.
+- Run `apply_schematic_pcb_sync` only after netlist/schematic review when PCB net declarations and footprint pad-net assignments must be synchronized before DRC.
 - Run `calculate_power_routing` before route planning on any high-current, motor, battery, PoE, LED, switching-regulator, or field-power board so trace widths, copper pours, and via arrays are explicit.
 - Run `select_via_strategy` before fanout/routing on compact, dense, high-speed, or HDI boards so through/blind/buried/microvia policy is manufacturer-gated.
 - Run `build_noise_map` before placement/routing on RF, antenna, sensor, analog, switching, motor, PoE, or thermal boards so Codex can avoid noisy/sensitive regions.
+- Run `plan_copper_pours` after power/via/noise planning and before route generation so ground/power zones and stitching vias are explicit and keepout-aware.
 - Run `check_routing_readiness` immediately before `generate_routing_plan`, `autoroute_board`, `autoroute_and_apply`, or `autoroute_drc_iteration`. If it returns blocked, do not route.
 - Run `generate_project_review_report` after schematic, placement, routing, DFM, power, via, noise, and manufacturing checks so the user gets one concise human-review artifact.
 - Run `build_workflow_preset` when the user asks Codex to build a common board type and needs an ordered sequence of safe BoardForge jobs.
@@ -211,6 +218,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `validate_schematic_graph` validates component pin maps, power/ground intent, differential-pair members, supply-net endpoints, and support component review before KiCad ERC.
 - `synthesize_schematic_design` builds the review-required component/pin/net graph, adds obvious support passives such as decoupling, USB-C CC pulldowns, reset/boot parts, and regulator caps, then writes `boardforge-schematic-synthesis.json`.
 - `validate_schematic_pcb_sync` writes `boardforge-schematic-pcb-sync.json` and compares KiCad schematic labels, BoardForge netlist nets, PCB net declarations, and PCB footprint pad-net assignments.
+- `apply_schematic_pcb_sync` writes review-required PCB net declarations and footprint pad-net assignments from BoardForge components/netlist, then requires DRC before export.
 - `calculate_power_routing` estimates current-driven trace widths, copper-pour requirements, thermal review needs, and minimum parallel via count for power/current nets.
 - `select_via_strategy` chooses through, parallel through, blind, buried, or microvia review policies per net based on stackup, manufacturer profile, cost, density, and signal class.
 - `build_noise_map` creates noisy, sensitive, and antenna regions plus coupling warnings so routing avoids switching regulators, motor power, RF, analog, sensor, and crystal conflicts.
@@ -230,6 +238,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Component database jobs also return footprint confidence, selection scores, lifecycle/assembly risk, procurement summary, and substitution candidates for BOM review.
 - `audit_component_library` writes `boardforge-component-audit.json` and scores symbol, footprint, 3D model, pin-map, package, LCSC, and MPN coverage before schematic, placement, routing, or export work.
 - `validate_component_bindings` parses KiCad symbol pins and footprint pads, compares them to BoardForge pin maps, and writes compatibility results to `boardforge-bindings.json` when `projectPath` is provided.
+- `plan_pin_map_repairs` writes `boardforge-pin-map-repair-plan.json` with safe candidate pin-map key repairs for symbol/footprint/pad mismatches.
+- `apply_pin_map_repairs` applies only safe pin-map rewrites to `boardforge-components.json`, writes `boardforge-pin-map-repairs-applied.json`, and requires binding validation afterward.
 - `validate_3d_model_coverage` writes `boardforge-3d-model-coverage.json` and reports missing or unverified KiCad STEP/WRL model links for visual/mechanical review.
 - `audit_bom_sourcing` writes `boardforge-bom-sourcing-audit.json` and checks MPN/LCSC/JLCPCB sourcing readiness against component footprints.
 - `generate_netlist` writes `boardforge-netlist.json` from component pin maps so Codex can review schematic/PCB connectivity before routing.
@@ -247,6 +257,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `optimize_placement` proposes deterministic placement repairs for overlaps, edge connectors, RF/antenna edge access, and ratsnest quality before routing.
 - `apply_placement_plan` writes reviewed placement coordinates into real `.kicad_pcb` footprint `(at x y rotation)` fields and marks the project DRC-required.
 - `generate_routing_plan` creates a partial routing plan from explicit route points or inferred component pin-map endpoints, emits route waypoints for reviewable 45/90-degree legs, and reports unrouted nets. It does not claim full autorouting.
+- `plan_copper_pours` writes `boardforge-copper-pour-plan.json`, plans GND/power copper zones, keepout-aware stitching vias, thermal relief strategy, and updates design intent before routing.
 - `autoroute_board` runs the BoardForge controlled deterministic grid/A* router against board outline, component obstacles, net classes, layer policy, via policy, keepouts, and compact-board rules. It returns routed/unrouted nets and remains review-required.
 - `autoroute_and_apply` writes only prechecked autorouted KiCad copper to `.kicad_pcb`, assigns PCB nets/pad nets where possible, records `boardforge-project.json` routing state, and requires DRC before export.
 - `autoroute_drc_iteration` applies controlled autorouted copper and immediately runs local KiCad DRC, returning the DRC report and blocking manufacturing claims when DRC errors remain.
