@@ -28,6 +28,7 @@ test('MCP server exposes BoardForge tools and runs controlled jobs', async () =>
     assert.equal(listed.tools.some((tool) => tool.name === 'list_board_categories'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'plan_board_category'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'validate_schematic_graph'), true)
+    assert.equal(listed.tools.some((tool) => tool.name === 'validate_schematic_readiness'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'synthesize_schematic_design'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'validate_schematic_pcb_sync'), true)
     assert.equal(listed.tools.some((tool) => tool.name === 'apply_schematic_pcb_sync'), true)

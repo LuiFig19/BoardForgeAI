@@ -609,6 +609,40 @@ test('schematic graph validation catches missing power, support, and diff-pair i
   assert.ok(output.warnings.some((issue) => issue.code === 'SUPPORT_COMPONENT_REVIEW'))
 })
 
+test('schematic readiness blocks fake schematics before KiCad writes', async () => {
+  const output = await executeJob({
+    id: 'schematic_readiness',
+    type: 'validate_schematic_readiness',
+    input: {
+      board: { widthMm: 30, heightMm: 20, layerCount: 2, outline: rectanglePoints(30, 20) },
+      components: [
+        { ref: 'U1', group: 'MCU', value: 'Unknown MCU', pinMap: { VDD: '3V3' } },
+      ],
+      nets: [{ name: '3V3' }],
+    },
+  }, process.cwd())
+  assert.equal(output.status, 'SCHEMATIC_READINESS_BLOCKED')
+  assert.ok(output.errors.some((issue) => issue.code === 'COMPONENT_FOOTPRINT_UNRESOLVED'))
+  assert.ok(output.errors.some((issue) => issue.code === 'COMPONENT_SYMBOL_UNRESOLVED'))
+})
+
+test('generate schematic refuses incomplete symbol footprint bindings by default', async () => {
+  const output = await executeJob({
+    id: 'schematic_generation_gate',
+    type: 'generate_schematic',
+    input: {
+      board: { widthMm: 30, heightMm: 20, layerCount: 2, outline: rectanglePoints(30, 20) },
+      components: [
+        { ref: 'U1', group: 'MCU', value: 'Unknown MCU', pinMap: { VDD: '3V3' } },
+      ],
+      nets: [{ name: '3V3' }],
+    },
+  }, process.cwd())
+  assert.equal(output.status, 'SCHEMATIC_GENERATION_BLOCKED_BY_READINESS')
+  assert.equal(output.schematicModel, undefined)
+  assert.ok(output.schematicReadiness.errors.some((issue) => issue.code === 'COMPONENT_FOOTPRINT_UNRESOLVED'))
+})
+
 test('routing readiness blocks copper when endpoints and placement are not ready', async () => {
   const output = await executeJob({
     id: 'routing_ready',
@@ -1521,7 +1555,12 @@ test('advanced jobs build component database, schematic model, interactive edits
     assert.ok(['DESIGN_AUDIT_NEEDS_FIX', 'DESIGN_AUDIT_NEEDS_REVIEW', 'DESIGN_AUDIT_READY_NEEDS_ERC_DRC'].includes(audit.status))
     assert.ok(audit.audit.netlist.nets.length > 0)
     assert.ok(Array.isArray(audit.audit.actions))
-    const schematic = await executeJob({ id: 'sch', type: 'generate_schematic', input: { projectPath } }, workspace)
+    const readiness = await executeJob({ id: 'readiness', type: 'validate_schematic_readiness', input: { projectPath } }, workspace)
+    assert.ok(['SCHEMATIC_READINESS_BLOCKED', 'SCHEMATIC_READINESS_NEEDS_REVIEW', 'SCHEMATIC_READINESS_READY_NEEDS_ERC'].includes(readiness.status))
+    assert.ok(readiness.generatedFiles.some((file) => file.endsWith('boardforge-schematic-readiness.json')))
+    const gatedSchematic = await executeJob({ id: 'sch_gated', type: 'generate_schematic', input: { projectPath } }, workspace)
+    assert.ok(['SCHEMATIC_GENERATION_BLOCKED_BY_READINESS', 'SCHEMATIC_MODEL_READY_NEEDS_ERC', 'SCHEMATIC_MODEL_NEEDS_ASSET_REVIEW'].includes(gatedSchematic.status))
+    const schematic = await executeJob({ id: 'sch', type: 'generate_schematic', input: { projectPath, allowIncompleteSchematic: true } }, workspace)
     assert.ok(['SCHEMATIC_MODEL_READY_NEEDS_ERC', 'SCHEMATIC_MODEL_NEEDS_ASSET_REVIEW'].includes(schematic.status))
     assert.ok(schematic.schematicModel.symbols.length >= 4)
     const schText = await readFile(path.join(workspace, projectPath, 'advanced-project.kicad_sch'), 'utf8')

@@ -33,6 +33,7 @@ import { validateJlcpcbPackage } from './jlcpcb-package-validator.mjs'
 import { validateSchematicPcbSync } from './schematic-pcb-sync.mjs'
 import { validate3dModelCoverage } from './model-coverage.mjs'
 import { auditBomSourcing } from './bom-sourcing-audit.mjs'
+import { validateSchematicReadiness } from './schematic-readiness.mjs'
 import { applySafePinMapRepairs, planPinMapRepairs } from './pin-map-repair.mjs'
 import { planCopperPours } from './copper-pour-planner.mjs'
 import { validateRoutingGeometry } from './routing-validation.mjs'
@@ -85,7 +86,7 @@ import { productionReadinessJobTypes, runProductionReadinessJob } from './produc
 import { advancedBoardJobTypes, runAdvancedBoardJob } from './advanced-board-suite.mjs'
 import { autotracerJobTypes, finalizeAutotraceWithDrc, runAutotracerPlanning } from './autotracer-engine.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'synthesize_schematic_design', 'validate_schematic_pcb_sync', 'apply_schematic_pcb_sync', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'ingest_reference_design', 'synthesize_circuit_blocks', 'plan_production_pipeline', 'build_verified_demo_recipe', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'plan_pin_map_repairs', 'apply_pin_map_repairs', 'validate_3d_model_coverage', 'audit_bom_sourcing', 'validate_manufacturing_readiness', 'validate_jlcpcb_package', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'solve_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'analyze_routing_congestion', 'plan_escape_routing', 'plan_diff_pair_tuning', 'validate_power_integrity', 'analyze_thermal_bottlenecks', 'validate_assembly_orientation', 'estimate_board_cost', 'generate_engineering_questions', 'score_production_readiness', 'build_release_gate_report', 'generate_routing_plan', 'generate_routing_report', 'plan_copper_pours', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'plan_autoroute_repair_loop', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'validate_schematic_readiness', 'synthesize_schematic_design', 'validate_schematic_pcb_sync', 'apply_schematic_pcb_sync', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'ingest_reference_design', 'synthesize_circuit_blocks', 'plan_production_pipeline', 'build_verified_demo_recipe', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'plan_pin_map_repairs', 'apply_pin_map_repairs', 'validate_3d_model_coverage', 'audit_bom_sourcing', 'validate_manufacturing_readiness', 'validate_jlcpcb_package', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'solve_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'analyze_routing_congestion', 'plan_escape_routing', 'plan_diff_pair_tuning', 'validate_power_integrity', 'analyze_thermal_bottlenecks', 'validate_assembly_orientation', 'estimate_board_cost', 'generate_engineering_questions', 'score_production_readiness', 'build_release_gate_report', 'generate_routing_plan', 'generate_routing_report', 'plan_copper_pours', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'plan_autoroute_repair_loop', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 for (const type of productionReadinessJobTypes) allowedJobTypes.add(type)
 for (const type of advancedBoardJobTypes) allowedJobTypes.add(type)
 for (const type of autotracerJobTypes) allowedJobTypes.add(type)
@@ -127,6 +128,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'list_board_categories') return result(job, 'BOARD_CATEGORIES_LISTED', [], [], { categories: listBoardCategories(), humanReviewRequired: false })
   if (job.type === 'plan_board_category') return boardCategoryPlanJob(job, workspace)
   if (job.type === 'validate_schematic_graph') return schematicGraphJob(job, workspace)
+  if (job.type === 'validate_schematic_readiness') return validateSchematicReadinessJob(job, workspace)
   if (job.type === 'synthesize_schematic_design') return schematicSynthesisJob(job, workspace)
   if (job.type === 'validate_schematic_pcb_sync') return schematicPcbSyncJob(job, workspace)
   if (job.type === 'apply_schematic_pcb_sync') return applySchematicPcbSyncJob(job, workspace)
@@ -715,6 +717,38 @@ async function schematicGraphJob(job, workspace) {
     }))
   }
   return result(job, output.status, output.warnings, output.errors, { schematicGraph: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
+}
+
+async function validateSchematicReadinessJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const rawComponents = job.input?.components || await readRichComponents(projectDir) || state?.schematicSynthesis?.components || state?.components || []
+  const components = rawComponents.some((component) => Object.keys(component.pinMap || {}).length)
+    ? rawComponents
+    : await enrichComponents({ workspace, components: rawComponents, input: job.input || {} })
+  const nets = job.input?.nets || state?.schematicSynthesis?.nets || state?.netlist?.nets || state?.requirementsPlan?.nets || state?.requirements?.nets || []
+  const output = await validateSchematicReadiness({
+    board,
+    components,
+    nets,
+    bindings: job.input?.bindings || state?.componentBindings,
+    options: job.input || {},
+  })
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-schematic-readiness.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      schematicReadiness: output,
+      components: normalizeComponents(components),
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Validated schematic readiness with ${output.errors.length} blockers and ${output.warnings.length} warnings.`,
+    }))
+  }
+  return result(job, output.status, output.warnings, output.errors, { schematicReadiness: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
 }
 
 async function routingReadinessJob(job, workspace, profile) {
@@ -1608,7 +1642,35 @@ async function generateSchematicJob(job, workspace) {
   const board = job.input?.board || state?.board || boardFromJob(job)
   const rawComponents = job.input?.components || state?.schematicSynthesis?.components || state?.components || []
   const components = rawComponents.some((component) => Object.keys(component.pinMap || {}).length) ? rawComponents : await enrichComponents({ workspace, components: rawComponents, input: job.input || {} })
-  const schematicModel = generateSchematicModel(board, components, { ...(state?.requirements || {}), ...(job.input || {}), nets: job.input?.nets || state?.schematicSynthesis?.nets || state?.requirements?.nets || [] })
+  const nets = job.input?.nets || state?.schematicSynthesis?.nets || state?.requirements?.nets || []
+  const readiness = await validateSchematicReadiness({
+    board,
+    components,
+    nets,
+    bindings: job.input?.bindings || state?.componentBindings,
+    options: job.input || {},
+  })
+  if (readiness.status === 'SCHEMATIC_READINESS_BLOCKED' && job.input?.allowIncompleteSchematic !== true) {
+    const readinessFile = projectDir ? path.join(projectDir, 'boardforge-schematic-readiness.json') : null
+    if (projectDir && !job.dryRun) {
+      await writeFile(readinessFile, JSON.stringify(readiness, null, 2), 'utf8')
+      await updateProjectState(projectDir, async (current) => ({
+        ...current,
+        status: 'SCHEMATIC_GENERATION_BLOCKED_BY_READINESS',
+        schematicReadiness: readiness,
+        components: normalizeComponents(components),
+        generatedFiles: [...new Set([...(current.generatedFiles || []), readinessFile])],
+        lastJobType: job.type,
+        lastHistoryMessage: `Blocked schematic generation until ${readiness.errors.length} readiness issue(s) are fixed.`,
+      }))
+    }
+    return result(job, 'SCHEMATIC_GENERATION_BLOCKED_BY_READINESS', readiness.warnings, readiness.errors, {
+      schematicReadiness: readiness,
+      generatedFiles: readinessFile ? [readinessFile] : [],
+      humanReviewRequired: true,
+    })
+  }
+  const schematicModel = generateSchematicModel(board, components, { ...(state?.requirements || {}), ...(job.input || {}), nets })
   const generatedFiles = []
   if (projectDir && !job.dryRun) {
     const files = await findKiCadProjectFiles(projectDir)
@@ -1620,13 +1682,14 @@ async function generateSchematicJob(job, workspace) {
       ...current,
       status: schematicModel.status,
       schematic: schematicModel,
+      schematicReadiness: readiness,
       components: normalizeComponents(components),
       generatedFiles: [...new Set([...(current.generatedFiles || []), ...generatedFiles])],
       lastJobType: job.type,
       lastHistoryMessage: `Generated schematic model with ${schematicModel.symbols.length} symbols and ${schematicModel.nets.length} nets.`,
     }))
   }
-  return result(job, schematicModel.status, schematicModel.warnings, [], { schematicModel, generatedFiles, humanReviewRequired: true })
+  return result(job, schematicModel.status, [...readiness.warnings, ...schematicModel.warnings], [], { schematicModel, schematicReadiness: readiness, generatedFiles, humanReviewRequired: true })
 }
 
 async function missingFootprintsJob(job, workspace) {

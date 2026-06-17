@@ -25,6 +25,7 @@ const toolToJobType = {
   list_board_categories: 'list_board_categories',
   plan_board_category: 'plan_board_category',
   validate_schematic_graph: 'validate_schematic_graph',
+  validate_schematic_readiness: 'validate_schematic_readiness',
   synthesize_schematic_design: 'synthesize_schematic_design',
   validate_schematic_pcb_sync: 'validate_schematic_pcb_sync',
   apply_schematic_pcb_sync: 'apply_schematic_pcb_sync',

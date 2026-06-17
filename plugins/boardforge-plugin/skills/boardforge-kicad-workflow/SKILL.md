@@ -46,6 +46,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `list_board_categories`
 - `plan_board_category`
 - `validate_schematic_graph`
+- `validate_schematic_readiness`
 - `synthesize_schematic_design`
 - `validate_schematic_pcb_sync`
 - `apply_schematic_pcb_sync`
@@ -190,6 +191,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `run_project_preflight` before risky edits, routing, manufacturing export, package generation, or project handoff.
 - Run `plan_board_category` before requirements on universal board prompts so BoardForge does not accidentally apply drone, PoE, motor, RF, or carrier-board rules to the wrong board family.
 - Run `synthesize_schematic_design` before `generate_schematic` when a project has requirements, a BOM, or generated components. It normalizes components, pin maps, power rails, support passives, and the net graph.
+- Run `validate_schematic_readiness` before `generate_schematic`. If it returns `SCHEMATIC_READINESS_BLOCKED`, fix symbols, footprints, pin maps, and net endpoints instead of writing a misleading KiCad schematic.
 - Run `validate_schematic_graph` before placement/routing to catch missing power pins, ground pins, support components, weak net endpoints, and broken differential pairs.
 - Run `validate_schematic_pcb_sync` after schematic/netlist generation and after copper/pad-net writes to catch mismatched KiCad schematic labels, BoardForge netlist nets, PCB net declarations, and PCB pad assignments.
 - Run `plan_pin_map_repairs` after component binding validation if pin-map keys do not match symbol pins or footprint pads. Use `apply_pin_map_repairs` only for safe mechanical key rewrites; rerun binding validation afterward.
@@ -305,6 +307,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `run_dfm_checks` writes or returns `boardforge-dfm-report.json` with board, placement, route, power, fanout, assembly, silkscreen, and advanced-fab manufacturing checks.
 - `plan_board_category` infers universal PCB categories such as motor controller, BMS, industrial I/O, compute-module carrier, USB device, PoE device, wearable, dense compact board, and drone flight controller, then returns expected components, net classes, placement/routing priorities, and required decisions.
 - `validate_schematic_graph` validates component pin maps, power/ground intent, differential-pair members, supply-net endpoints, and support component review before KiCad ERC.
+- `validate_schematic_readiness` is the hard pre-generation gate. It combines component binding, symbol/footprint/pad/pin-map checks, net endpoint checks, differential-pair completeness, and schematic graph validation before BoardForge writes schematic objects.
 - `synthesize_schematic_design` builds the review-required component/pin/net graph, adds obvious support passives such as decoupling, USB-C CC pulldowns, reset/boot parts, and regulator caps, then writes `boardforge-schematic-synthesis.json`.
 - `validate_schematic_pcb_sync` writes `boardforge-schematic-pcb-sync.json` and compares KiCad schematic labels, BoardForge netlist nets, PCB net declarations, and PCB footprint pad-net assignments.
 - `apply_schematic_pcb_sync` writes review-required PCB net declarations and footprint pad-net assignments from BoardForge components/netlist, then requires DRC before export.
@@ -418,6 +421,8 @@ Supported endpoints:
 - `POST /jobs/list-board-categories`
 - `POST /jobs/plan-category`
 - `POST /jobs/validate-schematic-graph`
+- `POST /jobs/validate-schematic-readiness`
+- `POST /jobs/synthesize-schematic`
 - `POST /jobs/routing-readiness`
 - `POST /jobs/power-routing`
 - `POST /jobs/via-strategy`

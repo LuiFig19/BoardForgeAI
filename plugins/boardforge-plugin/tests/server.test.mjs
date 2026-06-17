@@ -54,6 +54,11 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { components: plan.components, nets: plan.nets },
     })
     assert.ok(['SCHEMATIC_GRAPH_NEEDS_FIX', 'SCHEMATIC_GRAPH_NEEDS_REVIEW', 'SCHEMATIC_GRAPH_READY_NEEDS_ERC'].includes(schematicGraph.status))
+    const schematicReadiness = await postJson(`http://127.0.0.1:${port}/jobs/validate-schematic-readiness`, {
+      id: 'server_schematic_readiness',
+      input: { components: plan.components, nets: plan.nets },
+    })
+    assert.ok(['SCHEMATIC_READINESS_BLOCKED', 'SCHEMATIC_READINESS_NEEDS_REVIEW', 'SCHEMATIC_READINESS_READY_NEEDS_ERC'].includes(schematicReadiness.status))
     const schematicSynthesis = await postJson(`http://127.0.0.1:${port}/jobs/synthesize-schematic`, {
       id: 'server_schematic_synthesis',
       input: { components: plan.components, nets: plan.nets, interfaces: ['USB', 'I2C', 'SWD'] },

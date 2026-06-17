@@ -27,6 +27,7 @@ export function buildWorkflowPreset(input = {}) {
     step('generate_design_constraints', { projectPath: slug(base.projectName) }, 'Write reusable BoardForge placement/routing/manufacturing constraints.'),
     step('generate_kicad_rules', { projectPath: slug(base.projectName) }, 'Write KiCad custom rules from BoardForge net classes, diff pairs, and keepouts.'),
     step('synthesize_schematic_design', { projectPath: slug(base.projectName) }, 'Build the component, pin, power, support-passive, and net graph before writing KiCad schematic objects.'),
+    step('validate_schematic_readiness', { projectPath: slug(base.projectName) }, 'Block schematic generation until symbols, footprints, pin maps, net endpoints, and schematic graph gates are ready.'),
     step('generate_schematic', { projectPath: slug(base.projectName) }, 'Generate review-required schematic objects before ERC.'),
     step('build_canonical_net_model', { projectPath: slug(base.projectName) }, 'Build the authoritative component/net/pin model that schematic, PCB, BOM, CPL, and routing must follow.'),
     step('validate_schematic_graph', { projectPath: slug(base.projectName) }, 'Validate graph-level schematic intent, power pins, support components, and differential-pair members before placement/routing.'),
