@@ -72,6 +72,7 @@ export function runAutotrace(context = {}, mode = 'full_board') {
   const unroutedNets = summarizeUnrouted(routingPlan.routes?.filter((route) => route.status !== 'routed') || [], selectedNets)
   const fullyRouted = selectedNets.length > 0 && unroutedNets.length === 0 && internalViolations.length === 0
   const status = fullyRouted ? 'planned' : routedNets.length ? 'partial' : 'failed'
+  const routeRepairPlan = buildRouteRepairPlan(job, routingPlan, internalViolations, unroutedNets, routeQuality)
   return autoTraceResult(status, job, routingPlan, { warnings, errors: internalViolations }, {
     routedNets,
     partiallyRoutedNets: [],
@@ -86,12 +87,13 @@ export function runAutotrace(context = {}, mode = 'full_board') {
     differentialPairReport: buildDifferentialPairReport(job, routingPlan),
     noiseReport: buildNoiseReport(job, routingPlan),
     manufacturerReport: buildManufacturerReport(job, routingPlan, internalViolations),
+    routeRepairPlan,
     internalViolations,
     componentMoveSuggestions: suggestPlacementMoves(job, internalViolations, unroutedNets),
     remainingIssues: [...internalViolations, ...unroutedNets.map((net) => issue('ERROR', 'NET_UNROUTED', `${net.net} was not routed.`, net))],
     routingScore: buildRoutingScore(job, routedNets, unroutedNets, internalViolations, warnings),
     humanReviewChecklist: checklist(job, fullyRouted),
-    reportMarkdown: routingReport(job, routingPlan, routedNets, unroutedNets, internalViolations, warnings, status),
+    reportMarkdown: routingReport(job, routingPlan, routedNets, unroutedNets, internalViolations, warnings, status, routeRepairPlan),
   })
 }
 
@@ -384,7 +386,7 @@ function buildRoutingScore(job, routedNets, unroutedNets, violations, warnings) 
   return { score: Math.max(0, round((routedNets.length / total) * 100 - violations.length * 8 - warnings.length * 1.5)), routed: routedNets.length, unrouted: unroutedNets.length, violations: violations.length }
 }
 
-function routingReport(job, routingPlan, routedNets, unroutedNets, violations, warnings, status) {
+function routingReport(job, routingPlan, routedNets, unroutedNets, violations, warnings, status, repairPlan = null) {
   return `# BoardForge Autotrace Report
 
 Status: ${status}
@@ -404,6 +406,9 @@ ${unroutedNets.map((net) => `- ${net.net}: ${net.reason}`).join('\n') || '- none
 - KiCad DRC after copper write
 - Manufacturer/fab rule review
 - Human review before manufacturing
+
+## Structured Repair Plan
+${(repairPlan?.steps || []).map((step) => `- ${step.command}: ${step.reason}`).join('\n') || '- no structured repairs required'}
 `
 }
 
@@ -444,6 +449,65 @@ function suggestPlacementMoves(job, violations = [], unroutedNets = []) {
   if (unroutedNets.length) suggestions.push({ action: 'ripup_reroute_or_move_components', reason: `${unroutedNets.length} net(s) remain unrouted; move endpoints closer or allow more layers/vias.`, affectedRefs: [...affectedRefs] })
   const dense = affectedRefs.size ? job.components.filter((component) => affectedRefs.has(component.ref)).map((component) => ({ ref: component.ref, x: component.x, y: component.y, suggestion: edgeConnector(component) ? 'keep on board edge but clear adjacent routing channel' : 'nudge away from congested channel by 1-3 mm' })) : []
   return { suggestions, affectedComponents: dense, humanReviewRequired: Boolean(suggestions.length) }
+}
+
+function buildRouteRepairPlan(job, routingPlan, violations, unroutedNets, routeQuality) {
+  const codes = new Set(violations.map((item) => item.code))
+  const steps = []
+  if (codes.has('COMPONENTS_OVERLAP') || codes.has('COMPONENT_OFF_BOARD')) steps.push(repairStep('audit_placement_legality', 'Fix placement blockers before route repair.', 'placement'))
+  if (unroutedNets.length) {
+    steps.push(repairStep('analyze_routing_congestion', `${unroutedNets.length} net(s) were unrouted; inspect blocked channels and endpoint spacing.`, 'routing'))
+    steps.push(repairStep('optimize_placement', 'Move endpoints closer or create route corridors before another autoroute pass.', 'placement'))
+  }
+  if (codes.has('VIA_DIAMETER_BELOW_FAB_MIN') || codes.has('VIA_DRILL_BELOW_FAB_MIN') || codes.has('UNAPPROVED_ADVANCED_VIA')) steps.push(repairStep('select_via_strategy', 'Regenerate via policy from manufacturer profile and stackup before rerouting.', 'via'))
+  if (codes.has('DIFF_PAIR_LENGTH_MISMATCH') || codes.has('DIFF_PAIR_ROUTED_ALONE')) steps.push(repairStep('plan_diff_pair_tuning', 'Repair differential pair routing as a pair with length/spacing targets.', 'signal_integrity'))
+  if (codes.has('TRACE_WIDTH_BELOW_FAB_MIN') || routeQuality?.errors?.some((item) => /POWER|WIDTH|NECKDOWN/i.test(`${item.code || ''} ${item.message || ''}`))) steps.push(repairStep('calculate_power_routing', 'Recalculate current-driven widths, copper pours, and parallel vias.', 'power'))
+  if (job.layerStack.layers.length <= 2 && (unroutedNets.length || codes.has('UNAPPROVED_ADVANCED_VIA'))) steps.push(repairStep('plan_stackup', 'Consider 4+ layers for compact/high-speed escape routing.', 'stackup'))
+  if (job.keepouts?.length && unroutedNets.length) steps.push(repairStep('build_noise_map', 'Rebuild keepout/noise constraints so reroute can avoid sensitive zones without dead-ending.', 'constraints'))
+  if (unroutedNets.length || violations.length) steps.push(repairStep('reroute_failed_nets', 'Rerun only failed nets after placement/via/stackup repairs.', 'routing'))
+  steps.push(repairStep('autoroute_drc_iteration', 'Apply controlled copper only after the repair plan clears, then run KiCad DRC.', 'verification'))
+  return {
+    status: violations.length || unroutedNets.length ? 'ROUTE_REPAIR_PLAN_REQUIRED' : 'ROUTE_REPAIR_PLAN_CLEAN',
+    failedNetCount: unroutedNets.length,
+    violationCodes: [...codes],
+    steps: dedupeRepairSteps(steps),
+    rerouteOrder: rerouteOrder(job, unroutedNets, routingPlan),
+  }
+}
+
+function repairStep(command, reason, phase) {
+  return { command, reason, phase }
+}
+
+function dedupeRepairSteps(steps) {
+  const seen = new Set()
+  return steps.filter((step) => {
+    const key = `${step.phase}:${step.command}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function rerouteOrder(job, unroutedNets, routingPlan) {
+  const byNet = new Map((routingPlan.routes || []).map((route) => [route.net, route]))
+  return unroutedNets
+    .map((item) => ({ ...item, className: byNet.get(item.net)?.className || job.nets.find((net) => net.name === item.net)?.className || 'DEFAULT' }))
+    .sort((a, b) => routePriority(b.className) - routePriority(a.className))
+    .map((item) => ({ net: item.net, className: item.className, reason: routePriorityReason(item.className) }))
+}
+
+function routePriority(className) {
+  if (/POWER|BATTERY|MOTOR|HIGH_CURRENT|HIGH_VOLTAGE/.test(className)) return 5
+  if (/USB|ETH|MIPI|PCIe|LVDS|CAN|RS485|RF|ANT|CLOCK|CRYSTAL/.test(className)) return 4
+  if (/GROUND/.test(className)) return 1
+  return 2
+}
+
+function routePriorityReason(className) {
+  if (routePriority(className) === 5) return 'power/current nets define copper width and thermal routing first'
+  if (routePriority(className) === 4) return 'critical/sensitive nets route before low-speed signals'
+  return 'remaining signal net after power and critical nets'
 }
 
 function edgeConnector(component) {

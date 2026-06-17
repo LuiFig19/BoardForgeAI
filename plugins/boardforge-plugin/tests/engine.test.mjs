@@ -681,11 +681,16 @@ test('via strategy blocks unsupported advanced vias and reviews sensitive nets',
       manufacturerProfile: 'JLCPCB_STANDARD',
       allowMicrovias: true,
       nets: [{ name: 'USB_DP' }, { name: 'MIPI_D0_P' }, { name: 'VBAT' }],
-      board: { layerCount: 6 },
+      board: { widthMm: 24, heightMm: 18, layerCount: 6 },
+      components: [{ ref: 'U1', width: 12, height: 12 }, { ref: 'J1', width: 8, height: 5 }],
     },
   }, process.cwd())
   assert.ok(['VIA_STRATEGY_BLOCKED', 'VIA_STRATEGY_NEEDS_REVIEW'].includes(blocked.status))
   assert.ok(blocked.viaStrategy.strategies.some((item) => item.net === 'VBAT' && item.viaType === 'through_parallel_array'))
+  assert.equal(blocked.viaStrategy.compactBoard, true)
+  assert.ok(blocked.viaStrategy.strategies.some((item) => item.net === 'USB_DP' && item.transitionPlan.maxLayerChanges === 0))
+  assert.ok(blocked.viaStrategy.strategies.every((item) => Array.isArray(item.allowedTransitions) && item.allowedTransitions.length > 0))
+  assert.ok(blocked.viaStrategy.strategies.find((item) => item.net === 'VBAT').viaArray.minParallelVias >= 2)
   assert.ok(blocked.warnings.some((issue) => issue.code === 'VIA_STRATEGY_REVIEW'))
 })
 
@@ -1514,6 +1519,8 @@ test('autotracer blocks broken geometry and plans real routed KiCad copper objec
   assert.ok(routed.autotraceResult.createdTracks.length > 0)
   assert.ok(routed.autotraceResult.netClassReport.nets.some((net) => net.name === 'USB_DP' && net.className === 'USB_DIFF'))
   assert.ok(routed.autotraceResult.differentialPairReport.pairs.some((pair) => pair.nets.includes('USB_DP')))
+  assert.ok(['ROUTE_REPAIR_PLAN_CLEAN', 'ROUTE_REPAIR_PLAN_REQUIRED'].includes(routed.autotraceResult.routeRepairPlan.status))
+  assert.ok(routed.autotraceResult.reportMarkdown.includes('Structured Repair Plan'))
 
   const traceWidth = await executeJob({
     id: 'trace_width',
