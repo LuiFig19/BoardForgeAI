@@ -61,8 +61,20 @@ import { selectViaStrategy } from './via-strategy-engine.mjs'
 import { buildNoiseMap } from './noise-map.mjs'
 import { summarizeManufacturerRules } from './manufacturer-rules-summary.mjs'
 import { generateProjectReviewReport } from './project-review-report.mjs'
+import {
+  analyzeRoutingCongestion,
+  analyzeThermalBottlenecks,
+  buildReleaseGateReport,
+  estimateBoardCost,
+  generateEngineeringQuestions,
+  planDifferentialPairTuning,
+  planEscapeRouting,
+  scoreProductionReadiness,
+  validateAssemblyOrientation,
+  validatePowerIntegrity,
+} from './engineering-intelligence.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'synthesize_schematic_design', 'validate_schematic_pcb_sync', 'apply_schematic_pcb_sync', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'plan_pin_map_repairs', 'apply_pin_map_repairs', 'validate_3d_model_coverage', 'audit_bom_sourcing', 'validate_manufacturing_readiness', 'validate_jlcpcb_package', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'generate_routing_report', 'plan_copper_pours', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'synthesize_schematic_design', 'validate_schematic_pcb_sync', 'apply_schematic_pcb_sync', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'plan_pin_map_repairs', 'apply_pin_map_repairs', 'validate_3d_model_coverage', 'audit_bom_sourcing', 'validate_manufacturing_readiness', 'validate_jlcpcb_package', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'analyze_routing_congestion', 'plan_escape_routing', 'plan_diff_pair_tuning', 'validate_power_integrity', 'analyze_thermal_bottlenecks', 'validate_assembly_orientation', 'estimate_board_cost', 'generate_engineering_questions', 'score_production_readiness', 'build_release_gate_report', 'generate_routing_plan', 'generate_routing_report', 'plan_copper_pours', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -154,6 +166,7 @@ export async function executeJob(job, workspace) {
   if (['classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets'].includes(job.type)) return validateNetClassesJob(job)
   if (job.type === 'generate_placement_plan' || job.type === 'optimize_placement') return placementPlanJob(job, profile)
   if (job.type === 'apply_placement_plan' || job.type === 'move_component' || job.type === 'fix_component_overlap' || job.type === 'fix_component_off_board') return applyPlacementJob(job, workspace, profile)
+  if (['analyze_routing_congestion', 'plan_escape_routing', 'plan_diff_pair_tuning', 'validate_power_integrity', 'analyze_thermal_bottlenecks', 'validate_assembly_orientation', 'estimate_board_cost', 'generate_engineering_questions', 'score_production_readiness', 'build_release_gate_report'].includes(job.type)) return engineeringIntelligenceJob(job, workspace, profile)
   if (job.type === 'autoroute_board') return autorouteBoardJob(job, workspace, profile)
   if (job.type === 'autoroute_and_apply') return autorouteAndApplyJob(job, workspace, profile)
   if (job.type === 'autoroute_drc_iteration') return autorouteDrcIterationJob(job, workspace, profile)
@@ -1817,6 +1830,93 @@ async function copperPourPlanJob(job, workspace, profile) {
     return result(job, copperPourPlan.status, copperPourPlan.warnings, copperPourPlan.errors, { copperPourPlan, generatedFiles: [outputFile], humanReviewRequired: true })
   }
   return result(job, copperPourPlan.status, copperPourPlan.warnings, copperPourPlan.errors, { copperPourPlan, generatedFiles: [], humanReviewRequired: true })
+}
+
+async function engineeringIntelligenceJob(job, workspace, profile) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const board = job.input?.board || state?.board || boardFromJob(job)
+  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const nets = assignNetsToClasses(job.input?.nets || state?.netlist?.nets || state?.requirements?.nets || [])
+  const routingPlan = job.input?.routingPlan || state?.routing?.plan || state?.routing?.autoroute || null
+  const reports = {
+    componentAudit: state?.componentAudit,
+    componentBindings: state?.componentBindings,
+    schematicGraph: state?.schematicGraph,
+    schematicPcbSync: state?.schematicPcbSync,
+    placement: state?.placement,
+    routingQuality: state?.routing?.quality,
+    routingCongestion: state?.routingCongestion,
+    powerIntegrity: state?.powerIntegrity,
+    thermal: state?.thermalBottlenecks,
+    dfm: state?.dfm,
+    manufacturing: state?.manufacturing,
+    jlcpcb: state?.jlcpcbPackageValidation,
+    outline: state?.review,
+  }
+  const context = {
+    prompt: job.input?.prompt || state?.requirements?.prompt || state?.prompt || '',
+    board,
+    components,
+    nets,
+    routingPlan,
+    stackup: job.input?.stackup || state?.stackup,
+    powerTree: job.input?.powerTree || state?.powerTree,
+    copperPourPlan: job.input?.copperPourPlan || state?.copperPourPlan,
+    categoryPlan: job.input?.categoryPlan || state?.categoryPlan,
+    reports: job.input?.reports || reports,
+    project: state || {},
+    profile,
+    options: job.input || {},
+  }
+  const output = runEngineeringAnalysis(job.type, context)
+  const key = engineeringStateKey(job.type)
+  const outputFile = projectDir ? path.join(projectDir, `${keyToFileName(key)}.json`) : null
+  if (outputFile && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      [key]: output,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `${job.type} completed with status ${output.status}.`,
+    }))
+  }
+  return result(job, output.status, output.warnings || [], output.errors || [], { [key]: output, generatedFiles: outputFile && !job.dryRun ? [outputFile] : [], humanReviewRequired: output.humanReviewRequired !== false })
+}
+
+function runEngineeringAnalysis(type, context) {
+  if (type === 'analyze_routing_congestion') return analyzeRoutingCongestion(context)
+  if (type === 'plan_escape_routing') return planEscapeRouting(context)
+  if (type === 'plan_diff_pair_tuning') return planDifferentialPairTuning(context)
+  if (type === 'validate_power_integrity') return validatePowerIntegrity(context)
+  if (type === 'analyze_thermal_bottlenecks') return analyzeThermalBottlenecks(context)
+  if (type === 'validate_assembly_orientation') return validateAssemblyOrientation(context)
+  if (type === 'estimate_board_cost') return estimateBoardCost(context)
+  if (type === 'generate_engineering_questions') return generateEngineeringQuestions(context)
+  if (type === 'score_production_readiness') return scoreProductionReadiness(context)
+  if (type === 'build_release_gate_report') return buildReleaseGateReport(context)
+  return { status: 'FAILED', warnings: [], errors: [{ severity: 'ERROR', code: 'UNKNOWN_ENGINEERING_ANALYSIS', message: type }], humanReviewRequired: true }
+}
+
+function engineeringStateKey(type) {
+  return {
+    analyze_routing_congestion: 'routingCongestion',
+    plan_escape_routing: 'escapeRouting',
+    plan_diff_pair_tuning: 'diffPairTuning',
+    validate_power_integrity: 'powerIntegrity',
+    analyze_thermal_bottlenecks: 'thermalBottlenecks',
+    validate_assembly_orientation: 'assemblyOrientation',
+    estimate_board_cost: 'boardCost',
+    generate_engineering_questions: 'engineeringQuestions',
+    score_production_readiness: 'productionReadiness',
+    build_release_gate_report: 'releaseGateReport',
+  }[type] || 'engineeringAnalysis'
+}
+
+function keyToFileName(key) {
+  return `boardforge-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`
 }
 
 async function autorouteBoardJob(job, workspace, profile) {

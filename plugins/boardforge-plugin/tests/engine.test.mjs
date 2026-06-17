@@ -831,6 +831,10 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
   assert.ok(preset.workflowPreset.exportStepsAfterValidation.some((step) => step.type === 'validate_jlcpcb_package'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_fanout'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_copper_pours'))
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'analyze_routing_congestion'))
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'validate_power_integrity'))
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'score_production_readiness'))
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'build_release_gate_report'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'run_dfm_checks'))
   assert.ok(preset.workflowPreset.exportStepsAfterValidation.some((step) => step.type === 'package_jlcpcb'))
   const dronePreset = await executeJob({
@@ -1134,6 +1138,71 @@ test('autoroute_drc_iteration applies copper and returns a KiCad DRC report', as
     assert.equal(typeof iteration.report.issueCounts.errors, 'number')
     const state = JSON.parse(await readFile(path.join(workspace, 'autoroute-drc-test', 'boardforge-project.json'), 'utf8'))
     assert.equal(Boolean(state.validation.autorouteDrc), true)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('engineering intelligence jobs persist congestion, escape, power, thermal, assembly, cost, and release gates', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-intelligence-test-'))
+  try {
+    await executeJob({ id: 'project', type: 'create_kicad_project', allowOverwrite: true, input: { projectName: 'Intelligence Project', templateId: 'ESP32_S3_SENSOR', layerCount: 4 } }, workspace)
+    const projectPath = 'intelligence-project'
+    const board = {
+      widthMm: 44,
+      heightMm: 28,
+      layerCount: 4,
+      outline: rectanglePoints(44, 28),
+    }
+    const components = [
+      { ref: 'U1', group: 'MCU', value: 'ESP32-S3 QFN', x: 20, y: 14, width: 8, height: 8, pinCount: 56, pitchMm: 0.5, pinMap: { USB_DP: 'USB_DP', USB_DN: 'USB_DN', GND: 'GND', VDD: '3V3' } },
+      { ref: 'J1', group: 'USB_CONNECTOR', value: 'USB-C', x: 5, y: 14, width: 8, height: 6, rotation: 0, pinMap: { A6: 'USB_DP', A7: 'USB_DN', A1: 'GND', A4: 'VUSB' } },
+      { ref: 'U2', group: 'BUCK_REGULATOR', value: '5V buck', x: 33, y: 14, width: 6, height: 5, pinMap: { VIN: 'VIN', VOUT: '5V', GND: 'GND' } },
+      { ref: 'C1', group: 'CAPACITOR', value: '0.1uF', x: 16, y: 8, width: 1.6, height: 0.8, pinMap: { '1': '3V3', '2': 'GND' } },
+    ]
+    const nets = [{ name: 'USB_DP' }, { name: 'USB_DN' }, { name: 'GND' }, { name: '3V3', currentMa: 300 }, { name: '5V', currentMa: 1200 }, { name: 'VIN', currentMa: 1800 }]
+    const routingPlan = {
+      routes: [
+        { net: 'USB_DP', className: 'USB_DIFF', waypoints: [{ x: 5, y: 13 }, { x: 20, y: 13 }], widthMm: 0.15 },
+        { net: 'USB_DN', className: 'USB_DIFF', waypoints: [{ x: 5, y: 15 }, { x: 22, y: 16 }], widthMm: 0.15 },
+        { net: '5V', className: 'POWER_HIGH_CURRENT', waypoints: [{ x: 33, y: 14 }, { x: 20, y: 14 }], widthMm: 0.2 },
+      ],
+    }
+    const common = { projectPath, board, components, nets, routingPlan }
+    const questions = await executeJob({ id: 'questions', type: 'generate_engineering_questions', input: { ...common, prompt: 'compact USB sensor board with buck regulator' } }, workspace)
+    assert.ok(['ENGINEERING_QUESTIONS_REQUIRED', 'ENGINEERING_QUESTIONS_COMPLETE'].includes(questions.status))
+    const escape = await executeJob({ id: 'escape', type: 'plan_escape_routing', input: common }, workspace)
+    assert.ok(['ESCAPE_ROUTING_BLOCKED', 'ESCAPE_ROUTING_NEEDS_REVIEW', 'ESCAPE_ROUTING_READY_NEEDS_REVIEW'].includes(escape.status))
+    assert.equal(escape.escapeRouting.denseComponentCount, 1)
+    const congestion = await executeJob({ id: 'congestion', type: 'analyze_routing_congestion', input: common }, workspace)
+    assert.ok(['ROUTING_CONGESTION_BLOCKED', 'ROUTING_CONGESTION_NEEDS_REVIEW', 'ROUTING_CONGESTION_ACCEPTABLE'].includes(congestion.status))
+    assert.equal(typeof congestion.routingCongestion.metrics.maxUtilization, 'number')
+    const diff = await executeJob({ id: 'diff', type: 'plan_diff_pair_tuning', input: common }, workspace)
+    assert.ok(['DIFF_PAIR_TUNING_BLOCKED', 'DIFF_PAIR_TUNING_NEEDS_REVIEW', 'DIFF_PAIR_TUNING_READY'].includes(diff.status))
+    assert.equal(diff.diffPairTuning.pairs.length, 1)
+    const power = await executeJob({ id: 'pi', type: 'validate_power_integrity', input: { ...common, powerTree: { rails: nets } } }, workspace)
+    assert.ok(['POWER_INTEGRITY_BLOCKED', 'POWER_INTEGRITY_NEEDS_REVIEW', 'POWER_INTEGRITY_READY_NEEDS_DRC'].includes(power.status))
+    const thermal = await executeJob({ id: 'thermal', type: 'analyze_thermal_bottlenecks', input: { ...common, powerTree: { rails: nets } } }, workspace)
+    assert.ok(['THERMAL_BOTTLENECKS_BLOCKED', 'THERMAL_BOTTLENECKS_NEED_REVIEW', 'THERMAL_BOTTLENECKS_READY'].includes(thermal.status))
+    const assembly = await executeJob({ id: 'assembly', type: 'validate_assembly_orientation', input: common }, workspace)
+    assert.ok(['ASSEMBLY_ORIENTATION_NEEDS_REVIEW', 'ASSEMBLY_ORIENTATION_READY'].includes(assembly.status))
+    const cost = await executeJob({ id: 'cost', type: 'estimate_board_cost', input: common }, workspace)
+    assert.ok(['BOARD_COST_NEEDS_HDI_REVIEW', 'BOARD_COST_ESTIMATED_NEEDS_QUOTE'].includes(cost.status))
+    const readiness = await executeJob({ id: 'ready', type: 'score_production_readiness', input: common }, workspace)
+    assert.ok(['PRODUCTION_READINESS_BLOCKED', 'PRODUCTION_READINESS_READY_FOR_HUMAN_REVIEW'].includes(readiness.status))
+    const release = await executeJob({ id: 'release', type: 'build_release_gate_report', input: common }, workspace)
+    assert.ok(['RELEASE_GATE_BLOCKED', 'RELEASE_GATE_READY_FOR_FINAL_REVIEW'].includes(release.status))
+    const state = JSON.parse(await readFile(path.join(workspace, projectPath, 'boardforge-project.json'), 'utf8'))
+    assert.ok(state.routingCongestion)
+    assert.ok(state.escapeRouting)
+    assert.ok(state.diffPairTuning)
+    assert.ok(state.powerIntegrity)
+    assert.ok(state.thermalBottlenecks)
+    assert.ok(state.assemblyOrientation)
+    assert.ok(state.boardCost)
+    assert.ok(state.engineeringQuestions)
+    assert.ok(state.productionReadiness)
+    assert.ok(state.releaseGateReport)
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

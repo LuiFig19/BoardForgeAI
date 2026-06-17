@@ -104,6 +104,16 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `fix_component_off_board`
 - `fix_component_overlap`
 - `fix_mounting_hole_conflicts`
+- `analyze_routing_congestion`
+- `plan_escape_routing`
+- `plan_diff_pair_tuning`
+- `validate_power_integrity`
+- `analyze_thermal_bottlenecks`
+- `validate_assembly_orientation`
+- `estimate_board_cost`
+- `generate_engineering_questions`
+- `score_production_readiness`
+- `build_release_gate_report`
 - `generate_routing_plan`
 - `plan_copper_pours`
 - `autoroute_board`
@@ -155,6 +165,13 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `select_via_strategy` before fanout/routing on compact, dense, high-speed, or HDI boards so through/blind/buried/microvia policy is manufacturer-gated.
 - Run `build_noise_map` before placement/routing on RF, antenna, sensor, analog, switching, motor, PoE, or thermal boards so Codex can avoid noisy/sensitive regions.
 - Run `plan_copper_pours` after power/via/noise planning and before route generation so ground/power zones and stitching vias are explicit and keepout-aware.
+- Run `generate_engineering_questions` before serious project generation and before release gates to expose missing mechanical, power, stackup, RF, thermal, or part-source decisions.
+- Run `plan_escape_routing` before `plan_fanout` for dense ICs, fine-pitch packages, modules, connectors, or compact boards.
+- Run `validate_power_integrity` after power-tree and copper-pour planning to catch missing ground reference, weak decoupling, and high-current pour requirements.
+- Run `analyze_routing_congestion` before route generation or autorouting to catch packed channels that need placement, stackup, or HDI changes.
+- Run `plan_diff_pair_tuning` for USB, Ethernet, CAN, RF, clock, PCIe, LVDS, MIPI, or any generated differential pair before copper is treated as reviewable.
+- Run `analyze_thermal_bottlenecks` and `validate_assembly_orientation` before DFM/export so hot parts, polarity, pin-1, and CPL orientation risks are explicit.
+- Run `estimate_board_cost`, `score_production_readiness`, and `build_release_gate_report` before quoting, packaging, or calling anything close to ready.
 - Run `check_routing_readiness` immediately before `generate_routing_plan`, `autoroute_board`, `autoroute_and_apply`, or `autoroute_drc_iteration`. If it returns blocked, do not route.
 - Run `generate_project_review_report` after schematic, placement, routing, DFM, power, via, noise, and manufacturing checks so the user gets one concise human-review artifact.
 - Run `build_workflow_preset` when the user asks Codex to build a common board type and needs an ordered sequence of safe BoardForge jobs.
@@ -256,6 +273,16 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `generate_placement_plan` creates deterministic placement plans, scores density, edge connector intent, passive proximity, and ratsnest length, and fails on off-board/overlap issues.
 - `optimize_placement` proposes deterministic placement repairs for overlaps, edge connectors, RF/antenna edge access, and ratsnest quality before routing.
 - `apply_placement_plan` writes reviewed placement coordinates into real `.kicad_pcb` footprint `(at x y rotation)` fields and marks the project DRC-required.
+- `generate_engineering_questions` writes missing-decision prompts for mechanical envelope, layer count, part source, power inputs, RF keepouts, thermal limits, and high-speed stackup.
+- `plan_escape_routing` writes dense-package escape strategy, recommended layer count, dogbone/microvia/via-in-pad review flags, and blockers.
+- `validate_power_integrity` checks rails, decoupling count, ground reference, high-current pour requirements, and required copper widths.
+- `analyze_routing_congestion` maps routing-channel hotspots from component, endpoint, and route demand before autorouting.
+- `plan_diff_pair_tuning` plans target impedance, spacing, length mismatch, and tuning actions for differential pairs.
+- `analyze_thermal_bottlenecks` checks hot components against copper regions and edge/mechanical constraints.
+- `validate_assembly_orientation` checks pin-1/polarity markers, 90-degree assembly rotation, and CPL orientation risks.
+- `estimate_board_cost` estimates prototype cost drivers from area, layer count, component count, HDI multiplier, and sourcing risk.
+- `score_production_readiness` scores outline, components, bindings, schematic, placement, routing, power, thermal, DFM, and manufacturing gates.
+- `build_release_gate_report` creates the final release blocker list, required artifacts, and packaging gate.
 - `generate_routing_plan` creates a partial routing plan from explicit route points or inferred component pin-map endpoints, emits route waypoints for reviewable 45/90-degree legs, and reports unrouted nets. It does not claim full autorouting.
 - `plan_copper_pours` writes `boardforge-copper-pour-plan.json`, plans GND/power copper zones, keepout-aware stitching vias, thermal relief strategy, and updates design intent before routing.
 - `autoroute_board` runs the BoardForge controlled deterministic grid/A* router against board outline, component obstacles, net classes, layer policy, via policy, keepouts, and compact-board rules. It returns routed/unrouted nets and remains review-required.

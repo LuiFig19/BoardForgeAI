@@ -169,6 +169,21 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.ok(['COPPER_POUR_PLAN_READY_NEEDS_DRC', 'COPPER_POUR_PLAN_NEEDS_REVIEW'].includes(copperPours.status))
     assert.equal(copperPours.generatedFiles.some((file) => file.endsWith('boardforge-copper-pour-plan.json')), true)
+    const questions = await postJson(`http://127.0.0.1:${port}/jobs/engineering-questions`, {
+      id: 'server_engineering_questions',
+      input: { projectPath: 'server-project', prompt: 'compact USB sensor with buck regulator' },
+    })
+    assert.ok(['ENGINEERING_QUESTIONS_REQUIRED', 'ENGINEERING_QUESTIONS_COMPLETE'].includes(questions.status))
+    const congestion = await postJson(`http://127.0.0.1:${port}/jobs/routing-congestion`, {
+      id: 'server_congestion',
+      input: { projectPath: 'server-project', nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }] },
+    })
+    assert.ok(['ROUTING_CONGESTION_BLOCKED', 'ROUTING_CONGESTION_NEEDS_REVIEW', 'ROUTING_CONGESTION_ACCEPTABLE'].includes(congestion.status))
+    const releaseGate = await postJson(`http://127.0.0.1:${port}/jobs/release-gate`, {
+      id: 'server_release_gate',
+      input: { projectPath: 'server-project' },
+    })
+    assert.ok(['RELEASE_GATE_BLOCKED', 'RELEASE_GATE_READY_FOR_FINAL_REVIEW'].includes(releaseGate.status))
     const routeReport = await postJson(`http://127.0.0.1:${port}/jobs/routing-report`, {
       id: 'server_route_report',
       input: { nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }], board: { widthMm: 40, heightMm: 30 } },
