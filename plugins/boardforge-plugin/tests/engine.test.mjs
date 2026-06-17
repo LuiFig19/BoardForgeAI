@@ -385,6 +385,26 @@ test('requirements planner expands prompts into circuit components and nets', as
   assert.ok(plan.nets.some((net) => net.name === 'ETH_TX_P'))
 })
 
+test('mission planner handles long range drone goals before KiCad generation', async () => {
+  const plan = await executeJob({
+    id: 'mission_drone',
+    type: 'plan_mission_requirements',
+    input: {
+      projectName: '15 mile drone',
+      prompt: 'I want a drone that flies 15 miles away and stays alive for 30 mins battery life. Use BoardForge to do it.',
+    },
+  }, process.cwd())
+  assert.equal(plan.status, 'MISSION_PLAN_NEEDS_USER_DECISIONS')
+  assert.equal(plan.missionPlan.mission.vehicle, 'multirotor_drone')
+  assert.equal(plan.missionPlan.mission.rangeMiles, 15)
+  assert.equal(plan.missionPlan.mission.enduranceMinutes, 30)
+  assert.ok(plan.missionPlan.decisions.required.some((item) => item.id === 'battery'))
+  assert.ok(plan.missionPlan.decisions.required.some((item) => item.id === 'radioLink'))
+  assert.ok(plan.missionPlan.requirementsPlan.selectedCircuits.includes('long_range_uav_support'))
+  assert.ok(plan.missionPlan.requirementsPlan.components.some((component) => component.ref === 'J60'))
+  assert.ok(plan.missionPlan.boardSpecs.recommendedLayerCount >= 4)
+})
+
 test('pin assignment planner maps MCU interfaces and peripheral pins', async () => {
   const result = await executeJob({
     id: 'pin_assignments',
@@ -543,6 +563,14 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_fanout'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'run_dfm_checks'))
   assert.ok(preset.workflowPreset.exportStepsAfterValidation.some((step) => step.type === 'package_jlcpcb'))
+  const dronePreset = await executeJob({
+    id: 'workflow_drone_preset',
+    type: 'build_workflow_preset',
+    input: { projectName: 'Long Range Drone', prompt: 'drone that flies 15 miles and lasts 30 minutes' },
+  }, process.cwd())
+  assert.equal(dronePreset.workflowPreset.preset, 'drone_flight_controller')
+  assert.equal(dronePreset.workflowPreset.steps[0].type, 'plan_mission_requirements')
+  assert.ok(dronePreset.workflowPreset.steps.some((step) => step.type === 'autoroute_drc_iteration'))
 })
 
 test('controlled workflow runner executes preset steps and writes a report', async () => {

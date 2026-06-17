@@ -35,6 +35,7 @@ import { createProjectSnapshot, diffProjectSnapshot, listProjectSnapshots, resto
 import { auditComponentLibraryCoverage } from './component-audit.mjs'
 import { buildProjectPreflight } from './project-preflight.mjs'
 import { planRequirements } from './requirements-planner.mjs'
+import { planMissionRequirements } from './mission-planner.mjs'
 import { compareManufacturerCapabilities, planStackup, scoreBoardComplexity } from './stackup-planner.mjs'
 import { planAssemblyAndMechanical } from './assembly-planner.mjs'
 import { planPowerTree } from './power-tree-planner.mjs'
@@ -44,7 +45,7 @@ import { planSignalIntegrity } from './signal-integrity-planner.mjs'
 import { planPinAssignments } from './pin-assignment-planner.mjs'
 import { planTestStrategy } from './test-strategy-planner.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'validate_manufacturing_readiness', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'generate_routing_plan', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -82,6 +83,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'run_project_preflight') return projectPreflightJob(job, workspace)
   if (job.type === 'build_workflow_preset') return workflowPresetJob(job, workspace)
   if (job.type === 'run_boardforge_workflow') return runBoardForgeWorkflowJob(job, workspace)
+  if (job.type === 'plan_mission_requirements') return missionRequirementsJob(job, workspace)
   if (job.type === 'plan_requirements') return planRequirementsJob(job, workspace)
   if (job.type === 'plan_pin_assignments') return pinAssignmentsJob(job, workspace)
   if (job.type === 'plan_power_tree') return powerTreePlanJob(job, workspace)
@@ -631,6 +633,25 @@ function workflowNextActions(results, stoppedAt, input) {
     'Review boardforge-workflow-run.json, boardforge-preflight.json, boardforge-dfm-report.json, ERC, and DRC reports.',
     ...(input.includeExports ? ['Inspect generated Gerbers, drill, BOM, CPL, and JLCPCB ZIP before ordering.'] : ['Run export jobs only after ERC/DRC and human review are acceptable.']),
   ]
+}
+
+async function missionRequirementsJob(job, workspace) {
+  const output = planMissionRequirements(job.input || {})
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const outputFile = projectDir ? path.join(projectDir, 'boardforge-mission-plan.json') : null
+  if (projectDir && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      missionPlan: output,
+      requirementsPlan: output.requirementsPlan || current.requirementsPlan,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Planned ${output.mission.vehicle} mission with ${output.decisions.required.length} required user decisions.`,
+    }))
+  }
+  return result(job, output.status, output.feasibility.warnings.map((message) => ({ severity: 'WARNING', code: 'MISSION_FEASIBILITY_REVIEW', message })), output.decisions.required.map((item) => ({ severity: 'ERROR', code: 'MISSION_DECISION_REQUIRED', message: item.prompt, details: item })), { missionPlan: output, generatedFiles: outputFile ? [outputFile] : [], humanReviewRequired: true })
 }
 
 async function planRequirementsJob(job, workspace) {

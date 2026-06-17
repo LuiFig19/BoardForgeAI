@@ -44,6 +44,12 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.ok(['PIN_ASSIGNMENT_NEEDS_REVIEW', 'PIN_ASSIGNMENT_READY_NEEDS_REVIEW'].includes(pins.status))
     assert.equal(pins.pinAssignments.controller.ref, 'U1')
+    const mission = await postJson(`http://127.0.0.1:${port}/jobs/plan-mission`, {
+      id: 'server_mission',
+      input: { projectName: 'Server drone', prompt: 'drone that flies 15 miles and lasts 30 minutes' },
+    })
+    assert.equal(mission.status, 'MISSION_PLAN_NEEDS_USER_DECISIONS')
+    assert.equal(mission.missionPlan.requirementsPlan.selectedCircuits.includes('long_range_uav_support'), true)
     const stackup = await postJson(`http://127.0.0.1:${port}/jobs/plan-stackup`, {
       id: 'server_stackup',
       input: { projectName: 'Server HDI sensor', prompt: 'compact USB sensor with blind vias', layerCount: 6, manufacturerProfile: 'ADVANCED_HDI_REVIEW', allowBlindVias: true },

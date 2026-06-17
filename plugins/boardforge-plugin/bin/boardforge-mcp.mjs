@@ -24,6 +24,7 @@ const toolToJobType = {
   run_project_preflight: 'run_project_preflight',
   build_workflow_preset: 'build_workflow_preset',
   run_boardforge_workflow: 'run_boardforge_workflow',
+  plan_mission_requirements: 'plan_mission_requirements',
   plan_requirements: 'plan_requirements',
   plan_pin_assignments: 'plan_pin_assignments',
   plan_power_tree: 'plan_power_tree',

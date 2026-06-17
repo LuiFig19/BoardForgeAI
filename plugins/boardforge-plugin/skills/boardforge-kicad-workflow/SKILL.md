@@ -45,6 +45,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `run_project_preflight`
 - `build_workflow_preset`
 - `run_boardforge_workflow`
+- `plan_mission_requirements`
 - `plan_requirements`
 - `plan_pin_assignments`
 - `plan_power_tree`
@@ -126,6 +127,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `run_project_preflight` before risky edits, routing, manufacturing export, package generation, or project handoff.
 - Run `build_workflow_preset` when the user asks Codex to build a common board type and needs an ordered sequence of safe BoardForge jobs.
 - Run `run_boardforge_workflow` when the user wants BoardForge to execute the full controlled preset sequence and produce one workflow report. Do not include exports unless validation and human review gates are acceptable.
+- Run `plan_mission_requirements` first when the user gives a mission-level goal such as range, endurance, aircraft type, payload, autonomy, or "make a drone that flies X miles." Ask/return the required decision questions before claiming a full KiCad design is possible.
 - Run `generate_manufacturing_manifest` before Gerber/drill/BOM/CPL handoff or JLCPCB packaging so Codex has one explicit artifact list and blocker list.
 - Run `plan_requirements` when the user gives a hardware description and Codex needs a structured BOM/net/circuit plan before KiCad generation.
 - Run `plan_pin_assignments` after requirements/component selection and before schematic generation so MCU/module pins, interface nets, boot/reset/debug pins, and peripheral pin maps are explicit.
@@ -167,6 +169,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `run_project_preflight` writes `boardforge-preflight.json` and aggregates scan, component audit, binding validation, netlist, manufacturing readiness, and optional snapshot diff gates.
 - `build_workflow_preset` returns ordered controlled job steps for ESP32 sensor, PoE/Ethernet sensor, and drone flight-controller workflows, with export steps separated behind validation gates.
 - `run_boardforge_workflow` executes the controlled preset steps, stops on blockers by default, writes `boardforge-workflow-run.json`, and summarizes next actions.
+- `plan_mission_requirements` converts mission prompts into feasibility warnings, required user decisions, architecture, board families, long-range UAV support circuits, and a controlled workflow. It is the right first step for prompts like "drone that flies 15 miles and lasts 30 minutes."
 - `plan_requirements` writes or returns a requirements plan with reusable circuit blocks, components, nets, constraints, and assumptions for constrained board families.
 - `plan_pin_assignments` writes or returns `boardforge-pin-assignments.json` with controller pin maps, peripheral pin maps, interface inference, boot/reset/debug review, unassigned-net warnings, and conflict blockers.
 - `plan_power_tree` writes or returns `boardforge-power-tree.json` with input sources, rails, regulator topology, rail current budget, decoupling requirements, sequencing rules, thermal review, and manufacturing gates.
@@ -261,6 +264,7 @@ Supported endpoints:
 - `POST /jobs/preflight`
 - `POST /jobs/workflow-preset`
 - `POST /jobs/run-workflow`
+- `POST /jobs/plan-mission`
 - `POST /jobs/plan-requirements`
 - `POST /jobs/plan-pin-assignments`
 - `POST /jobs/plan-power-tree`

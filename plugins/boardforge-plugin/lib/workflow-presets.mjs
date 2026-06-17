@@ -9,6 +9,7 @@ export function buildWorkflowPreset(input = {}) {
     interfaces: input.interfaces || interfacesForPreset(preset),
   }
   const steps = [
+    ...(preset === 'drone_flight_controller' ? [step('plan_mission_requirements', base, 'Convert flight mission goals into user decisions, aircraft assumptions, electronics architecture, and board families.')] : []),
     step('plan_requirements', base, 'Convert user intent into components, nets, and assumptions.'),
     step('plan_power_tree', base, 'Budget input rails, regulators, decoupling, sequencing, and thermal constraints.'),
     step('plan_stackup', base, 'Select layer roles, via policy, impedance intent, and HDI gates.'),
@@ -21,6 +22,7 @@ export function buildWorkflowPreset(input = {}) {
     step('apply_placement_plan', { projectPath: slug(base.projectName) }, 'Apply reviewed placement into KiCad PCB footprint coordinates.'),
     step('plan_fanout', { projectPath: slug(base.projectName) }, 'Plan package escape, via strategy, and routing preconditions before copper.'),
     step('generate_routing_plan', { projectPath: slug(base.projectName) }, 'Generate partial route plan with via/copper/keepout policy.'),
+    step('autoroute_drc_iteration', { projectPath: slug(base.projectName) }, 'Attempt controlled autorouting and immediately run KiCad DRC.'),
     step('run_dfm_checks', { projectPath: slug(base.projectName) }, 'Run board, placement, fanout, power, assembly, and fab DFM checks.'),
     step('run_project_preflight', { projectPath: slug(base.projectName) }, 'Aggregate scan, component, binding, netlist, and manufacturing gates.'),
     step('run_kicad_erc', { projectPath: slug(base.projectName) }, 'Run local KiCad ERC.'),
@@ -66,13 +68,13 @@ function templateForPreset(preset) {
 
 function promptForPreset(preset) {
   if (preset === 'poe_esp32_sensor') return 'ESP32-S3 PoE Ethernet environmental sensor with USB-C debug, I2C sensor connector, SWD, 3V3 regulation, RJ45 edge placement, and manufacturing review gates.'
-  if (preset === 'drone_flight_controller') return 'Compact drone flight controller with STM32 MCU, IMU, blackbox flash, USB-C, ESC connector, 3V3 regulator, vibration-sensitive sensor placement, and compact routing.'
+  if (preset === 'drone_flight_controller') return 'Long-range drone flight controller with STM32 MCU, IMU, barometer, blackbox flash, USB-C, GPS/GNSS connector, receiver/telemetry UART, ESC connector, voltage/current sensing, 3V3 regulator, vibration-sensitive sensor placement, and compact routing.'
   return 'ESP32-S3 USB-C environmental sensor board with I2C sensor connector, SWD, 3V3 regulator, mounting holes, and review-required KiCad outputs.'
 }
 
 function interfacesForPreset(preset) {
   if (preset === 'poe_esp32_sensor') return ['USB', 'Ethernet', 'I2C', 'SWD']
-  if (preset === 'drone_flight_controller') return ['USB', 'SPI', 'I2C', 'UART']
+  if (preset === 'drone_flight_controller') return ['USB', 'SPI', 'I2C', 'UART', 'GPS', 'Telemetry', 'CAN']
   return ['USB', 'I2C', 'SWD']
 }
 

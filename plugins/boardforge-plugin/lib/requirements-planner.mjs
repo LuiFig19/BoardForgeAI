@@ -71,6 +71,18 @@ const templateCircuits = {
     nets: ['3V3', 'GND', 'SPI_MOSI', 'SPI_MISO', 'SPI_SCK', 'FLASH_CS', 'I2C_SCL', 'I2C_SDA', 'IMU_INT1', 'MOTOR_1', 'MOTOR_2', 'MOTOR_3', 'MOTOR_4'],
     constraints: ['IMU should be near board center and away from thermal zones', 'ESC connector should sit on an accessible edge'],
   },
+  long_range_uav_support: {
+    components: [
+      component('J60', 'GNSS', 'GPS/GNSS connector', { role: 'edge_gnss', pinMap: { VCC: '3V3', GND: 'GND', TX: 'GPS_RX', RX: 'GPS_TX', SDA: 'I2C_SDA', SCL: 'I2C_SCL' } }),
+      component('J61', 'RECEIVER', 'RC receiver / ELRS connector', { role: 'edge_receiver', pinMap: { VCC: '5V', GND: 'GND', TX: 'RC_RX', RX: 'RC_TX' } }),
+      component('J62', 'TELEMETRY', 'long-range telemetry connector', { role: 'edge_telemetry', pinMap: { VCC: '5V', GND: 'GND', TX: 'TEL_RX', RX: 'TEL_TX' } }),
+      component('U60', 'CURRENT_SENSOR', 'battery current/voltage monitor', { role: 'power_monitor', pinMap: { VIN: 'VBAT', VOUT: 'VBAT_SENSE', GND: 'GND', OUT: 'CURRENT_SENSE' } }),
+      component('J63', 'BUZZER', 'lost-model buzzer connector', { role: 'edge_buzzer', pinMap: { '+': '5V', '-': 'BUZZER' } }),
+      component('SW60', 'SWITCH', 'arming / safety switch input', { package: 'SW_SPST', pinMap: { 1: 'ARM', 2: 'GND' } }),
+    ],
+    nets: ['5V', 'VBAT', 'VBAT_SENSE', 'CURRENT_SENSE', 'GPS_RX', 'GPS_TX', 'RC_RX', 'RC_TX', 'TEL_RX', 'TEL_TX', 'BUZZER', 'ARM', '3V3', 'GND'],
+    constraints: ['GNSS and telemetry connectors need RF/antenna keepouts', 'Battery voltage/current sensing needs reviewed divider/current-sense values', 'Receiver and telemetry UARTs must not conflict with USB/SWD/debug pins', 'Long-range failsafe, buzzer, and arming inputs require firmware-level validation'],
+  },
 }
 
 export function planRequirements(input = {}) {
@@ -106,6 +118,10 @@ function selectCircuits(text, input) {
   if (/swd|program|debug/.test(text)) add('swd_debug')
   if (/poe|ethernet|rj45|802\.3/.test(text) || input.templateId === 'ESP32_S3_POE_SENSOR' || input.interfaces?.includes('Ethernet')) add('poe_ethernet')
   if (/drone|flight controller|robotics controller|motor driver|motor drivers|imu|esc|blackbox/.test(text) || input.templateId === 'DRONE_FC_30X30' || input.templateId === 'DRONE_AIO_WHOOP') add('drone_fc_core')
+  if (/long range|15 miles|mile|miles|gps|gnss|telemetry|receiver|elrs|return to home|current sense|battery life|30 min|30 minutes/.test(text)) {
+    add('drone_fc_core')
+    add('long_range_uav_support')
+  }
   if (!selected.length) {
     add('esp32_s3_core')
     add('usb_c_device')
@@ -127,6 +143,7 @@ function assumptionsFor(selected, text) {
   if (!/battery|poe|usb powered|external power/.test(text)) assumptions.push('Power source was not explicit; planner assumes USB/VUSB input feeding local 3V3 regulation.')
   if (selected.some((item) => item.id === 'poe_ethernet')) assumptions.push('PoE/Ethernet circuit requires impedance, isolation, and high-voltage clearance review.')
   if (selected.some((item) => item.id === 'drone_fc_core')) assumptions.push('Flight-controller sensor placement and thermal isolation require human mechanical review.')
+  if (selected.some((item) => item.id === 'long_range_uav_support')) assumptions.push('Long-range drone goals require battery, airframe, RF link, failsafe, firmware, and regulatory review beyond PCB generation.')
   return assumptions
 }
 

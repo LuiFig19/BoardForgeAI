@@ -70,6 +70,7 @@ export const pluginJobTypeSchema = z.enum([
   'fix_component_off_board',
   'fix_component_overlap',
   'fix_mounting_hole_conflicts',
+  'plan_mission_requirements',
   'generate_routing_plan',
   'autoroute_board',
   'autoroute_and_apply',
@@ -121,6 +122,8 @@ export const pluginResultSchema = z.object({
   status: z.enum([
     'OUTLINE_GENERATED_NEEDS_REVIEW',
     'KICAD_PROJECT_CREATED_NEEDS_REVIEW',
+    'MISSION_PLAN_NEEDS_USER_DECISIONS',
+    'MISSION_PLAN_READY_NEEDS_REVIEW',
     'OUTLINE_VALID_NEEDS_REVIEW',
     'NET_CLASSES_CREATED',
     'NET_CLASSES_VALID_NEEDS_REVIEW',
