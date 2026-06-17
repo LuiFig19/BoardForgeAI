@@ -47,6 +47,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `plan_board_category`
 - `validate_schematic_graph`
 - `synthesize_schematic_design`
+- `validate_schematic_pcb_sync`
 - `check_routing_readiness`
 - `calculate_power_routing`
 - `select_via_strategy`
@@ -77,6 +78,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `resolve_bom_parts`
 - `audit_component_library`
 - `validate_component_bindings`
+- `validate_3d_model_coverage`
+- `audit_bom_sourcing`
 - `generate_netlist`
 - `run_design_audit`
 - `generate_schematic`
@@ -141,6 +144,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `plan_board_category` before requirements on universal board prompts so BoardForge does not accidentally apply drone, PoE, motor, RF, or carrier-board rules to the wrong board family.
 - Run `synthesize_schematic_design` before `generate_schematic` when a project has requirements, a BOM, or generated components. It normalizes components, pin maps, power rails, support passives, and the net graph.
 - Run `validate_schematic_graph` before placement/routing to catch missing power pins, ground pins, support components, weak net endpoints, and broken differential pairs.
+- Run `validate_schematic_pcb_sync` after schematic/netlist generation and after copper/pad-net writes to catch mismatched KiCad schematic labels, BoardForge netlist nets, PCB net declarations, and PCB pad assignments.
 - Run `calculate_power_routing` before route planning on any high-current, motor, battery, PoE, LED, switching-regulator, or field-power board so trace widths, copper pours, and via arrays are explicit.
 - Run `select_via_strategy` before fanout/routing on compact, dense, high-speed, or HDI boards so through/blind/buried/microvia policy is manufacturer-gated.
 - Run `build_noise_map` before placement/routing on RF, antenna, sensor, analog, switching, motor, PoE, or thermal boards so Codex can avoid noisy/sensitive regions.
@@ -206,6 +210,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `plan_board_category` infers universal PCB categories such as motor controller, BMS, industrial I/O, compute-module carrier, USB device, PoE device, wearable, dense compact board, and drone flight controller, then returns expected components, net classes, placement/routing priorities, and required decisions.
 - `validate_schematic_graph` validates component pin maps, power/ground intent, differential-pair members, supply-net endpoints, and support component review before KiCad ERC.
 - `synthesize_schematic_design` builds the review-required component/pin/net graph, adds obvious support passives such as decoupling, USB-C CC pulldowns, reset/boot parts, and regulator caps, then writes `boardforge-schematic-synthesis.json`.
+- `validate_schematic_pcb_sync` writes `boardforge-schematic-pcb-sync.json` and compares KiCad schematic labels, BoardForge netlist nets, PCB net declarations, and PCB footprint pad-net assignments.
 - `calculate_power_routing` estimates current-driven trace widths, copper-pour requirements, thermal review needs, and minimum parallel via count for power/current nets.
 - `select_via_strategy` chooses through, parallel through, blind, buried, or microvia review policies per net based on stackup, manufacturer profile, cost, density, and signal class.
 - `build_noise_map` creates noisy, sensitive, and antenna regions plus coupling warnings so routing avoids switching regulators, motor power, RF, analog, sensor, and crystal conflicts.
@@ -225,6 +230,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Component database jobs also return footprint confidence, selection scores, lifecycle/assembly risk, procurement summary, and substitution candidates for BOM review.
 - `audit_component_library` writes `boardforge-component-audit.json` and scores symbol, footprint, 3D model, pin-map, package, LCSC, and MPN coverage before schematic, placement, routing, or export work.
 - `validate_component_bindings` parses KiCad symbol pins and footprint pads, compares them to BoardForge pin maps, and writes compatibility results to `boardforge-bindings.json` when `projectPath` is provided.
+- `validate_3d_model_coverage` writes `boardforge-3d-model-coverage.json` and reports missing or unverified KiCad STEP/WRL model links for visual/mechanical review.
+- `audit_bom_sourcing` writes `boardforge-bom-sourcing-audit.json` and checks MPN/LCSC/JLCPCB sourcing readiness against component footprints.
 - `generate_netlist` writes `boardforge-netlist.json` from component pin maps so Codex can review schematic/PCB connectivity before routing.
 - `run_design_audit` writes `boardforge-design-report.json`, combining netlist coverage, PCB pad-net audit, placement score, route prechecks, binding issues, and recommended next BoardForge actions.
 - `validate_manufacturing_readiness` checks DRC/ERC reports plus BOM/CPL artifacts and reports blockers before export/package workflows.

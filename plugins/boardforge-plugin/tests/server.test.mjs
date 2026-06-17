@@ -60,6 +60,21 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.ok(['SCHEMATIC_SYNTHESIS_BLOCKED', 'SCHEMATIC_SYNTHESIS_NEEDS_REVIEW', 'SCHEMATIC_SYNTHESIS_READY_NEEDS_ERC'].includes(schematicSynthesis.status))
     assert.ok(schematicSynthesis.synthesis.graph.edges.length > 0)
+    const schematicPcbSync = await postJson(`http://127.0.0.1:${port}/jobs/validate-schematic-pcb-sync`, {
+      id: 'server_schematic_pcb_sync',
+      input: { projectPath: 'server-project' },
+    })
+    assert.ok(['SCHEMATIC_PCB_SYNC_BLOCKED', 'SCHEMATIC_PCB_SYNC_NEEDS_REVIEW', 'SCHEMATIC_PCB_SYNC_READY_NEEDS_ERC_DRC'].includes(schematicPcbSync.status))
+    const modelCoverage = await postJson(`http://127.0.0.1:${port}/jobs/validate-3d-models`, {
+      id: 'server_model_coverage',
+      input: { projectPath: 'server-project' },
+    })
+    assert.ok(['MODEL_3D_COVERAGE_BLOCKED', 'MODEL_3D_COVERAGE_NEEDS_REVIEW', 'MODEL_3D_COVERAGE_READY'].includes(modelCoverage.status))
+    const bomSourcing = await postJson(`http://127.0.0.1:${port}/jobs/audit-bom-sourcing`, {
+      id: 'server_bom_sourcing',
+      input: { projectPath: 'server-project' },
+    })
+    assert.ok(['BOM_SOURCING_BLOCKED', 'BOM_SOURCING_NEEDS_REVIEW', 'BOM_SOURCING_READY_NEEDS_STOCK_CHECK'].includes(bomSourcing.status))
     const mission = await postJson(`http://127.0.0.1:${port}/jobs/plan-mission`, {
       id: 'server_mission',
       input: { projectName: 'Server drone', prompt: 'drone that flies 15 miles and lasts 30 minutes' },
