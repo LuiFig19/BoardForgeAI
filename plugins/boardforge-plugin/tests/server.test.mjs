@@ -92,6 +92,16 @@ test('local server exposes status, KiCad status, and create project job', async 
     })
     assert.ok(['USER_BOM_AUDIT_NEEDS_FIX', 'USER_BOM_AUDIT_NEEDS_REVIEW'].includes(bomAudit.status))
     assert.equal(bomAudit.missingFunctions.some((gap) => gap.group === 'GNSS'), true)
+    const reference = await postJson(`http://127.0.0.1:${port}/jobs/ingest-reference`, {
+      id: 'server_reference',
+      input: { projectPath: 'server-project', referenceText: 'USB-C sensor reference design with ESD, CC resistors, 3V3 LDO, decoupling, SWD reset boot, 90 ohm DP DN.' },
+    })
+    assert.ok(['REFERENCE_DESIGN_INGESTED', 'REFERENCE_DESIGN_NEEDS_REVIEW'].includes(reference.status))
+    const circuitBlocks = await postJson(`http://127.0.0.1:${port}/jobs/synthesize-circuit-blocks`, {
+      id: 'server_circuit_blocks',
+      input: { projectPath: 'server-project', referenceDesign: reference.referenceDesign },
+    })
+    assert.ok(['CIRCUIT_BLOCKS_READY_NEEDS_REVIEW', 'CIRCUIT_BLOCKS_NEED_REQUIREMENTS'].includes(circuitBlocks.status))
     const stackup = await postJson(`http://127.0.0.1:${port}/jobs/plan-stackup`, {
       id: 'server_stackup',
       input: { projectName: 'Server HDI sensor', prompt: 'compact USB sensor with blind vias', layerCount: 6, manufacturerProfile: 'ADVANCED_HDI_REVIEW', allowBlindVias: true },
@@ -184,6 +194,16 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { projectPath: 'server-project' },
     })
     assert.ok(['RELEASE_GATE_BLOCKED', 'RELEASE_GATE_READY_FOR_FINAL_REVIEW'].includes(releaseGate.status))
+    const repairLoop = await postJson(`http://127.0.0.1:${port}/jobs/autoroute-repair-loop`, {
+      id: 'server_repair_loop',
+      input: { projectPath: 'server-project', drcReport: { issues: [{ code: 'CLEARANCE' }] } },
+    })
+    assert.ok(['AUTOROUTE_REPAIR_LOOP_READY_NEEDS_REVIEW', 'AUTOROUTE_REPAIR_LOOP_BASELINE_READY'].includes(repairLoop.status))
+    const demoRecipe = await postJson(`http://127.0.0.1:${port}/jobs/verified-demo-recipe`, {
+      id: 'server_demo_recipe',
+      input: { projectPath: 'server-project', preset: 'usb_sensor' },
+    })
+    assert.equal(demoRecipe.status, 'VERIFIED_DEMO_RECIPE_READY')
     const routeReport = await postJson(`http://127.0.0.1:${port}/jobs/routing-report`, {
       id: 'server_route_report',
       input: { nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }], board: { widthMm: 40, heightMm: 30 } },

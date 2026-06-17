@@ -73,8 +73,16 @@ import {
   validateAssemblyOrientation,
   validatePowerIntegrity,
 } from './engineering-intelligence.mjs'
+import {
+  buildVerifiedDemoRecipe,
+  ingestReferenceDesign,
+  planAutorouteRepairLoop,
+  planProductionPipeline,
+  solvePlacement,
+  synthesizeCircuitBlocks,
+} from './production-workflows.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'synthesize_schematic_design', 'validate_schematic_pcb_sync', 'apply_schematic_pcb_sync', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'plan_pin_map_repairs', 'apply_pin_map_repairs', 'validate_3d_model_coverage', 'audit_bom_sourcing', 'validate_manufacturing_readiness', 'validate_jlcpcb_package', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'analyze_routing_congestion', 'plan_escape_routing', 'plan_diff_pair_tuning', 'validate_power_integrity', 'analyze_thermal_bottlenecks', 'validate_assembly_orientation', 'estimate_board_cost', 'generate_engineering_questions', 'score_production_readiness', 'build_release_gate_report', 'generate_routing_plan', 'generate_routing_report', 'plan_copper_pours', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'synthesize_schematic_design', 'validate_schematic_pcb_sync', 'apply_schematic_pcb_sync', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'ingest_reference_design', 'synthesize_circuit_blocks', 'plan_production_pipeline', 'build_verified_demo_recipe', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'plan_pin_map_repairs', 'apply_pin_map_repairs', 'validate_3d_model_coverage', 'audit_bom_sourcing', 'validate_manufacturing_readiness', 'validate_jlcpcb_package', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'solve_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'analyze_routing_congestion', 'plan_escape_routing', 'plan_diff_pair_tuning', 'validate_power_integrity', 'analyze_thermal_bottlenecks', 'validate_assembly_orientation', 'estimate_board_cost', 'generate_engineering_questions', 'score_production_readiness', 'build_release_gate_report', 'generate_routing_plan', 'generate_routing_report', 'plan_copper_pours', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'plan_autoroute_repair_loop', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 export const sanitizeName = (name) => (String(name || 'boardforge-project').trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').slice(0, 64).toLowerCase() || 'boardforge-project')
 export function resolveInsideWorkspace(workspace, target) {
   const root = path.resolve(workspace)
@@ -127,6 +135,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'plan_mission_requirements') return missionRequirementsJob(job, workspace)
   if (job.type === 'intake_user_bom') return userBomIntakeJob(job, workspace)
   if (job.type === 'audit_user_bom') return userBomAuditJob(job, workspace)
+  if (['ingest_reference_design', 'synthesize_circuit_blocks', 'solve_placement', 'plan_autoroute_repair_loop', 'build_verified_demo_recipe', 'plan_production_pipeline'].includes(job.type)) return productionWorkflowJob(job, workspace)
   if (job.type === 'plan_requirements') return planRequirementsJob(job, workspace)
   if (job.type === 'plan_pin_assignments') return pinAssignmentsJob(job, workspace)
   if (job.type === 'plan_power_tree') return powerTreePlanJob(job, workspace)
@@ -1884,6 +1893,60 @@ async function engineeringIntelligenceJob(job, workspace, profile) {
     }))
   }
   return result(job, output.status, output.warnings || [], output.errors || [], { [key]: output, generatedFiles: outputFile && !job.dryRun ? [outputFile] : [], humanReviewRequired: output.humanReviewRequired !== false })
+}
+
+async function productionWorkflowJob(job, workspace) {
+  const projectDir = job.input?.projectPath ? resolveInsideWorkspace(workspace, job.input.projectPath) : null
+  const state = projectDir ? await readProjectState(projectDir) : null
+  const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
+  const input = {
+    ...(state || {}),
+    ...(job.input || {}),
+    components,
+    referenceDesign: job.input?.referenceDesign || state?.referenceDesign,
+    board: job.input?.board || state?.board,
+    routingPlan: job.input?.routingPlan || state?.routing?.plan || state?.routing?.autoroute,
+    routeQuality: job.input?.routeQuality || state?.routing?.quality,
+    routeValidation: job.input?.routeValidation || state?.routing?.precheck,
+    drcReport: job.input?.drcReport || state?.validation?.drc || state?.validation?.autorouteDrc,
+  }
+  const output = runProductionWorkflow(job.type, input)
+  const key = productionStateKey(job.type)
+  const outputFile = projectDir ? path.join(projectDir, `${keyToFileName(key)}.json`) : null
+  if (outputFile && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(output, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status: output.status,
+      [key]: output,
+      components: job.type === 'solve_placement' && output.components ? normalizeComponents(output.components) : current.components,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
+      lastJobType: job.type,
+      lastHistoryMessage: `${job.type} completed with status ${output.status}.`,
+    }))
+  }
+  return result(job, output.status, output.warnings || [], output.errors || [], { [key]: output, generatedFiles: outputFile && !job.dryRun ? [outputFile] : [], humanReviewRequired: output.humanReviewRequired !== false })
+}
+
+function runProductionWorkflow(type, input) {
+  if (type === 'ingest_reference_design') return ingestReferenceDesign(input)
+  if (type === 'synthesize_circuit_blocks') return synthesizeCircuitBlocks(input)
+  if (type === 'solve_placement') return solvePlacement(input)
+  if (type === 'plan_autoroute_repair_loop') return planAutorouteRepairLoop(input)
+  if (type === 'build_verified_demo_recipe') return buildVerifiedDemoRecipe(input)
+  if (type === 'plan_production_pipeline') return planProductionPipeline(input)
+  return { status: 'FAILED', warnings: [], errors: [{ severity: 'ERROR', code: 'UNKNOWN_PRODUCTION_WORKFLOW', message: type }], humanReviewRequired: true }
+}
+
+function productionStateKey(type) {
+  return {
+    ingest_reference_design: 'referenceDesign',
+    synthesize_circuit_blocks: 'circuitBlocks',
+    solve_placement: 'placementSolver',
+    plan_autoroute_repair_loop: 'autorouteRepairLoop',
+    build_verified_demo_recipe: 'verifiedDemoRecipe',
+    plan_production_pipeline: 'productionPipeline',
+  }[type] || 'productionWorkflow'
 }
 
 function runEngineeringAnalysis(type, context) {

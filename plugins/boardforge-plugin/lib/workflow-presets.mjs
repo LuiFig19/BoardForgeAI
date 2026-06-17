@@ -15,10 +15,12 @@ export function buildWorkflowPreset(input = {}) {
   const steps = [
     step('plan_board_category', base, 'Infer the universal PCB category, required decisions, net classes, placement priorities, and routing priorities.'),
     ...(preset === 'drone_flight_controller' ? [step('plan_mission_requirements', base, 'Convert flight mission goals into user decisions, aircraft assumptions, electronics architecture, and board families.')] : []),
+    step('ingest_reference_design', base, 'Extract interfaces, support circuits, numeric constraints, and layout-guide assumptions from prompt/reference text.'),
     step('plan_requirements', base, 'Convert user intent into components, nets, and assumptions.'),
     step('plan_power_tree', base, 'Budget input rails, regulators, decoupling, sequencing, and thermal constraints.'),
     step('plan_stackup', base, 'Select layer roles, via policy, impedance intent, and HDI gates.'),
     step('create_kicad_project', base, 'Create review-required KiCad project, schematic scaffold, PCB, and metadata.'),
+    step('synthesize_circuit_blocks', { projectPath: slug(base.projectName), prompt: base.prompt }, 'Convert reference requirements into reviewable schematic circuit blocks and net intent.'),
     step('sync_component_database', { projectPath: slug(base.projectName) }, 'Enrich BOM parts with pin maps, LCSC/MPN, footprints, models, and alternates.'),
     step('generate_design_constraints', { projectPath: slug(base.projectName) }, 'Write reusable BoardForge placement/routing/manufacturing constraints.'),
     step('generate_kicad_rules', { projectPath: slug(base.projectName) }, 'Write KiCad custom rules from BoardForge net classes, diff pairs, and keepouts.'),
@@ -32,6 +34,7 @@ export function buildWorkflowPreset(input = {}) {
     step('audit_bom_sourcing', { projectPath: slug(base.projectName) }, 'Check MPN/LCSC/JLCPCB sourcing readiness before BOM export.'),
     step('generate_engineering_questions', { projectPath: slug(base.projectName), prompt: base.prompt }, 'Return remaining engineering decisions before the design claims completeness.'),
     step('optimize_placement', { projectPath: slug(base.projectName), templateId: base.templateId }, 'Repair placement constraints before copper.'),
+    step('solve_placement', { projectPath: slug(base.projectName), templateId: base.templateId }, 'Solve initial placement from board, component roles, edge connectors, power, and passives.'),
     step('apply_placement_plan', { projectPath: slug(base.projectName) }, 'Apply reviewed placement into KiCad PCB footprint coordinates.'),
     step('plan_escape_routing', { projectPath: slug(base.projectName) }, 'Plan dense component escape strategy before fanout/routing.'),
     step('plan_fanout', { projectPath: slug(base.projectName) }, 'Plan package escape, via strategy, and routing preconditions before copper.'),
@@ -45,6 +48,7 @@ export function buildWorkflowPreset(input = {}) {
     step('generate_routing_plan', { projectPath: slug(base.projectName) }, 'Generate partial route plan with via/copper/keepout policy.'),
     step('plan_diff_pair_tuning', { projectPath: slug(base.projectName) }, 'Plan length/spacing tuning for USB, Ethernet, CAN, RF, and other critical pairs.'),
     step('autoroute_drc_iteration', { projectPath: slug(base.projectName) }, 'Attempt controlled autorouting and immediately run KiCad DRC.'),
+    step('plan_autoroute_repair_loop', { projectPath: slug(base.projectName) }, 'Plan the next controlled DRC/routing repair iterations from KiCad reports.'),
     step('generate_routing_report', { projectPath: slug(base.projectName) }, 'Report routed/unrouted nets, blockers, diff-pair status, power route status, and next fixes.'),
     step('analyze_thermal_bottlenecks', { projectPath: slug(base.projectName) }, 'Check hot parts, current paths, and copper/edge constraints.'),
     step('validate_assembly_orientation', { projectPath: slug(base.projectName) }, 'Check pin-1, polarity, CPL orientation, and placement rotation risks.'),
@@ -59,6 +63,8 @@ export function buildWorkflowPreset(input = {}) {
     step('generate_manufacturing_manifest', { projectPath: slug(base.projectName) }, 'Create final handoff manifest before exports.'),
     step('score_production_readiness', { projectPath: slug(base.projectName) }, 'Score all known engineering gates before release/export.'),
     step('build_release_gate_report', { projectPath: slug(base.projectName) }, 'Build the final release gate report and missing-artifact list.'),
+    step('build_verified_demo_recipe', { projectPath: slug(base.projectName), preset }, 'Emit a repeatable demo recipe with pass criteria for local verification.'),
+    step('plan_production_pipeline', { projectPath: slug(base.projectName), preset }, 'Create the full controlled production pipeline plan for this board class.'),
   ]
   return {
     status: 'WORKFLOW_PRESET_READY_NEEDS_REVIEW',

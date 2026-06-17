@@ -60,6 +60,10 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `plan_mission_requirements`
 - `intake_user_bom`
 - `audit_user_bom`
+- `ingest_reference_design`
+- `synthesize_circuit_blocks`
+- `plan_production_pipeline`
+- `build_verified_demo_recipe`
 - `plan_requirements`
 - `plan_pin_assignments`
 - `plan_power_tree`
@@ -98,6 +102,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `validate_net_classes`
 - `report_unclassified_nets`
 - `generate_placement_plan`
+- `solve_placement`
 - `apply_placement_plan`
 - `validate_placement`
 - `move_component`
@@ -119,6 +124,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `autoroute_board`
 - `autoroute_and_apply`
 - `autoroute_drc_iteration`
+- `plan_autoroute_repair_loop`
 - `score_routing_quality`
 - `validate_routing_geometry`
 - `route_critical_nets`
@@ -179,6 +185,11 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `plan_mission_requirements` first when the user gives a mission-level goal such as range, endurance, aircraft type, payload, autonomy, or "make a drone that flies X miles." Ask/return the required decision questions before claiming a full KiCad design is possible.
 - Run `intake_user_bom` when the user supplies a parts list, CSV, JSON, or rough free-text BOM. Do not trust the list until it is normalized into refs, groups, packages, supplier ids, pin maps, and nets.
 - Run `audit_user_bom` after BOM intake and mission planning to verify whether the supplied parts support the goal, identify missing functions, supplier/package gaps, power-budget issues, substitutions, and clarification questions before schematic generation.
+- Run `ingest_reference_design` whenever the user provides datasheet text, a reference design description, layout-guide notes, or a part-specific prompt. It extracts interfaces, support circuits, numeric constraints, and review warnings.
+- Run `synthesize_circuit_blocks` after reference/design intake to create reviewable schematic blocks, support components, and net intent before schematic generation.
+- Run `solve_placement` before `apply_placement_plan` when placement should be inferred from roles, board geometry, edge connectors, controllers, power parts, and passives.
+- Run `plan_autoroute_repair_loop` after DRC/routing-quality failures to produce controlled repair iterations instead of improvising shell/file edits.
+- Run `build_verified_demo_recipe` for repeatable local demo boards and `plan_production_pipeline` when Codex needs the full ordered path from questions to release gates.
 - Run `generate_manufacturing_manifest` before Gerber/drill/BOM/CPL handoff or JLCPCB packaging so Codex has one explicit artifact list and blocker list.
 - Run `plan_requirements` when the user gives a hardware description and Codex needs a structured BOM/net/circuit plan before KiCad generation.
 - Run `plan_pin_assignments` after requirements/component selection and before schematic generation so MCU/module pins, interface nets, boot/reset/debug pins, and peripheral pin maps are explicit.
@@ -223,6 +234,10 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `plan_mission_requirements` converts mission prompts into feasibility warnings, required user decisions, architecture, board families, long-range UAV support circuits, and a controlled workflow. It is the right first step for prompts like "drone that flies 15 miles and lasts 30 minutes."
 - `intake_user_bom` parses and normalizes user-supplied BOM rows into BoardForge components, inferred groups, pin maps, supplier identifiers, packages, and nets.
 - `audit_user_bom` compares a user BOM to mission/requirements goals, reports missing functions, compatibility issues, power-budget review, substitutions, and the controlled end-to-end user-BOM workflow.
+- `ingest_reference_design` parses datasheet/reference/prompt text for interfaces, required support circuits, numeric constraints, RF/layout warnings, and next schematic-block actions.
+- `synthesize_circuit_blocks` creates circuit blocks such as protection, power tree, USB, Ethernet, I2C, SPI, RF, motor power, clocking, and debug with support-component and net intent.
+- `plan_production_pipeline` returns the full controlled execution sequence from engineering questions through release gates.
+- `build_verified_demo_recipe` returns repeatable demo recipes with pass criteria for USB sensor, PoE sensor, and motor-controller flows.
 - `plan_requirements` writes or returns a requirements plan with reusable circuit blocks, components, nets, constraints, and assumptions for constrained board families.
 - `plan_pin_assignments` writes or returns `boardforge-pin-assignments.json` with controller pin maps, peripheral pin maps, interface inference, boot/reset/debug review, unassigned-net warnings, and conflict blockers.
 - `plan_power_tree` writes or returns `boardforge-power-tree.json` with input sources, rails, regulator topology, rail current budget, decoupling requirements, sequencing rules, thermal review, and manufacturing gates.
@@ -272,6 +287,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `create_net_classes`, `validate_net_classes`, and `report_unclassified_nets` use BoardForge net-class rules.
 - `generate_placement_plan` creates deterministic placement plans, scores density, edge connector intent, passive proximity, and ratsnest length, and fails on off-board/overlap issues.
 - `optimize_placement` proposes deterministic placement repairs for overlaps, edge connectors, RF/antenna edge access, and ratsnest quality before routing.
+- `solve_placement` creates role-aware placements for edge connectors, controllers, power blocks, passives, and remaining components, then blocks on off-board or overlap results.
 - `apply_placement_plan` writes reviewed placement coordinates into real `.kicad_pcb` footprint `(at x y rotation)` fields and marks the project DRC-required.
 - `generate_engineering_questions` writes missing-decision prompts for mechanical envelope, layer count, part source, power inputs, RF keepouts, thermal limits, and high-speed stackup.
 - `plan_escape_routing` writes dense-package escape strategy, recommended layer count, dogbone/microvia/via-in-pad review flags, and blockers.
@@ -288,6 +304,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `autoroute_board` runs the BoardForge controlled deterministic grid/A* router against board outline, component obstacles, net classes, layer policy, via policy, keepouts, and compact-board rules. It returns routed/unrouted nets and remains review-required.
 - `autoroute_and_apply` writes only prechecked autorouted KiCad copper to `.kicad_pcb`, assigns PCB nets/pad nets where possible, records `boardforge-project.json` routing state, and requires DRC before export.
 - `autoroute_drc_iteration` applies controlled autorouted copper and immediately runs local KiCad DRC, returning the DRC report and blocking manufacturing claims when DRC errors remain.
+- `plan_autoroute_repair_loop` turns DRC/routing failures into bounded repair iteration plans for clearance, unconnected nets, route width, via geometry, and copper-zone refill.
 - `score_routing_quality` scores routing plans for unrouted nets, route length, differential-pair mismatch, sensitive-net vias, layer swaps, via budget, and power-route width before copper writing.
 - `validate_routing_geometry` prechecks route points, widths, via size/drill, via keepouts, mounting-hole clearance, differential-pair mates, copper-pour keepouts, and power-route width before copper is written.
 - Routing tools return compact-board via policy, layer-change rules, copper pour plans, antenna keepouts, thermal keepouts, and sensitive analog/sensor regions.

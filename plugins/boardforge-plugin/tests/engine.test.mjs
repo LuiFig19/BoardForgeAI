@@ -822,7 +822,8 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
   assert.equal(preset.status, 'WORKFLOW_PRESET_READY_NEEDS_REVIEW')
   assert.equal(preset.workflowPreset.preset, 'poe_esp32_sensor')
   assert.equal(preset.workflowPreset.steps[0].type, 'plan_board_category')
-  assert.equal(preset.workflowPreset.steps[1].type, 'plan_requirements')
+  assert.equal(preset.workflowPreset.steps[1].type, 'ingest_reference_design')
+  assert.ok(preset.workflowPreset.steps.findIndex((step) => step.type === 'synthesize_circuit_blocks') > preset.workflowPreset.steps.findIndex((step) => step.type === 'create_kicad_project'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_power_tree'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_design_constraints'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_kicad_rules'))
@@ -1203,6 +1204,52 @@ test('engineering intelligence jobs persist congestion, escape, power, thermal, 
     assert.ok(state.engineeringQuestions)
     assert.ok(state.productionReadiness)
     assert.ok(state.releaseGateReport)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('production workflow jobs ingest references, synthesize blocks, solve placement, and plan repair/demo pipelines', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-production-workflow-test-'))
+  try {
+    await executeJob({ id: 'project', type: 'create_kicad_project', allowOverwrite: true, input: { projectName: 'Production Workflow', templateId: 'ESP32_S3_SENSOR', layerCount: 4 } }, workspace)
+    const projectPath = 'production-workflow'
+    const board = { widthMm: 50, heightMm: 32, layerCount: 4, outline: rectanglePoints(50, 32) }
+    const components = [
+      { ref: 'J1', group: 'USB_CONNECTOR', value: 'USB-C', width: 8, height: 6, pinMap: { A6: 'USB_DP', A7: 'USB_DN', A1: 'GND' } },
+      { ref: 'U1', group: 'MCU', value: 'ESP32-S3', width: 8, height: 8, pinMap: { USB_DP: 'USB_DP', USB_DN: 'USB_DN', GND: 'GND', VDD: '3V3' } },
+      { ref: 'U2', group: 'LDO_REGULATOR', value: '3V3 LDO', width: 4, height: 3, pinMap: { IN: '5V', OUT: '3V3', GND: 'GND' } },
+      { ref: 'C1', group: 'CAPACITOR', value: '0.1uF', width: 1.6, height: 0.8, pinMap: { '1': '3V3', '2': 'GND' } },
+    ]
+    const referenceText = 'USB Type-C device with ESD TVS, CC resistors, 3V3 LDO regulator, decoupling capacitors, reset boot pads, 90 ohm USB differential pair, no antenna.'
+    const reference = await executeJob({ id: 'ref', type: 'ingest_reference_design', input: { projectPath, referenceText } }, workspace)
+    assert.ok(['REFERENCE_DESIGN_INGESTED', 'REFERENCE_DESIGN_NEEDS_REVIEW'].includes(reference.status))
+    assert.equal(reference.referenceDesign.interfaces.includes('USB'), true)
+    const blocks = await executeJob({ id: 'blocks', type: 'synthesize_circuit_blocks', input: { projectPath, referenceDesign: reference.referenceDesign } }, workspace)
+    assert.ok(['CIRCUIT_BLOCKS_READY_NEEDS_REVIEW', 'CIRCUIT_BLOCKS_NEED_REQUIREMENTS'].includes(blocks.status))
+    assert.ok(blocks.circuitBlocks.blocks.some((block) => block.id === 'usb_interface'))
+    const solved = await executeJob({ id: 'solve', type: 'solve_placement', input: { projectPath, board, components } }, workspace)
+    assert.ok(['PLACEMENT_SOLVER_BLOCKED', 'PLACEMENT_SOLVER_NEEDS_REVIEW', 'PLACEMENT_SOLVER_READY_NEEDS_DRC'].includes(solved.status))
+    assert.equal(solved.placementSolver.components.length, components.length)
+    const repairLoop = await executeJob({
+      id: 'repair_loop',
+      type: 'plan_autoroute_repair_loop',
+      input: { projectPath, drcReport: { issues: [{ code: 'CLEARANCE', message: 'track clearance' }, { code: 'UNCONNECTED_NET', message: 'unconnected' }] } },
+    }, workspace)
+    assert.equal(repairLoop.autorouteRepairLoop.iterations.length >= 1, true)
+    const recipe = await executeJob({ id: 'recipe', type: 'build_verified_demo_recipe', input: { projectPath, preset: 'usb_sensor' } }, workspace)
+    assert.equal(recipe.status, 'VERIFIED_DEMO_RECIPE_READY')
+    assert.ok(recipe.verifiedDemoRecipe.steps.some((step) => step.type === 'autoroute_drc_iteration'))
+    const pipeline = await executeJob({ id: 'pipeline', type: 'plan_production_pipeline', input: { projectPath, projectName: 'Production Workflow' } }, workspace)
+    assert.equal(pipeline.status, 'PRODUCTION_PIPELINE_READY_NEEDS_REVIEW')
+    assert.ok(pipeline.productionPipeline.steps.some((step) => step.type === 'build_release_gate_report'))
+    const state = JSON.parse(await readFile(path.join(workspace, projectPath, 'boardforge-project.json'), 'utf8'))
+    assert.ok(state.referenceDesign)
+    assert.ok(state.circuitBlocks)
+    assert.ok(state.placementSolver)
+    assert.ok(state.autorouteRepairLoop)
+    assert.ok(state.verifiedDemoRecipe)
+    assert.ok(state.productionPipeline)
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }
