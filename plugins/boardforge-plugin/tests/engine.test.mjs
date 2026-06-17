@@ -822,8 +822,14 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
   assert.equal(preset.status, 'WORKFLOW_PRESET_READY_NEEDS_REVIEW')
   assert.equal(preset.workflowPreset.preset, 'poe_esp32_sensor')
   assert.equal(preset.workflowPreset.steps[0].type, 'plan_board_category')
-  assert.equal(preset.workflowPreset.steps[1].type, 'ingest_reference_design')
+  assert.equal(preset.workflowPreset.steps[1].type, 'classify_board_architecture')
+  assert.ok(preset.workflowPreset.steps.findIndex((step) => step.type === 'ingest_reference_design') > preset.workflowPreset.steps.findIndex((step) => step.type === 'classify_board_architecture'))
   assert.ok(preset.workflowPreset.steps.findIndex((step) => step.type === 'synthesize_circuit_blocks') > preset.workflowPreset.steps.findIndex((step) => step.type === 'create_kicad_project'))
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_hdi_manufacturing_strategy'))
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'audit_return_path_integrity'))
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'audit_creepage_clearance'))
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_bringup_reliability_matrix'))
+  assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'run_advanced_board_suite'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'plan_power_tree'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_design_constraints'))
   assert.ok(preset.workflowPreset.steps.some((step) => step.type === 'generate_kicad_rules'))
@@ -845,7 +851,8 @@ test('workflow preset produces ordered controlled Codex plugin steps', async () 
   }, process.cwd())
   assert.equal(dronePreset.workflowPreset.preset, 'drone_flight_controller')
   assert.equal(dronePreset.workflowPreset.steps[0].type, 'plan_board_category')
-  assert.equal(dronePreset.workflowPreset.steps[1].type, 'plan_mission_requirements')
+  assert.equal(dronePreset.workflowPreset.steps[1].type, 'classify_board_architecture')
+  assert.ok(dronePreset.workflowPreset.steps.findIndex((step) => step.type === 'plan_mission_requirements') > dronePreset.workflowPreset.steps.findIndex((step) => step.type === 'classify_board_architecture'))
   assert.ok(dronePreset.workflowPreset.steps.some((step) => step.type === 'autoroute_drc_iteration'))
 })
 
@@ -861,6 +868,7 @@ test('controlled workflow runner executes preset steps and writes a report', asy
         templateId: 'ESP32_S3_SENSOR',
         prompt: 'ESP32-S3 USB-C I2C sensor board with 3V3 regulator',
         allowOverwrite: true,
+        continueOnBlocked: true,
       },
     }, workspace)
     assert.ok(['BOARDFORGE_WORKFLOW_COMPLETE_NEEDS_REVIEW', 'BOARDFORGE_WORKFLOW_BLOCKED'].includes(output.status))
@@ -1250,6 +1258,78 @@ test('production workflow jobs ingest references, synthesize blocks, solve place
     assert.ok(state.autorouteRepairLoop)
     assert.ok(state.verifiedDemoRecipe)
     assert.ok(state.productionPipeline)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('production readiness suite builds canonical model, audits assets and gates release', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-production-suite-test-'))
+  try {
+    await executeJob({ id: 'project', type: 'create_kicad_project', allowOverwrite: true, input: { projectName: 'Production Suite', templateId: 'ESP32_S3_SENSOR', layerCount: 4 } }, workspace)
+    const projectPath = 'production-suite'
+    const board = { widthMm: 54, heightMm: 34, layerCount: 4, outline: rectanglePoints(54, 34) }
+    const components = [
+      { ref: 'J1', group: 'USB_CONNECTOR', value: 'USB-C', symbol: 'Connector:USB_C_Receptacle_USB2.0', footprint: 'Connector_USB:USB_C_Receptacle', model3d: 'usb.step', x: 4, y: 17, width: 7, height: 6, pinMap: { VBUS: 'VUSB', GND: 'GND', 'D+': 'USB_DP', 'D-': 'USB_DN' } },
+      { ref: 'U1', group: 'MCU', value: 'ESP32-S3', symbol: 'RF_Module:ESP32-S3-WROOM-1', footprint: 'RF_Module:ESP32-S3-WROOM-1', model3d: 'esp32.step', x: 27, y: 17, width: 12, height: 14, pinMap: { VDD: '3V3', GND: 'GND', USB_DP: 'USB_DP', USB_DN: 'USB_DN' } },
+      { ref: 'U2', group: 'LDO_REGULATOR', value: '3V3 LDO', symbol: 'Regulator_Linear:AP2112K-3.3', footprint: 'Package_TO_SOT_SMD:SOT-23-5', model3d: 'sot23.step', x: 43, y: 17, width: 3, height: 3, pinMap: { IN: 'VUSB', OUT: '3V3', GND: 'GND' } },
+    ]
+    const canonical = await executeJob({ id: 'canonical', type: 'build_canonical_net_model', input: { projectPath, board, components } }, workspace)
+    assert.ok(['CANONICAL_NET_MODEL_READY', 'CANONICAL_NET_MODEL_NEEDS_REVIEW'].includes(canonical.status))
+    assert.ok(canonical.canonicalNetModelReport.canonicalNetModel.nets.some((net) => net.name === 'USB_DP'))
+    const assets = await executeJob({ id: 'assets', type: 'audit_asset_resolution', input: { projectPath, components } }, workspace)
+    assert.equal(assets.status, 'ASSET_RESOLUTION_READY')
+    const placement = await executeJob({ id: 'placement', type: 'audit_placement_legality', input: { projectPath, board, components } }, workspace)
+    assert.ok(['PLACEMENT_LEGALITY_READY_NEEDS_DRC', 'PLACEMENT_LEGALITY_NEEDS_REVIEW'].includes(placement.status))
+    const routing = await executeJob({ id: 'strategy', type: 'compile_routing_execution_strategy', input: { projectPath, board, components, nets: canonical.canonicalNetModelReport.canonicalNetModel.nets } }, workspace)
+    assert.equal(routing.status, 'ROUTING_EXECUTION_STRATEGY_READY_NEEDS_REVIEW')
+    assert.ok(routing.routingExecutionStrategyReport.routingExecutionStrategy.strategy.some((step) => step.id === 'critical_nets_first'))
+    const gates = await executeJob({ id: 'gates', type: 'audit_release_export_gates', input: { projectPath, board, components, schematicModel: {}, designConstraints: {}, stackup: { layerCount: 4 }, referenceDesign: {}, bomSourcing: {}, placementSolver: {}, powerRouting: {}, copperPourPlan: {}, routingPlan: {}, releaseGateReport: {}, verifiedDemoRecipe: {}, productionPipeline: {} } }, workspace)
+    assert.ok(['RELEASE_EXPORT_GATES_BLOCKED', 'RELEASE_EXPORT_GATES_NEED_REVIEW', 'RELEASE_EXPORT_GATES_READY_FOR_FINAL_REVIEW'].includes(gates.status))
+    assert.equal(gates.releaseExportGateAudit.releaseExportGates.checks.length, 25)
+    const suite = await executeJob({ id: 'suite', type: 'run_production_readiness_suite', input: { projectPath, board, components, schematicModel: {}, designConstraints: {}, stackup: { layerCount: 4 }, referenceDesign: {}, bomSourcing: {}, placementSolver: {}, powerRouting: {}, copperPourPlan: {}, routingPlan: {}, releaseGateReport: {}, verifiedDemoRecipe: {}, productionPipeline: {} } }, workspace)
+    assert.ok(['PRODUCTION_SUITE_BLOCKED', 'PRODUCTION_SUITE_NEEDS_REVIEW', 'PRODUCTION_SUITE_READY_FOR_FINAL_REVIEW'].includes(suite.status))
+    assert.ok(suite.productionReadinessSuite.productionSuite.releaseExportGates.checks.some((check) => check.id === 'JLCPCB_VALIDATOR'))
+    const state = JSON.parse(await readFile(path.join(workspace, projectPath, 'boardforge-project.json'), 'utf8'))
+    assert.ok(state.canonicalNetModelReport)
+    assert.ok(state.productionReadinessSuite)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('advanced board suite classifies complex boards and adds HDI return-path creepage bring-up gates', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-advanced-suite-test-'))
+  try {
+    await executeJob({ id: 'project', type: 'create_kicad_project', allowOverwrite: true, input: { projectName: 'Advanced Suite', templateId: 'ESP32_S3_SENSOR', layerCount: 6 } }, workspace)
+    const projectPath = 'advanced-suite'
+    const board = { widthMm: 35, heightMm: 22, layerCount: 6, allowBlindVias: true, outline: rectanglePoints(35, 22) }
+    const components = [
+      { ref: 'J1', group: 'USB_CONNECTOR', value: 'USB-C', x: 3, y: 11, width: 7, height: 6, pinMap: { 'D+': 'USB_DP', 'D-': 'USB_DN', VBUS: '5V', GND: 'GND' } },
+      { ref: 'U1', group: 'MCU', value: 'ESP32-S3 WiFi BLE', x: 17, y: 11, width: 12, height: 12, pinMap: { USB_DP: 'USB_DP', USB_DN: 'USB_DN', VDD: '3V3', GND: 'GND', ANT: 'RF_FEED' } },
+      { ref: 'U2', group: 'BUCK', value: '5V to 3V3 regulator', x: 29, y: 11, width: 4, height: 4, pinMap: { IN: '5V', OUT: '3V3', GND: 'GND' } },
+    ]
+    const nets = [{ name: 'USB_DP' }, { name: 'USB_DN' }, { name: 'RF_FEED' }, { name: '5V' }, { name: '3V3' }, { name: 'GND' }]
+    const prompt = 'Compact HDI WiFi BLE USB-C sensor with microvias, RF antenna keepout, 60V PoE isolation review and switching regulator.'
+    const architecture = await executeJob({ id: 'architecture', type: 'classify_board_architecture', input: { projectPath, prompt, board, components, nets } }, workspace)
+    assert.ok(['BOARD_ARCHITECTURE_CLASSIFIED', 'BOARD_ARCHITECTURE_NEEDS_REVIEW'].includes(architecture.status))
+    assert.ok(architecture.boardArchitectureReport.boardArchitecture.families.some((family) => family.id === 'rf_wireless'))
+    const hdi = await executeJob({ id: 'hdi', type: 'plan_hdi_manufacturing_strategy', input: { projectPath, prompt, board, components, nets, allowBlindVias: true } }, workspace)
+    assert.ok(['HDI_MANUFACTURING_STRATEGY_BLOCKED', 'HDI_MANUFACTURING_STRATEGY_NEEDS_REVIEW', 'HDI_MANUFACTURING_STRATEGY_READY'].includes(hdi.status))
+    assert.ok(hdi.hdiManufacturingStrategyReport.hdiManufacturingStrategy.allowedViaTypes.includes('blind_review'))
+    const returnPath = await executeJob({ id: 'return', type: 'audit_return_path_integrity', input: { projectPath, board, components, nets } }, workspace)
+    assert.ok(['RETURN_PATH_INTEGRITY_BLOCKED', 'RETURN_PATH_INTEGRITY_NEEDS_REVIEW', 'RETURN_PATH_INTEGRITY_READY'].includes(returnPath.status))
+    assert.ok(returnPath.returnPathIntegrityReport.returnPathIntegrity.returnPathPlan.some((item) => item.net === 'USB_DP'))
+    const creepage = await executeJob({ id: 'creepage', type: 'audit_creepage_clearance', input: { projectPath, prompt, board, components, nets, designIntent: { zones: [{ id: 'primary-secondary-isolation', polygon: rectanglePoints(10, 10) }] } } }, workspace)
+    assert.ok(['CREEPAGE_CLEARANCE_BLOCKED', 'CREEPAGE_CLEARANCE_NEEDS_REVIEW', 'CREEPAGE_CLEARANCE_READY'].includes(creepage.status))
+    const bringup = await executeJob({ id: 'bringup', type: 'plan_bringup_reliability_matrix', input: { projectPath, board, components, nets } }, workspace)
+    assert.ok(['BRINGUP_RELIABILITY_MATRIX_NEEDS_REVIEW', 'BRINGUP_RELIABILITY_MATRIX_READY'].includes(bringup.status))
+    assert.ok(bringup.bringupReliabilityMatrixReport.bringupReliabilityMatrix.rows.some((row) => row.id === 'thermal_soak'))
+    const suite = await executeJob({ id: 'advanced_suite', type: 'run_advanced_board_suite', input: { projectPath, prompt, board, components, nets, designIntent: { zones: [{ id: 'primary-secondary-isolation', polygon: rectanglePoints(10, 10) }] } } }, workspace)
+    assert.ok(['ADVANCED_BOARD_SUITE_BLOCKED', 'ADVANCED_BOARD_SUITE_NEEDS_REVIEW', 'ADVANCED_BOARD_SUITE_READY'].includes(suite.status))
+    assert.equal(suite.advancedBoardSuite.advancedBoardSuite.majorUpgradeCoverage.length, 25)
+    const state = JSON.parse(await readFile(path.join(workspace, projectPath, 'boardforge-project.json'), 'utf8'))
+    assert.ok(state.advancedBoardSuite)
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

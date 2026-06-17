@@ -64,6 +64,18 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `synthesize_circuit_blocks`
 - `plan_production_pipeline`
 - `build_verified_demo_recipe`
+- `build_canonical_net_model`
+- `audit_asset_resolution`
+- `audit_placement_legality`
+- `compile_routing_execution_strategy`
+- `audit_release_export_gates`
+- `run_production_readiness_suite`
+- `classify_board_architecture`
+- `plan_hdi_manufacturing_strategy`
+- `audit_return_path_integrity`
+- `audit_creepage_clearance`
+- `plan_bringup_reliability_matrix`
+- `run_advanced_board_suite`
 - `plan_requirements`
 - `plan_pin_assignments`
 - `plan_power_tree`
@@ -189,6 +201,15 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - Run `synthesize_circuit_blocks` after reference/design intake to create reviewable schematic blocks, support components, and net intent before schematic generation.
 - Run `solve_placement` before `apply_placement_plan` when placement should be inferred from roles, board geometry, edge connectors, controllers, power parts, and passives.
 - Run `plan_autoroute_repair_loop` after DRC/routing-quality failures to produce controlled repair iterations instead of improvising shell/file edits.
+- Run `build_canonical_net_model`, `audit_asset_resolution`, and `audit_placement_legality` before serious schematic/placement/routing claims.
+- Run `compile_routing_execution_strategy` before autorouting so escape routing, high-speed nets, power copper, vias, keepouts, pours, and DRC loops are explicitly ordered.
+- Run `audit_release_export_gates` or `run_production_readiness_suite` before any Gerber, drill, BOM, CPL, JLCPCB package, or manufacturable claim.
+- Run `classify_board_architecture` near the start of any serious board so Codex applies the correct controls for high-speed, RF, motor/power, industrial isolation, analog/sensor, compact HDI, or general embedded boards.
+- Run `plan_hdi_manufacturing_strategy` before stackup/routing decisions on dense, compact, BGA/WLCSP, blind/buried/microvia, or via-in-pad boards.
+- Run `audit_return_path_integrity` before routing high-speed, RF, clock, analog, sensor, CAN, USB, Ethernet, PCIe, MIPI, or LVDS nets.
+- Run `audit_creepage_clearance` for PoE, mains, isolated, surge, relay, terminal block, high-voltage, industrial, BMS, charger, or field-I/O boards.
+- Run `plan_bringup_reliability_matrix` before release gates so rail checks, interface tests, thermal soak, ESD/surge review, and production fixture requirements are explicit.
+- Run `run_advanced_board_suite` before release scoring on complex boards.
 - Run `build_verified_demo_recipe` for repeatable local demo boards and `plan_production_pipeline` when Codex needs the full ordered path from questions to release gates.
 - Run `generate_manufacturing_manifest` before Gerber/drill/BOM/CPL handoff or JLCPCB packaging so Codex has one explicit artifact list and blocker list.
 - Run `plan_requirements` when the user gives a hardware description and Codex needs a structured BOM/net/circuit plan before KiCad generation.
@@ -238,6 +259,18 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `synthesize_circuit_blocks` creates circuit blocks such as protection, power tree, USB, Ethernet, I2C, SPI, RF, motor power, clocking, and debug with support-component and net intent.
 - `plan_production_pipeline` returns the full controlled execution sequence from engineering questions through release gates.
 - `build_verified_demo_recipe` returns repeatable demo recipes with pass criteria for USB sensor, PoE sensor, and motor-controller flows.
+- `build_canonical_net_model` builds the authoritative component/net/pin model used to keep schematic, PCB, BOM, CPL, and routing checks aligned.
+- `audit_asset_resolution` blocks on missing real KiCad symbols or footprints and warns on missing STEP/WRL models for physical 3D review.
+- `audit_placement_legality` catches unplaced, off-board, overlapping, connector-edge, hot/RF, and clearance issues before routing.
+- `compile_routing_execution_strategy` creates the ordered routing execution policy for escape routing, differential pairs, power routes, copper pours, vias, repair loops, and release proof.
+- `audit_release_export_gates` checks the 25 production gates before export/package claims.
+- `run_production_readiness_suite` runs canonical net, asset, placement, routing strategy, and release-gate audits together.
+- `classify_board_architecture` detects board families and required controls for high-speed digital, RF/wireless, power/motor, industrial isolation, sensor/analog, compact HDI, and general embedded designs.
+- `plan_hdi_manufacturing_strategy` creates density, layer-count, advanced-via, manufacturer-approval, and yield/cost review gates.
+- `audit_return_path_integrity` checks ground reference, split/keepout crossings, sensitive-net via policy, and return-via requirements.
+- `audit_creepage_clearance` checks high-voltage/isolation inference, minimum clearance, field connectors, and required isolation zones.
+- `plan_bringup_reliability_matrix` creates rail, interface, thermal, ESD/surge, fixture, and production bring-up acceptance checks.
+- `run_advanced_board_suite` combines architecture, HDI, return path, creepage, and bring-up reliability audits with a release-risk score.
 - `plan_requirements` writes or returns a requirements plan with reusable circuit blocks, components, nets, constraints, and assumptions for constrained board families.
 - `plan_pin_assignments` writes or returns `boardforge-pin-assignments.json` with controller pin maps, peripheral pin maps, interface inference, boot/reset/debug review, unassigned-net warnings, and conflict blockers.
 - `plan_power_tree` writes or returns `boardforge-power-tree.json` with input sources, rails, regulator topology, rail current budget, decoupling requirements, sequencing rules, thermal review, and manufacturing gates.
@@ -372,6 +405,18 @@ Supported endpoints:
 - `POST /jobs/plan-mission`
 - `POST /jobs/intake-bom`
 - `POST /jobs/audit-bom`
+- `POST /jobs/canonical-net-model`
+- `POST /jobs/audit-assets`
+- `POST /jobs/audit-placement-legality`
+- `POST /jobs/routing-execution-strategy`
+- `POST /jobs/release-export-gates`
+- `POST /jobs/production-readiness-suite`
+- `POST /jobs/classify-board-architecture`
+- `POST /jobs/hdi-manufacturing-strategy`
+- `POST /jobs/return-path-integrity`
+- `POST /jobs/creepage-clearance`
+- `POST /jobs/bringup-reliability-matrix`
+- `POST /jobs/advanced-board-suite`
 - `POST /jobs/plan-requirements`
 - `POST /jobs/plan-pin-assignments`
 - `POST /jobs/plan-power-tree`

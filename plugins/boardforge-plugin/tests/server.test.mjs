@@ -204,6 +204,67 @@ test('local server exposes status, KiCad status, and create project job', async 
       input: { projectPath: 'server-project', preset: 'usb_sensor' },
     })
     assert.equal(demoRecipe.status, 'VERIFIED_DEMO_RECIPE_READY')
+    const canonicalNetModel = await postJson(`http://127.0.0.1:${port}/jobs/canonical-net-model`, {
+      id: 'server_canonical_net_model',
+      input: { projectPath: 'server-project', components: plan.components, nets: plan.nets },
+    })
+    assert.ok(['CANONICAL_NET_MODEL_BLOCKED', 'CANONICAL_NET_MODEL_NEEDS_REVIEW', 'CANONICAL_NET_MODEL_READY'].includes(canonicalNetModel.status))
+    const assetAudit = await postJson(`http://127.0.0.1:${port}/jobs/audit-assets`, {
+      id: 'server_asset_audit',
+      input: { projectPath: 'server-project', components: plan.components },
+    })
+    assert.ok(['ASSET_RESOLUTION_BLOCKED', 'ASSET_RESOLUTION_NEEDS_REVIEW', 'ASSET_RESOLUTION_READY'].includes(assetAudit.status))
+    const placementAudit = await postJson(`http://127.0.0.1:${port}/jobs/audit-placement-legality`, {
+      id: 'server_placement_audit',
+      input: { projectPath: 'server-project', board: { widthMm: 50, heightMm: 30, outline: [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 30 }, { x: 0, y: 30 }] }, components: [{ ref: 'J1', x: 4, y: 15, width: 4, height: 4 }, { ref: 'U1', x: 25, y: 15, width: 8, height: 8 }] },
+    })
+    assert.ok(['PLACEMENT_LEGALITY_BLOCKED', 'PLACEMENT_LEGALITY_NEEDS_REVIEW', 'PLACEMENT_LEGALITY_READY_NEEDS_DRC'].includes(placementAudit.status))
+    const routingStrategy = await postJson(`http://127.0.0.1:${port}/jobs/routing-execution-strategy`, {
+      id: 'server_routing_strategy',
+      input: { projectPath: 'server-project', board: { widthMm: 50, heightMm: 30, layerCount: 4 }, nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }, { name: '3V3' }] },
+    })
+    assert.equal(routingStrategy.status, 'ROUTING_EXECUTION_STRATEGY_READY_NEEDS_REVIEW')
+    const releaseExportGates = await postJson(`http://127.0.0.1:${port}/jobs/release-export-gates`, {
+      id: 'server_release_export_gates',
+      input: { projectPath: 'server-project', components: plan.components, nets: plan.nets },
+    })
+    assert.ok(['RELEASE_EXPORT_GATES_BLOCKED', 'RELEASE_EXPORT_GATES_NEED_REVIEW', 'RELEASE_EXPORT_GATES_READY_FOR_FINAL_REVIEW'].includes(releaseExportGates.status))
+    assert.equal(releaseExportGates.releaseExportGateAudit.releaseExportGates.checks.length, 25)
+    const productionSuite = await postJson(`http://127.0.0.1:${port}/jobs/production-readiness-suite`, {
+      id: 'server_production_suite',
+      input: { projectPath: 'server-project', components: plan.components, nets: plan.nets },
+    })
+    assert.ok(['PRODUCTION_SUITE_BLOCKED', 'PRODUCTION_SUITE_NEEDS_REVIEW', 'PRODUCTION_SUITE_READY_FOR_FINAL_REVIEW'].includes(productionSuite.status))
+    const architecture = await postJson(`http://127.0.0.1:${port}/jobs/classify-board-architecture`, {
+      id: 'server_architecture',
+      input: { projectPath: 'server-project', prompt: 'compact industrial USB Ethernet RF sensor with PoE isolation and blind vias' },
+    })
+    assert.ok(['BOARD_ARCHITECTURE_CLASSIFIED', 'BOARD_ARCHITECTURE_NEEDS_REVIEW'].includes(architecture.status))
+    const hdiStrategy = await postJson(`http://127.0.0.1:${port}/jobs/hdi-manufacturing-strategy`, {
+      id: 'server_hdi_strategy',
+      input: { projectPath: 'server-project', board: { widthMm: 25, heightMm: 20, layerCount: 6, allowBlindVias: true }, allowBlindVias: true },
+    })
+    assert.ok(['HDI_MANUFACTURING_STRATEGY_BLOCKED', 'HDI_MANUFACTURING_STRATEGY_NEEDS_REVIEW', 'HDI_MANUFACTURING_STRATEGY_READY'].includes(hdiStrategy.status))
+    const returnPathIntegrity = await postJson(`http://127.0.0.1:${port}/jobs/return-path-integrity`, {
+      id: 'server_return_path',
+      input: { projectPath: 'server-project', board: { layerCount: 4 }, nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }, { name: 'GND' }] },
+    })
+    assert.ok(['RETURN_PATH_INTEGRITY_BLOCKED', 'RETURN_PATH_INTEGRITY_NEEDS_REVIEW', 'RETURN_PATH_INTEGRITY_READY'].includes(returnPathIntegrity.status))
+    const creepageClearance = await postJson(`http://127.0.0.1:${port}/jobs/creepage-clearance`, {
+      id: 'server_creepage',
+      input: { projectPath: 'server-project', prompt: '60V PoE isolated sensor with surge protection', designIntent: { zones: [{ id: 'primary-secondary-isolation', polygon: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] }] } },
+    })
+    assert.ok(['CREEPAGE_CLEARANCE_BLOCKED', 'CREEPAGE_CLEARANCE_NEEDS_REVIEW', 'CREEPAGE_CLEARANCE_READY'].includes(creepageClearance.status))
+    const bringupMatrix = await postJson(`http://127.0.0.1:${port}/jobs/bringup-reliability-matrix`, {
+      id: 'server_bringup',
+      input: { projectPath: 'server-project', nets: [{ name: '5V' }, { name: '3V3' }, { name: 'USB_DP' }, { name: 'USB_DN' }] },
+    })
+    assert.ok(['BRINGUP_RELIABILITY_MATRIX_NEEDS_REVIEW', 'BRINGUP_RELIABILITY_MATRIX_READY'].includes(bringupMatrix.status))
+    const advancedSuite = await postJson(`http://127.0.0.1:${port}/jobs/advanced-board-suite`, {
+      id: 'server_advanced_suite',
+      input: { projectPath: 'server-project', prompt: 'compact industrial USB Ethernet RF sensor with PoE isolation and blind vias', nets: [{ name: '5V' }, { name: '3V3' }, { name: 'USB_DP' }, { name: 'USB_DN' }, { name: 'GND' }] },
+    })
+    assert.ok(['ADVANCED_BOARD_SUITE_BLOCKED', 'ADVANCED_BOARD_SUITE_NEEDS_REVIEW', 'ADVANCED_BOARD_SUITE_READY'].includes(advancedSuite.status))
     const routeReport = await postJson(`http://127.0.0.1:${port}/jobs/routing-report`, {
       id: 'server_route_report',
       input: { nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }], board: { widthMm: 40, heightMm: 30 } },
