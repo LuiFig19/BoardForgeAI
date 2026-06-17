@@ -134,6 +134,7 @@ function addSupportComponents(components, nets, input) {
 }
 
 function support(ref, group, value, netA, netB, supportsRef) {
+  const assets = supportAssets(group, value)
   return {
     ref,
     group,
@@ -145,6 +146,55 @@ function support(ref, group, value, netA, netB, supportsRef) {
     pinMap: group === 'TVS' ? { 1: netA, 2: netB, 3: 'GND' } : { 1: netA, 2: netB },
     width: group === 'CAP' || group === 'RES' ? 1.6 : 3,
     height: group === 'CAP' || group === 'RES' ? 0.8 : 2,
+    symbol: assets.symbol,
+    footprint: assets.footprint,
+    model3d: assets.model3d,
+    package: assets.package,
+    assetConfidence: assets.confidence,
+    assetSource: 'BoardForge controlled support-library default',
+    reviewNotes: assets.reviewNotes,
+  }
+}
+
+function supportAssets(group, value) {
+  if (group === 'CAP') {
+    const isBulk = /10uF|1uF/i.test(value || '')
+    return {
+      symbol: 'Device:C',
+      footprint: isBulk ? 'Capacitor_SMD:C_0805_2012Metric' : 'Capacitor_SMD:C_0603_1608Metric',
+      model3d: isBulk ? '${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0805_2012Metric.wrl' : '${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.wrl',
+      package: isBulk ? '0805' : '0603',
+      confidence: 'ASSUMED_REVIEW_REQUIRED',
+      reviewNotes: 'Support capacitor package is an engineering default; verify voltage rating, dielectric, and JLCPCB availability.',
+    }
+  }
+  if (group === 'RES') {
+    return {
+      symbol: 'Device:R',
+      footprint: 'Resistor_SMD:R_0603_1608Metric',
+      model3d: '${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0603_1608Metric.wrl',
+      package: '0603',
+      confidence: 'ASSUMED_REVIEW_REQUIRED',
+      reviewNotes: 'Support resistor package is an engineering default; verify value, tolerance, power, and assembly availability.',
+    }
+  }
+  if (group === 'TVS') {
+    return {
+      symbol: 'Device:D_TVS_x2_AAC',
+      footprint: 'Package_TO_SOT_SMD:SOT-23-6',
+      model3d: '${KICAD10_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-23-6.wrl',
+      package: 'SOT-23-6',
+      confidence: 'ASSUMED_REVIEW_REQUIRED',
+      reviewNotes: 'USB ESD array is a controlled placeholder; select an exact low-capacitance TVS before release.',
+    }
+  }
+  return {
+    symbol: null,
+    footprint: null,
+    model3d: null,
+    package: null,
+    confidence: 'UNRESOLVED',
+    reviewNotes: 'No controlled default exists for this support component.',
   }
 }
 

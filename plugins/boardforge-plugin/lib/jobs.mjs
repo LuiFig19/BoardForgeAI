@@ -86,7 +86,7 @@ import { productionReadinessJobTypes, runProductionReadinessJob } from './produc
 import { advancedBoardJobTypes, runAdvancedBoardJob } from './advanced-board-suite.mjs'
 import { autotracerJobTypes, finalizeAutotraceWithDrc, runAutotracerPlanning } from './autotracer-engine.mjs'
 
-export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'validate_schematic_readiness', 'synthesize_schematic_design', 'validate_schematic_pcb_sync', 'apply_schematic_pcb_sync', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'ingest_reference_design', 'synthesize_circuit_blocks', 'plan_production_pipeline', 'build_verified_demo_recipe', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'plan_pin_map_repairs', 'apply_pin_map_repairs', 'validate_3d_model_coverage', 'audit_bom_sourcing', 'validate_manufacturing_readiness', 'validate_jlcpcb_package', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'solve_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'analyze_routing_congestion', 'plan_escape_routing', 'plan_diff_pair_tuning', 'validate_power_integrity', 'analyze_thermal_bottlenecks', 'validate_assembly_orientation', 'estimate_board_cost', 'generate_engineering_questions', 'score_production_readiness', 'build_release_gate_report', 'generate_routing_plan', 'generate_routing_report', 'plan_copper_pours', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'plan_autoroute_repair_loop', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
+export const allowedJobTypes = new Set(['create_outline_board', 'create_kicad_project', 'apply_edge_cuts', 'add_mounting_holes', 'round_board_corners', 'add_usb_c_edge_cutout', 'add_rj45_edge_clearance', 'validate_board_outline', 'scan_kicad_project', 'snapshot_project', 'list_project_snapshots', 'diff_project_snapshot', 'restore_project_snapshot', 'run_project_preflight', 'list_board_categories', 'plan_board_category', 'validate_schematic_graph', 'validate_schematic_readiness', 'synthesize_schematic_design', 'validate_schematic_pcb_sync', 'apply_schematic_pcb_sync', 'check_routing_readiness', 'calculate_power_routing', 'select_via_strategy', 'build_noise_map', 'summarize_manufacturer_rules', 'generate_project_review_report', 'build_workflow_preset', 'run_boardforge_workflow', 'run_verified_demo', 'plan_mission_requirements', 'intake_user_bom', 'audit_user_bom', 'ingest_reference_design', 'synthesize_circuit_blocks', 'plan_production_pipeline', 'build_verified_demo_recipe', 'plan_requirements', 'plan_pin_assignments', 'plan_power_tree', 'plan_stackup', 'plan_fanout', 'plan_signal_integrity', 'plan_test_strategy', 'run_dfm_checks', 'compare_manufacturers', 'plan_complex_board', 'generate_design_constraints', 'generate_kicad_rules', 'sync_kicad_libraries', 'search_library_assets', 'resolve_component_assets', 'sync_component_database', 'resolve_bom_parts', 'audit_component_library', 'validate_component_bindings', 'plan_pin_map_repairs', 'apply_pin_map_repairs', 'validate_3d_model_coverage', 'audit_bom_sourcing', 'validate_manufacturing_readiness', 'validate_jlcpcb_package', 'generate_manufacturing_manifest', 'generate_netlist', 'run_design_audit', 'generate_schematic', 'plan_erc_repairs', 'apply_safe_erc_repairs', 'plan_drc_repairs', 'apply_safe_drc_repairs', 'interactive_edit', 'find_missing_footprints', 'link_3d_models', 'create_net_classes', 'classify_nets', 'assign_net_classes', 'assign_net_to_class', 'validate_net_classes', 'report_unclassified_nets', 'generate_placement_plan', 'optimize_placement', 'solve_placement', 'apply_placement_plan', 'validate_placement', 'move_component', 'fix_component_off_board', 'fix_component_overlap', 'fix_mounting_hole_conflicts', 'analyze_routing_congestion', 'plan_escape_routing', 'plan_diff_pair_tuning', 'validate_power_integrity', 'analyze_thermal_bottlenecks', 'validate_assembly_orientation', 'estimate_board_cost', 'generate_engineering_questions', 'score_production_readiness', 'build_release_gate_report', 'generate_routing_plan', 'generate_routing_report', 'plan_copper_pours', 'autoroute_board', 'autoroute_and_apply', 'autoroute_drc_iteration', 'plan_autoroute_repair_loop', 'score_routing_quality', 'apply_routing_plan', 'validate_routing_geometry', 'route_critical_nets', 'route_power_nets', 'route_diff_pair', 'route_signal_net', 'add_ground_zone', 'stitch_ground_vias', 'validate_routes', 'report_unrouted_nets', 'fix_route_clearance_violations', 'run_full_self_review', 'run_kicad_drc', 'run_kicad_erc', 'export_gerbers', 'export_drill_files', 'export_bom', 'export_cpl', 'package_jlcpcb', 'summarize_project'])
 for (const type of productionReadinessJobTypes) allowedJobTypes.add(type)
 for (const type of advancedBoardJobTypes) allowedJobTypes.add(type)
 for (const type of autotracerJobTypes) allowedJobTypes.add(type)
@@ -140,6 +140,7 @@ export async function executeJob(job, workspace) {
   if (job.type === 'generate_project_review_report') return projectReviewReportJob(job, workspace, profile)
   if (job.type === 'build_workflow_preset') return workflowPresetJob(job, workspace)
   if (job.type === 'run_boardforge_workflow') return runBoardForgeWorkflowJob(job, workspace)
+  if (job.type === 'run_verified_demo') return runVerifiedDemoJob(job, workspace)
   if (job.type === 'plan_mission_requirements') return missionRequirementsJob(job, workspace)
   if (job.type === 'intake_user_bom') return userBomIntakeJob(job, workspace)
   if (job.type === 'audit_user_bom') return userBomAuditJob(job, workspace)
@@ -676,6 +677,117 @@ async function runBoardForgeWorkflowJob(job, workspace) {
   }
   const finalFiles = outputFile ? [...new Set([...report.generatedFiles, outputFile])] : report.generatedFiles
   return result(job, status, report.warnings, report.blockers, { workflowRun: { ...report, generatedFiles: finalFiles }, generatedFiles: finalFiles, humanReviewRequired: true })
+}
+
+async function runVerifiedDemoJob(job, workspace) {
+  const recipe = buildVerifiedDemoRecipe(job.input || {})
+  const projectName = sanitizeName(recipe.projectPath)
+  const preset = recipe.preset || 'usb_sensor'
+  const templateId = job.input?.templateId || {
+    usb_sensor: 'ESP32_S3_SENSOR',
+    poe_sensor: 'ETHERNET_MONITOR',
+    motor_controller: 'MOTOR_CONTROLLER',
+  }[preset] || 'ESP32_S3_SENSOR'
+  const executed = []
+  const generatedFiles = []
+  let stoppedAt = null
+  const executionSteps = [
+    ...recipe.steps.filter((step) => step.type === 'create_kicad_project'),
+    ...recipe.steps.filter((step) => step.type !== 'create_kicad_project'),
+  ].map((step, index) => ({ ...step, index: index + 1 }))
+  for (const step of executionSteps) {
+    const stepInput = {
+      ...(step.input || {}),
+      ...(step.type === 'create_kicad_project' ? { projectName, templateId } : { projectPath: projectName }),
+      ...(step.type === 'generate_schematic' && job.input?.diagnosticAllowIncompleteSchematic ? { allowIncompleteSchematic: true } : {}),
+    }
+    const stepJob = {
+      id: `${job.id || 'verified_demo'}_${step.index}_${step.type}`,
+      type: step.type,
+      input: stepInput,
+      allowOverwrite: step.type === 'create_kicad_project' ? Boolean(job.allowOverwrite || job.input?.allowOverwrite) : undefined,
+    }
+    const output = await executeJob(stepJob, workspace)
+    const summary = summarizeStepResult(step, output)
+    executed.push(summary)
+    if (Array.isArray(output.generatedFiles)) generatedFiles.push(...output.generatedFiles)
+    const blocked = summary.errors.length || /BLOCKED|FAILED|NEEDS_FIX|PLACEMENT_NEEDS_FIX|VALIDATION_FAILED/.test(summary.status || '')
+    if (blocked && !job.input?.continueOnBlocked) {
+      stoppedAt = { step: step.type, index: step.index, status: summary.status }
+      break
+    }
+  }
+  const gates = verifiedDemoGates(executed)
+  const blockers = [
+    ...executed.flatMap((item) => item.errors),
+    ...gates.filter((gate) => gate.status === 'blocked').map((gate) => ({ severity: 'ERROR', code: `DEMO_GATE_${gate.name.toUpperCase()}_BLOCKED`, message: gate.message })),
+  ]
+  const warnings = [
+    ...recipe.warnings,
+    ...executed.flatMap((item) => item.warnings),
+    ...gates.filter((gate) => gate.status === 'needs_review').map((gate) => ({ severity: 'WARNING', code: `DEMO_GATE_${gate.name.toUpperCase()}_NEEDS_REVIEW`, message: gate.message })),
+  ]
+  const status = blockers.length
+    ? 'VERIFIED_DEMO_BLOCKED'
+    : stoppedAt
+      ? 'VERIFIED_DEMO_STOPPED'
+      : 'VERIFIED_DEMO_COMPLETE_NEEDS_HUMAN_REVIEW'
+  const report = {
+    schemaVersion: 1,
+    status,
+    preset,
+    projectPath: projectName,
+    templateId,
+    stepsPlanned: executionSteps.length,
+    stepsExecuted: executed.length,
+    stoppedAt,
+    gates,
+    results: executed,
+    passCriteria: recipe.passCriteria,
+    generatedFiles: [...new Set(generatedFiles)],
+    nextActions: verifiedDemoNextActions(gates, stoppedAt),
+    humanReviewRequired: true,
+  }
+  const projectDir = resolveInsideWorkspace(workspace, projectName)
+  const outputFile = existsSync(projectDir) ? path.join(projectDir, 'boardforge-verified-demo-report.json') : null
+  if (outputFile && !job.dryRun) {
+    await writeFile(outputFile, JSON.stringify(report, null, 2), 'utf8')
+    await updateProjectState(projectDir, async (current) => ({
+      ...current,
+      status,
+      verifiedDemoRun: report,
+      verifiedDemoRecipe: recipe,
+      generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile, ...report.generatedFiles])],
+      lastJobType: job.type,
+      lastHistoryMessage: `Verified demo ran ${report.stepsExecuted}/${report.stepsPlanned} steps with ${blockers.length} blockers.`,
+    }))
+  }
+  const finalFiles = outputFile ? [...new Set([...report.generatedFiles, outputFile])] : report.generatedFiles
+  return result(job, status, warnings, blockers, { verifiedDemoRun: { ...report, generatedFiles: finalFiles }, generatedFiles: finalFiles, humanReviewRequired: true })
+}
+
+function verifiedDemoGates(executed) {
+  const byStep = new Map(executed.map((item) => [item.step, item]))
+  return [
+    demoGate('project_files', byStep.has('create_kicad_project'), 'KiCad project must be created before any electrical proof.'),
+    demoGate('schematic_model', byStep.has('generate_schematic'), 'Schematic model and KiCad schematic must be generated.'),
+    demoGate('placement', byStep.has('solve_placement') && byStep.has('apply_placement_plan'), 'Placement solver and KiCad placement writer must both run.'),
+    demoGate('routing', byStep.has('autoroute_drc_iteration') || byStep.has('generate_routing_report'), 'Routing/autotrace evidence must be generated before release scoring.'),
+    demoGate('erc_report', byStep.has('run_kicad_erc'), 'KiCad ERC report must exist before claiming schematic readiness.'),
+    demoGate('drc_report', byStep.has('run_kicad_drc') || byStep.has('autoroute_drc_iteration'), 'KiCad DRC report must exist before manufacturing export.'),
+    demoGate('package_gate', byStep.has('validate_jlcpcb_package') || byStep.has('build_release_gate_report'), 'JLCPCB/release gate must run; export is not allowed without this evidence.'),
+  ]
+}
+
+function demoGate(name, passed, message) {
+  return { name, status: passed ? 'passed' : 'blocked', message }
+}
+
+function verifiedDemoNextActions(gates, stoppedAt) {
+  if (stoppedAt) return [`Fix blockers from ${stoppedAt.step}.`, 'Rerun run_verified_demo after the blocked gate passes.']
+  const blocked = gates.filter((gate) => gate.status === 'blocked')
+  if (blocked.length) return blocked.map((gate) => gate.message)
+  return ['Open boardforge-verified-demo-report.json and review ERC/DRC/package evidence before using the flow on a customer board.']
 }
 
 async function boardCategoryPlanJob(job, workspace) {
