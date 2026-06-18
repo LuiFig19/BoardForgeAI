@@ -828,6 +828,7 @@ async function schematicGraphJob(job, workspace) {
       ...current,
       status: output.status,
       schematicGraph: output,
+      netlist: output.netlist || current.netlist,
       generatedFiles: [...new Set([...(current.generatedFiles || []), outputFile])],
       lastJobType: job.type,
       lastHistoryMessage: `Validated schematic graph with ${output.errors.length} errors and ${output.warnings.length} warnings.`,
@@ -1744,6 +1745,16 @@ async function readRichComponents(projectDir) {
   }
 }
 
+async function readSchematicGraphNetlist(projectDir) {
+  if (!projectDir) return null
+  try {
+    const graph = JSON.parse(await readFile(path.join(projectDir, 'boardforge-schematic-graph.json'), 'utf8'))
+    return graph.netlist?.nets || null
+  } catch {
+    return null
+  }
+}
+
 async function readUserBom(projectDir) {
   if (!projectDir) return null
   try {
@@ -1944,8 +1955,11 @@ async function applyPlacementJob(job, workspace, profile) {
     : rawComponents
   const plan = job.input?.placementPlan || (job.input?.optimize !== false ? optimizePlacementPlan(board, null, profile, { components, nets: job.input?.nets || state?.requirements?.nets || [] }) : generatePlacementPlan(board, null, profile, { components, nets: job.input?.nets || state?.requirements?.nets || [] }))
   const componentsToApply = plan.components || components
-  const applyResult = await applyPlacementPlanToPcb(projectDir, componentsToApply, { dryRun: job.dryRun })
-  if (!job.dryRun && applyResult.updatedRefs?.length) {
+  const applyResult = await applyPlacementPlanToPcb(projectDir, componentsToApply, {
+    dryRun: job.dryRun,
+    renderMissingFootprints: (missingComponents) => renderPlacedFootprints(missingComponents, { workspace, projectPath: projectDir, ...job.input }),
+  })
+  if (!job.dryRun && (applyResult.updatedRefs?.length || applyResult.insertedRefs?.length)) {
     const componentsFile = path.join(projectDir, 'boardforge-components.json')
     await writeFile(componentsFile, JSON.stringify(componentsToApply, null, 2), 'utf8')
     await updateProjectState(projectDir, async (current) => ({
@@ -1955,7 +1969,7 @@ async function applyPlacementJob(job, workspace, profile) {
       placement: { status: applyResult.status, plan, updatedRefs: applyResult.updatedRefs, missingRefs: applyResult.missingRefs },
       generatedFiles: [...new Set([...(current.generatedFiles || []), ...(applyResult.generatedFiles || []), componentsFile])],
       lastJobType: job.type,
-      lastHistoryMessage: `Applied placement updates to ${applyResult.updatedRefs.length} PCB footprints.`,
+      lastHistoryMessage: `Applied placement updates to ${applyResult.updatedRefs.length} PCB footprints and inserted ${applyResult.insertedRefs?.length || 0} synthesized footprints.`,
     }))
     applyResult.generatedFiles = [...new Set([...(applyResult.generatedFiles || []), componentsFile])]
   }
@@ -2363,8 +2377,9 @@ async function autorouteBoardJob(job, workspace, profile) {
   const state = projectDir ? await readProjectState(projectDir) : null
   const board = job.input?.board || state?.board || boardFromJob(job)
   const components = job.input?.components || await readRichComponents(projectDir) || state?.components || []
-  const nets = assignNetsToClasses(job.input?.nets || state?.requirements?.nets || state?.netlist?.nets || [])
-  const routingPlan = autorouteBoard({ board, components, nets, profile, options: { ...job.input, layerCount: board.layerCount } })
+  const nets = assignNetsToClasses(job.input?.nets || await readSchematicGraphNetlist(projectDir) || state?.netlist?.nets || state?.schematicSynthesis?.nets || state?.requirements?.nets || [])
+  const scan = projectDir && existsSync(projectDir) ? await scanKiCadProject(projectDir) : null
+  const routingPlan = autorouteBoard({ board, components, nets, pads: job.input?.pads || scan?.pads || [], profile, options: { ...job.input, layerCount: board.layerCount } })
   const routeValidation = validateRoutingGeometry({ board, components, routingPlan, profile })
   const routeQuality = scoreRoutingPlan({ routingPlan, profile, powerTree: job.input?.powerTree || state?.powerTree || null })
   const generatedFiles = []
@@ -2400,8 +2415,9 @@ async function autorouteAndApplyJob(job, workspace, profile) {
   const state = await readProjectState(context.files.projectDir)
   const board = job.input?.board || state?.board || boardFromJob(job)
   const components = job.input?.components || await readRichComponents(context.files.projectDir) || state?.components || []
-  const nets = assignNetsToClasses(job.input?.nets || state?.requirements?.nets || state?.netlist?.nets || [])
-  const routingPlan = job.input?.routingPlan || autorouteBoard({ board, components, nets, profile, options: { ...job.input, layerCount: board.layerCount } })
+  const nets = assignNetsToClasses(job.input?.nets || await readSchematicGraphNetlist(context.files.projectDir) || state?.netlist?.nets || state?.schematicSynthesis?.nets || state?.requirements?.nets || [])
+  const scan = await scanKiCadProject(context.files.projectDir)
+  const routingPlan = job.input?.routingPlan || autorouteBoard({ board, components, nets, pads: job.input?.pads || scan?.pads || [], profile, options: { ...job.input, layerCount: board.layerCount } })
   const routeValidation = validateRoutingGeometry({ board, components, routingPlan, profile })
   const routeQuality = scoreRoutingPlan({ routingPlan, profile, powerTree: job.input?.powerTree || state?.powerTree || null })
   const warnings = [...(routingPlan.warnings || []), ...routeValidation.warnings, ...routeQuality.warnings]

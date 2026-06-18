@@ -28,22 +28,39 @@ export async function applyPlacementPlanToPcb(projectDir, components = [], optio
       missingRefs.push(component.ref)
     }
   }
+  const insertedRefs = []
+  if (missingRefs.length && options.renderMissingFootprints) {
+    const missingComponents = components.filter((component) => missingRefs.includes(component.ref))
+    const rendered = await options.renderMissingFootprints(missingComponents)
+    const renderedFootprints = Array.isArray(rendered) ? rendered : rendered?.rendered || []
+    if (renderedFootprints.length) {
+      text = insertFootprints(text, renderedFootprints)
+      insertedRefs.push(...missingComponents.slice(0, renderedFootprints.length).map((component) => component.ref))
+      for (const ref of insertedRefs) {
+        const updated = updateFootprintPlacement(text, components.find((component) => component.ref === ref))
+        if (updated.changed) text = updated.text
+      }
+    }
+  }
+  const unresolvedRefs = missingRefs.filter((ref) => !insertedRefs.includes(ref))
   const warnings = [
-    ...(missingRefs.length ? [{ severity: 'WARNING', code: 'PLACEMENT_REFS_NOT_FOUND', message: `${missingRefs.length} components were not found in the PCB file.`, details: { refs: missingRefs } }] : []),
+    ...(unresolvedRefs.length ? [{ severity: 'WARNING', code: 'PLACEMENT_REFS_NOT_FOUND', message: `${unresolvedRefs.length} components were not found in the PCB file.`, details: { refs: unresolvedRefs } }] : []),
+    ...(insertedRefs.length ? [{ severity: 'WARNING', code: 'PLACEMENT_REFS_INSERTED', message: `${insertedRefs.length} synthesized component footprints were inserted into the PCB.`, details: { refs: insertedRefs } }] : []),
     { severity: 'WARNING', code: 'PLACEMENT_REQUIRES_DRC', message: 'Footprint positions were updated; run KiCad DRC before routing or export.' },
   ]
   if (options.dryRun) {
-    return { status: updatedRefs.length ? 'PLACEMENT_APPLY_DRY_RUN' : 'PLACEMENT_APPLY_NO_MATCHES', warnings, errors: [], pcbFile: files.pcbFile, updatedRefs, missingRefs, humanReviewRequired: true }
+    return { status: updatedRefs.length || insertedRefs.length ? 'PLACEMENT_APPLY_DRY_RUN' : 'PLACEMENT_APPLY_NO_MATCHES', warnings, errors: [], pcbFile: files.pcbFile, updatedRefs, insertedRefs, missingRefs: unresolvedRefs, humanReviewRequired: true }
   }
-  if (updatedRefs.length) await writeFile(files.pcbFile, text, 'utf8')
+  if (updatedRefs.length || insertedRefs.length) await writeFile(files.pcbFile, text, 'utf8')
   return {
-    status: updatedRefs.length ? 'PLACEMENT_APPLIED_NEEDS_DRC' : 'PLACEMENT_APPLY_NO_MATCHES',
+    status: updatedRefs.length || insertedRefs.length ? 'PLACEMENT_APPLIED_NEEDS_DRC' : 'PLACEMENT_APPLY_NO_MATCHES',
     warnings,
     errors: [],
     pcbFile: files.pcbFile,
     updatedRefs,
-    missingRefs,
-    generatedFiles: updatedRefs.length ? [files.pcbFile, path.join(projectDir, 'boardforge-components.json')] : [],
+    insertedRefs,
+    missingRefs: unresolvedRefs,
+    generatedFiles: updatedRefs.length || insertedRefs.length ? [files.pcbFile, path.join(projectDir, 'boardforge-components.json')] : [],
     humanReviewRequired: true,
   }
 }
@@ -80,6 +97,13 @@ function replaceAt(block, component) {
   const at = `(at ${round(component.x)} ${round(component.y)} ${round(component.rotation || 0)})`
   if (/\(at\s+[-\d.]+\s+[-\d.]+(?:\s+[-\d.]+)?\)/.test(block)) return block.replace(/\(at\s+[-\d.]+\s+[-\d.]+(?:\s+[-\d.]+)?\)/, at)
   return block.replace(/(\(layer\s+"[FB]\.Cu"\)\s*)/, `$1\n\t${at}\n`)
+}
+
+function insertFootprints(text, footprints) {
+  const insertion = `\n${footprints.join('\n')}\n`
+  const trimmed = text.trimEnd()
+  if (trimmed.endsWith(')')) return `${trimmed.slice(0, -1)}${insertion})\n`
+  return `${text}${insertion}`
 }
 
 function findClosingParen(text, start) {

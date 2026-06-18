@@ -47,7 +47,7 @@ export async function enrichComponents({ workspace, components, input = {} }) {
       package: component.package || base?.package || null,
       assembly: base?.assembly || 'review-required',
       stockRisk: base?.stockRisk || 'unknown',
-      pinMap: input.pinMaps?.[component.ref] || defaultPinMap(component, base),
+      pinMap: input.pinMaps?.[component.ref] || usefulPinMap(component.pinMap) || defaultPinMap(component, base),
       symbol: resolved?.symbol || component.symbol || null,
       footprint: resolved?.footprint || component.footprint || null,
       model3d: resolved?.model3d || component.model3d || null,
@@ -141,7 +141,9 @@ function defaultPinMap(component, base) {
   if (component.group === 'RES') return { 1: component.netA || null, 2: component.netB || null }
   if (component.group === 'CAP') return { 1: component.netA || '3V3', 2: component.netB || 'GND' }
   if (component.group === 'USB') return { VBUS: 'VUSB', GND: 'GND', 'D+': 'USB_DP', 'D-': 'USB_DN', CC1: 'CC1', CC2: 'CC2' }
-  if (component.group === 'ESP32_S3') return { '3V3': '3V3', GND: 'GND', USB_DP: 'USB_DP', USB_DN: 'USB_DN', SCL: 'I2C_SCL', SDA: 'I2C_SDA' }
+  if (component.group === 'ESP32_S3') return { '3V3': '3V3', GND: 'GND', USB_DP: 'USB_DP', USB_DN: 'USB_DN', EN: 'EN', IO0: 'BOOT', SCL: 'I2C_SCL', SDA: 'I2C_SDA' }
+  if (component.group === 'REGULATOR') return { VIN: component.netA || 'VUSB', GND: 'GND', VOUT: '3V3', EN: '3V3' }
+  if (component.group === 'TVS') return { VBUS: 'VUSB', DP: 'USB_DP', DN: 'USB_DN', GND: 'GND' }
   if (component.group === 'RJ45') return { 'TX+': 'ETH_TX_P', 'TX-': 'ETH_TX_N', 'RX+': 'ETH_RX_P', 'RX-': 'ETH_RX_N', LED: '3V3', SHIELD: 'CHASSIS_GND' }
   if (component.group === 'INDUCTOR') return { 1: component.netA || 'SW', 2: component.netB || 'VOUT' }
   if (component.group === 'IMU') return { VDD: '3V3', VDDIO: '3V3', GND: 'GND', SCL: 'I2C_SCL', SDA: 'I2C_SDA', INT1: 'IMU_INT1', INT2: 'IMU_INT2' }
@@ -154,6 +156,11 @@ function defaultPinMap(component, base) {
   if (component.group === 'ESC_CONNECTOR') return { GND: 'GND', VBAT: 'VBAT', M1: 'MOTOR_1', M2: 'MOTOR_2', M3: 'MOTOR_3', M4: 'MOTOR_4', CURR: 'CURRENT_SENSE', TEL: 'ESC_TELEMETRY' }
   if (component.group === 'SWD') return { '3V3': '3V3', SWDIO: 'SWDIO', SWCLK: 'SWCLK', NRST: 'NRST', GND: 'GND' }
   return Object.fromEntries(pins.map((pin) => [pin, null]))
+}
+
+function usefulPinMap(pinMap) {
+  if (!pinMap || !Object.keys(pinMap).length) return null
+  return Object.values(pinMap).some(Boolean) ? pinMap : null
 }
 
 function riskSummary(components) {

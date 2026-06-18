@@ -85,7 +85,7 @@ function applyPinAssignments(components, assignments) {
   const byRef = new Map((assignments || []).map((assignment) => [assignment.ref, assignment]))
   return components.map((component) => {
     const planned = byRef.get(component.ref)
-    const pinMap = Object.keys(component.pinMap || {}).length ? component.pinMap : planned?.pinMap || fallbackPinMap(component)
+    const pinMap = hasUsefulPinMap(component.pinMap) ? component.pinMap : planned?.pinMap || fallbackPinMap(component)
     return { ...component, pinMap }
   })
 }
@@ -122,9 +122,10 @@ function addSupportComponents(components, nets, input) {
       for (const name of ['USB_DP', 'USB_DN', 'CC1', 'CC2', 'VUSB']) if (!hasNet(name)) addedNets.push({ name })
     }
     if (/(REGULATOR|LDO|BUCK)/i.test(text)) {
-      added.push(support(nextRef('C'), 'CAP', '10uF regulator input', 'VIN', 'GND', component.ref))
+      const regulatorInput = component.pinMap?.VIN || component.pinMap?.IN || (hasNet('VUSB') ? 'VUSB' : 'VIN')
+      added.push(support(nextRef('C'), 'CAP', '10uF regulator input', regulatorInput, 'GND', component.ref))
       added.push(support(nextRef('C'), 'CAP', '10uF regulator output', '3V3', 'GND', component.ref))
-      if (!hasNet('VIN') && !hasNet('VUSB')) addedNets.push({ name: input.powerInput || 'VIN' })
+      if (!hasNet(regulatorInput)) addedNets.push({ name: regulatorInput })
     }
   }
   if (!components.some((component) => /(REGULATOR|LDO|BUCK|PMIC)/i.test(`${component.group || ''} ${component.value || ''}`)) && hasNet('3V3')) {
@@ -143,7 +144,7 @@ function support(ref, group, value, netA, netB, supportsRef) {
     supportsRef,
     netA,
     netB,
-    pinMap: group === 'TVS' ? { 1: netA, 2: netB, 3: 'GND' } : { 1: netA, 2: netB },
+    pinMap: group === 'TVS' ? { VBUS: 'VUSB', DP: netA, DN: netB, GND: 'GND' } : { 1: netA, 2: netB },
     width: group === 'CAP' || group === 'RES' ? 1.6 : 3,
     height: group === 'CAP' || group === 'RES' ? 0.8 : 2,
     symbol: assets.symbol,
@@ -154,6 +155,10 @@ function support(ref, group, value, netA, netB, supportsRef) {
     assetSource: 'BoardForge controlled support-library default',
     reviewNotes: assets.reviewNotes,
   }
+}
+
+function hasUsefulPinMap(pinMap) {
+  return Boolean(pinMap && Object.keys(pinMap).length && Object.values(pinMap).some(Boolean))
 }
 
 function supportAssets(group, value) {

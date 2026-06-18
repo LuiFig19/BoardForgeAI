@@ -35,7 +35,8 @@ export function validateSchematicGraph(input = {}) {
     }
   }
   for (const net of netlist.nets || []) {
-    if (isSupply(net.name) && net.pins?.length < 2) errors.push(issue('ERROR', 'SUPPLY_NET_HAS_TOO_FEW_PINS', `${net.name} has fewer than two mapped pins.`, { net: net.name, pinCount: net.pins?.length || 0 }))
+    if (isSupply(net.name) && net.pins?.length === 1) errors.push(issue('ERROR', 'SUPPLY_NET_HAS_TOO_FEW_PINS', `${net.name} has only one mapped pin.`, { net: net.name, pinCount: net.pins?.length || 0 }))
+    if (isSupply(net.name) && !net.pins?.length) warnings.push(issue('WARNING', 'DECLARED_SUPPLY_NET_UNUSED', `${net.name} was declared but has no mapped pins in the synthesized graph.`, { net: net.name }))
     if (/USB_(DP|DN)|CAN[HL]|RS485_[AB]|ETH_.*_[PN]|MIPI.*_[PN]|PCIE.*_[PN]/i.test(net.name) && net.pins?.length < 2) warnings.push(issue('WARNING', 'CRITICAL_NET_ENDPOINT_REVIEW', `${net.name} needs source and destination pins before routing.`, { net: net.name }))
   }
   const differentialPairs = diffPairReview(netlist.nets || [])

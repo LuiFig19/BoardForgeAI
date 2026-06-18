@@ -86,7 +86,8 @@ export function solvePlacement(input = {}) {
   placePower(groups.power, width, height, margin, placements)
   placeNear(groups.passives, placements, width, height)
   placeRemaining(groups.remaining, placements, width, height, margin)
-  const placed = components.map((component) => ({ ...component, ...(placements.find((item) => item.ref === component.ref) || {}) }))
+  let placed = components.map((component) => withSize({ ...component, ...(placements.find((item) => item.ref === component.ref) || {}) }))
+  placed = legalizePlacement({ board, components: placed, margin, clearanceMm: Number(input.clearanceMm || 0.35) })
   const errors = []
   const warnings = []
   for (const component of placed) {
@@ -226,7 +227,12 @@ function groupComponents(components) {
 }
 
 function placeEdge(items, width, height, margin, placements) {
-  items.forEach((component, index) => placements.push({ ref: component.ref, x: margin + index * 8 + (component.width || 5) / 2, y: height / 2, rotation: component.rotation || 0 }))
+  const left = items.filter((component) => /USB|POWER|TERMINAL/i.test(`${component.group || ''} ${component.value || ''}`))
+  const right = items.filter((component) => /SENSOR|HEADER|I2C|RJ45|ETHERNET/i.test(`${component.group || ''} ${component.value || ''}`) && !left.includes(component))
+  const bottom = items.filter((component) => !left.includes(component) && !right.includes(component))
+  left.forEach((component, index) => placements.push({ ref: component.ref, x: margin + (component.width || 5) / 2, y: height / 2 + index * 7, rotation: 90 }))
+  right.forEach((component, index) => placements.push({ ref: component.ref, x: width - margin - (component.width || 5) / 2, y: height / 2 + index * 7, rotation: 270 }))
+  bottom.forEach((component, index) => placements.push({ ref: component.ref, x: width / 2 + index * 8, y: height - margin - (component.height || 4) / 2, rotation: 0 }))
 }
 
 function placeCenter(items, width, height, placements) {
@@ -245,18 +251,122 @@ function placeRemaining(items, placements, width, height, margin) {
   items.forEach((component, index) => placements.push({ ref: component.ref, x: margin + 8 + (index % 5) * 8, y: margin + 6 + Math.floor(index / 5) * 7, rotation: 0 }))
 }
 
+function legalizePlacement({ board, components, margin, clearanceMm }) {
+  const bounds = outlineBounds(board, components)
+  const placed = []
+  const ordered = [...components].sort((a, b) => placementPriority(b) - placementPriority(a))
+  for (const component of ordered) {
+    const original = withSize(component)
+    const candidates = candidateGrid(bounds, original, margin, original)
+    const selected = candidates.find((candidate) => canUsePlacement(board, candidate, placed, clearanceMm))
+      || candidates.find((candidate) => insideBoard(board, candidate, 0.2))
+      || clampToBounds(bounds, original, margin)
+    placed.push({ ...original, ...selected })
+  }
+  const byRef = new Map(placed.map((component) => [component.ref, component]))
+  return components.map((component) => byRef.get(component.ref) || component)
+}
+
+function candidateGrid(bounds, component, margin, original) {
+  const halfW = Number(component.width || 1) / 2
+  const halfH = Number(component.height || 1) / 2
+  const minX = bounds.minX + margin + halfW
+  const maxX = bounds.maxX - margin - halfW
+  const minY = bounds.minY + margin + halfH
+  const maxY = bounds.maxY - margin - halfH
+  const step = component.group === 'CAP' || component.group === 'RES' ? 2.5 : 4
+  const points = [{ x: clamp(component.x, minX, maxX), y: clamp(component.y, minY, maxY), rotation: component.rotation || 0 }]
+  for (let y = minY; y <= maxY; y += step) {
+    for (let x = minX; x <= maxX; x += step) points.push({ x, y, rotation: component.rotation || 0 })
+  }
+  return points
+    .map((point) => ({ ...component, x: round(clamp(point.x, minX, maxX)), y: round(clamp(point.y, minY, maxY)), rotation: point.rotation || 0 }))
+    .sort((a, b) => distance(a, original) - distance(b, original))
+}
+
+function canUsePlacement(board, candidate, placed, clearanceMm) {
+  return insideBoard(board, candidate, 0.2) && !placed.some((other) => rectsOverlap(candidate, other, clearanceFor(candidate, other, clearanceMm)))
+}
+
+function insideBoard(board, component, clearance = 0) {
+  const outline = board.outline || []
+  if (!outline.length) return true
+  return rectCorners(component, clearance).every((corner) => pointInPolygon(corner, outline))
+}
+
+function outlineBounds(board, components) {
+  const points = board.outline?.length ? board.outline : [
+    { x: 0, y: 0 },
+    { x: board.widthMm || 60, y: board.heightMm || 40 },
+  ]
+  return {
+    minX: Math.min(...points.map((point) => point.x)),
+    maxX: Math.max(...points.map((point) => point.x)),
+    minY: Math.min(...points.map((point) => point.y)),
+    maxY: Math.max(...points.map((point) => point.y)),
+  }
+}
+
+function clampToBounds(bounds, component, margin) {
+  const halfW = Number(component.width || 1) / 2
+  const halfH = Number(component.height || 1) / 2
+  return {
+    ...component,
+    x: round(clamp(component.x, bounds.minX + margin + halfW, bounds.maxX - margin - halfW)),
+    y: round(clamp(component.y, bounds.minY + margin + halfH, bounds.maxY - margin - halfH)),
+  }
+}
+
+function withSize(component) {
+  const [width, height] = defaultSize(component.group)
+  return { ...component, width: Number(component.width || width), height: Number(component.height || height) }
+}
+
+function defaultSize(group) {
+  return {
+    MCU: [10, 10], ESP32_S3: [18, 14], USB: [9, 7], RJ45: [16, 16], REGULATOR: [5, 5],
+    SENSOR_CONNECTOR: [10, 4], ESC_CONNECTOR: [10, 4], BLACKBOX: [6, 5], CAP: [1.6, 0.8],
+    RES: [1.6, 0.8], TVS: [3, 2], INDUCTOR: [3, 2.2],
+  }[group] || [4, 3]
+}
+
+function placementPriority(component) {
+  return {
+    RJ45: 100, USB: 95, SENSOR_CONNECTOR: 92, ESC_CONNECTOR: 90, ESP32_S3: 85, MCU: 82,
+    REGULATOR: 76, BLACKBOX: 60, TVS: 45, INDUCTOR: 40, CAP: 20, RES: 20,
+  }[component.group] || 30
+}
+
+function clearanceFor(a, b, fallback) {
+  if (['CAP', 'RES'].includes(a.group) && ['CAP', 'RES'].includes(b.group)) return Math.max(0.25, fallback)
+  if (['CAP', 'RES'].includes(a.group) || ['CAP', 'RES'].includes(b.group)) return Math.max(0.45, fallback)
+  return Math.max(0.8, fallback)
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function distance(a, b) {
+  return Math.hypot(Number(a.x || 0) - Number(b.x || 0), Number(a.y || 0) - Number(b.y || 0))
+}
+
+function round(value) {
+  return Math.round(Number(value || 0) * 1000) / 1000
+}
+
 function hasPlacement(component) {
   return Number.isFinite(Number(component.x)) && Number.isFinite(Number(component.y)) && Number(component.width || 0) > 0 && Number(component.height || 0) > 0
 }
 
-function rectCorners(component) {
+function rectCorners(component, clearance = 0) {
   const halfW = Number(component.width || 0) / 2
   const halfH = Number(component.height || 0) / 2
   return [
-    { x: component.x - halfW, y: component.y - halfH },
-    { x: component.x + halfW, y: component.y - halfH },
-    { x: component.x + halfW, y: component.y + halfH },
-    { x: component.x - halfW, y: component.y + halfH },
+    { x: component.x - halfW - clearance, y: component.y - halfH - clearance },
+    { x: component.x + halfW + clearance, y: component.y - halfH - clearance },
+    { x: component.x + halfW + clearance, y: component.y + halfH + clearance },
+    { x: component.x - halfW - clearance, y: component.y + halfH + clearance },
   ]
 }
 

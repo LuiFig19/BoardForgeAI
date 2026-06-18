@@ -7,7 +7,7 @@ export function generateSchematicModel(board, components = [], input = {}) {
     const fallback = fallbackAssets(component)
     const symbol = component.symbol?.libId || component.symbol || fallback.symbol
     const footprint = component.footprint?.libId || component.footprint || fallback.footprint
-    const pinMap = Object.keys(component.pinMap || {}).length ? component.pinMap : fallbackPinMap(component)
+    const pinMap = hasUsefulPinMap(component.pinMap) ? component.pinMap : fallbackPinMap(component)
     return {
       ref: component.ref,
       value: component.value || component.group || 'component',
@@ -72,7 +72,7 @@ export function generateSchematicModel(board, components = [], input = {}) {
 export function boardforgeNetlistFromComponents(components = [], nets = []) {
   const mappedComponents = components.map((component) => ({
     ...component,
-    pinMap: Object.keys(component.pinMap || {}).length ? component.pinMap : fallbackPinMap(component),
+    pinMap: hasUsefulPinMap(component.pinMap) ? component.pinMap : fallbackPinMap(component),
   }))
   const netMap = new Map((nets || []).map((net) => [net.name, { name: net.name, className: net.className || 'DEFAULT', pins: [] }]))
   for (const component of mappedComponents) {
@@ -103,18 +103,23 @@ export function boardforgeNetlistFromComponents(components = [], nets = []) {
 function fallbackPinMap(component) {
   if (component.group === 'USB') return { VBUS: 'VUSB', GND: 'GND', 'D+': 'USB_DP', 'D-': 'USB_DN', CC1: 'CC1', CC2: 'CC2' }
   if (component.group === 'ESP32_S3') return { '3V3': '3V3', GND: 'GND', USB_DP: 'USB_DP', USB_DN: 'USB_DN', SCL: 'I2C_SCL', SDA: 'I2C_SDA', EN: 'EN', IO0: 'BOOT' }
-  if (component.group === 'REGULATOR') return { VIN: 'VIN', GND: 'GND', VOUT: '3V3', EN: 'EN' }
+  if (component.group === 'REGULATOR') return { VIN: 'VUSB', GND: 'GND', VOUT: '3V3', EN: '3V3' }
   if (component.group === 'SENSOR_CONNECTOR') return { 1: '3V3', 2: 'GND', 3: 'I2C_SCL', 4: 'I2C_SDA' }
   if (component.group === 'RJ45') return { 'TX+': 'ETH_TX_P', 'TX-': 'ETH_TX_N', 'RX+': 'ETH_RX_P', 'RX-': 'ETH_RX_N', SHIELD: 'CHASSIS' }
   if (component.group === 'CAP') return { 1: '3V3', 2: 'GND' }
-  if (component.group === 'RES') return { 1: null, 2: null }
+  if (component.group === 'RES') return { 1: component.netA || null, 2: component.netB || null }
+  if (component.group === 'TVS') return { VBUS: 'VUSB', DP: 'USB_DP', DN: 'USB_DN', GND: 'GND' }
   return {}
+}
+
+function hasUsefulPinMap(pinMap) {
+  return Boolean(pinMap && Object.keys(pinMap).length && Object.values(pinMap).some(Boolean))
 }
 
 export function kicadSchematicFromModel(board, schematicModel) {
   const symbolText = schematicModel.symbols.map((symbol) => symbolObject(symbol)).join('\n')
-  const connectivity = schematicModel.symbols.flatMap((symbol) => pinConnectivityObjects(symbol))
-  const netLabels = schematicModel.nets.map((net, index) => labelObject(net.name, 25, 176 + index * 4, isPowerNet(net.name)))
+  const connectivity = []
+  const netLabels = schematicModel.nets.map((net, index) => noteObject(`net ${net.name}`, 25, 176 + index * 4))
   const reviewText = reviewObjects(schematicModel)
   const instances = schematicModel.symbols.map((symbol) => `\t\t(path "/${symbol.uuid}"\n\t\t\t(reference "${safe(symbol.ref)}")\n\t\t\t(unit 1)\n\t\t\t(value "${safe(symbol.value)}")\n\t\t\t(footprint "${safe(symbol.footprint || '')}")\n\t\t)`).join('\n')
   return `(kicad_sch
@@ -195,6 +200,10 @@ function labelObject(name, x, y, global = false) {
   const tag = global ? 'global_label' : 'label'
   const shape = global ? '\n\t\t(shape input)' : ''
   return `\t(${tag} "${safe(name)}"${shape}\n\t\t(at ${x} ${y} 0)\n\t\t(effects (font (size 1.0 1.0)) (justify left bottom))\n\t\t(uuid "${crypto.randomUUID()}")\n\t)`
+}
+
+function noteObject(text, x, y) {
+  return `\t(text "${safe(text)}"\n\t\t(at ${x} ${y} 0)\n\t\t(effects (font (size 0.9 0.9)) (justify left bottom))\n\t\t(uuid "${crypto.randomUUID()}")\n\t)`
 }
 
 function normalizeNets(nets = [], components = []) {

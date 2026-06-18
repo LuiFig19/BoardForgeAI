@@ -5,7 +5,8 @@ import { compilePlacementConstraints } from './placement-constraints.mjs'
 const sizes = {
   MCU: [10, 10], ESP32_S3: [18, 14], IMU: [3, 3], USB: [9, 7], RJ45: [16, 16], REGULATOR: [5, 5],
   BLACKBOX: [6, 5], BAROMETER: [3, 3], SWD: [8, 3], ESC_CONNECTOR: [10, 4], SENSOR_CONNECTOR: [10, 4],
-  POWER_INPUT: [10, 5], ETHERNET_PHY: [7, 7], POE_FRONT_END: [14, 12], DEFAULT: [4, 3],
+  POWER_INPUT: [10, 5], ETHERNET_PHY: [7, 7], POE_FRONT_END: [14, 12], CAP: [1.6, 0.8], RES: [1.6, 0.8],
+  TVS: [3, 2], INDUCTOR: [3, 2.2], TEST_PAD: [1.2, 1.2], DEFAULT: [4, 3],
 }
 
 function component(ref, group, x, y, rotation = 0, options = {}) {

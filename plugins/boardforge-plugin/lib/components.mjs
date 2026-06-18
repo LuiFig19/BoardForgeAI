@@ -67,7 +67,27 @@ function comp(ref, group, value, x, y, rotation) {
     MCU: [10, 10], ESP32_S3: [18, 14], IMU: [3, 3], USB: [9, 7], RJ45: [16, 16], REGULATOR: [5, 5],
     BLACKBOX: [6, 5], SENSOR_CONNECTOR: [10, 4], ESC_CONNECTOR: [10, 4], CAP: [1.6, 0.8], RES: [1.6, 0.8],
   }[group] || [4, 3]
-  return { ref, group, value, x, y, rotation, width, height, footprint: fp.footprint, footprintFile: fp.file }
+  return { ref, group, value, x, y, rotation, width, height, footprint: fp.footprint, footprintFile: fp.file, pinMap: defaultPinMap(ref, group, value) }
+}
+
+function defaultPinMap(ref, group, value) {
+  if (group === 'USB') return { VBUS: 'VUSB', GND: 'GND', 'D+': 'USB_DP', 'D-': 'USB_DN', CC1: 'CC1', CC2: 'CC2' }
+  if (group === 'ESP32_S3') return { '3V3': '3V3', GND: 'GND', USB_DP: 'USB_DP', USB_DN: 'USB_DN', EN: 'EN', IO0: 'BOOT', SCL: 'I2C_SCL', SDA: 'I2C_SDA' }
+  if (group === 'MCU') return { VDD: '3V3', VSS: 'GND', SWDIO: 'SWDIO', SWCLK: 'SWCLK', NRST: 'NRST' }
+  if (group === 'REGULATOR') return { VIN: 'VUSB', GND: 'GND', VOUT: '3V3', EN: '3V3' }
+  if (group === 'SENSOR_CONNECTOR') return { GND: 'GND', '3V3': '3V3', SCL: 'I2C_SCL', SDA: 'I2C_SDA' }
+  if (group === 'RJ45') return { 'TX+': 'ETH_TX_P', 'TX-': 'ETH_TX_N', 'RX+': 'ETH_RX_P', 'RX-': 'ETH_RX_N', LED: '3V3', SHIELD: 'CHASSIS_GND' }
+  if (group === 'BLACKBOX') return { CS: 'FLASH_CS', MISO: 'SPI_MISO', WP: '3V3', GND: 'GND', MOSI: 'SPI_MOSI', SCK: 'SPI_SCK', HOLD: '3V3', VCC: '3V3' }
+  if (group === 'IMU') return { VDD: '3V3', VDDIO: '3V3', GND: 'GND', SCL: 'I2C_SCL', SDA: 'I2C_SDA', INT1: 'IMU_INT1', INT2: 'IMU_INT2' }
+  if (group === 'ESC_CONNECTOR') return { GND: 'GND', VBAT: 'VBAT', M1: 'MOTOR_1', M2: 'MOTOR_2', M3: 'MOTOR_3', M4: 'MOTOR_4', CURR: 'CURRENT_SENSE', TEL: 'ESC_TELEMETRY' }
+  if (group === 'CAP') return { 1: /10uF|bulk|input/i.test(value || '') ? 'VUSB' : '3V3', 2: 'GND' }
+  if (group === 'RES') {
+    if (/CC1/i.test(value || '')) return { 1: 'CC1', 2: 'GND' }
+    if (/CC2/i.test(value || '')) return { 1: 'CC2', 2: 'GND' }
+    if (/BOOT/i.test(value || '') || ref === 'R2') return { 1: 'BOOT', 2: '3V3' }
+    return { 1: 'EN', 2: '3V3' }
+  }
+  return {}
 }
 
 export async function renderPlacedFootprints(components = [], options = {}) {

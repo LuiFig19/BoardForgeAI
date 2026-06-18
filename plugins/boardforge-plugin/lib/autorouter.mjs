@@ -49,7 +49,7 @@ export function autorouteBoard({ board, components = [], nets = [], pads = [], e
     const end = net.end || endpoints.end
     if (!start || !end) {
       warnings.push(issue('WARNING', 'AUTOROUTE_ENDPOINTS_MISSING', `${net.name} needs two component endpoints or explicit start/end points.`, { net: net.name, refs: endpoints.refs }))
-      routes.push(routeShell(net, start, end, endpoints, 'unrouted_missing_endpoints'))
+      processed.add(net.name)
       continue
     }
     const route = routeNet({ net, start, end, endpoints, board, components, profile, options, designIntent, obstacles, occupied, gridMm, layerCount })
@@ -162,6 +162,7 @@ function routeNet({ net, start, end, endpoints, board, components, profile, opti
 
 function findPath({ board, start, end, obstacles, occupied, gridMm, layer, netClass, allowedRefs = [] }) {
   const bounds = polygonBounds(board.outline || [])
+  const edgeClearanceMm = Number(board.routeEdgeClearanceMm || 0.8)
   const startNode = snap(start, gridMm)
   const endNode = snap(end, gridMm)
   const open = new Map([[key(startNode), { point: startNode, cost: 0, priority: heuristic(startNode, endNode), parent: null }]])
@@ -177,7 +178,7 @@ function findPath({ board, start, end, obstacles, occupied, gridMm, layer, netCl
     for (const next of neighbors(current.point, gridMm, netClass)) {
       const nextKey = key(next)
       if (closed.has(nextKey)) continue
-      if (!insideBoard(next, board, bounds)) continue
+      if (!insideBoard(next, board, bounds, edgeClearanceMm)) continue
       if (blocked(next, obstacles, occupied, layer, startNode, endNode, gridMm, allowedRefs)) continue
       const turnPenalty = current.parent && direction(current.parent.point, current.point) !== direction(current.point, next) ? 0.15 : 0
       const step = heuristic(current.point, next) + turnPenalty + occupiedPenalty(next, occupied, layer)
@@ -363,8 +364,8 @@ function occupiedPenalty(point, occupied, layer) {
   return occupied.has(`${layer}:${key(point)}`) ? 10 : 0
 }
 
-function insideBoard(point, board, bounds) {
-  if (point.x < bounds.minX || point.x > bounds.maxX || point.y < bounds.minY || point.y > bounds.maxY) return false
+function insideBoard(point, board, bounds, edgeClearanceMm = 0) {
+  if (point.x < bounds.minX + edgeClearanceMm || point.x > bounds.maxX - edgeClearanceMm || point.y < bounds.minY + edgeClearanceMm || point.y > bounds.maxY - edgeClearanceMm) return false
   return pointInPolygon(point, board.outline || [])
 }
 
