@@ -13,6 +13,8 @@ import {
   FolderKanban,
   Gauge,
   HardDrive,
+  Layers3,
+  Network,
   PackageCheck,
   Plug,
   Route,
@@ -26,23 +28,26 @@ import { StatusBadge, WarningBanner } from './Layout'
 
 const heroChips = ['KiCad-native', 'Local tool server', 'ERC/DRC checks', 'Gerbers / BOM / CPL', 'JLCPCB package validation', 'Human review required']
 
-const workflowSteps = ['Codex Prompt', 'BoardForge Plugin', 'Structured JSON Job', 'Local KiCad Tool Server', 'ERC/DRC', 'Gerbers/BOM/CPL']
+const workflowSteps = ['Prompt', 'Plugin', 'JSON Job', 'Local KiCad', 'ERC/DRC', 'Export']
 
 const comparisonColumns = [
   {
     title: 'Raw Codex edits',
     tone: 'danger',
-    items: ['edits KiCad files directly', 'can break syntax', 'can miss footprints', 'can create bad Edge.Cuts', 'can place parts off board', 'hard to audit'],
+    summary: 'Flexible, but too easy to damage a PCB project.',
+    items: ['edits KiCad files directly', 'can break syntax', 'can miss footprints', 'can create bad Edge.Cuts', 'hard to audit'],
   },
   {
     title: 'BoardForge Plugin',
     tone: 'accent',
-    items: ['schema-validated tool calls', 'whitelisted KiCad actions', 'board geometry checks', 'net class logic', 'placement/routing validation', 'repair plans'],
+    summary: 'Codex gets constrained PCB tools instead of raw file access.',
+    items: ['schema-validated tool calls', 'whitelisted KiCad actions', 'board geometry checks', 'net class logic', 'repair plans'],
   },
   {
     title: 'Local KiCad source of truth',
     tone: 'safe',
-    items: ['real project files', 'real local libraries', 'real footprints/3D models', 'real ERC/DRC', 'real Gerber/BOM/CPL exports', 'human review before fab'],
+    summary: 'Your machine, libraries, checks, and review gate stay in control.',
+    items: ['real project files', 'real libraries and 3D models', 'real ERC/DRC', 'real Gerber/BOM/CPL exports', 'human review before fab'],
   },
 ]
 
@@ -98,30 +103,34 @@ const capabilityGroups = [
   {
     title: 'Create',
     icon: CircuitBoard,
+    description: 'Turn specs and outlines into controlled KiCad starting points.',
     items: ['Create KiCad projects', 'Generate board outlines', 'Write Edge.Cuts', 'Assign footprints'],
   },
   {
     title: 'Validate',
     icon: ShieldCheck,
+    description: 'Check project structure before trusting any AI-suggested work.',
     items: ['Check 3D models', 'Validate pin maps', 'Run ERC/DRC', 'Parse reports'],
   },
   {
     title: 'Route / Repair',
     icon: Route,
+    description: 'Plan layout changes, net classes, and safe repair passes.',
     items: ['Plan placement', 'Create net classes', 'Route/review copper', 'Plan safe repairs'],
   },
   {
     title: 'Export',
     icon: PackageCheck,
+    description: 'Create manufacturing outputs only after local checks and review.',
     items: ['Export Gerbers', 'Export drill files', 'Export BOM', 'Export CPL', 'Package JLCPCB files', 'Generate review reports'],
   },
 ]
 
-const workflowGroups: Array<[string, string[]]> = [
-  ['Embedded', ['ESP32 / IoT', 'USB devices', 'sensor boards', 'dev boards']],
-  ['Connectivity', ['Ethernet', 'PoE', 'CAN', 'adapter boards']],
-  ['Power / Control', ['motor controllers', 'LED controllers', 'battery/charger boards', 'robotics controllers']],
-  ['Mechanical / Custom', ['custom-shaped PCBs', 'board outlines', 'test fixtures', 'drone flight controllers']],
+const workflowGroups = [
+  { group: 'Embedded', description: 'Small controllers, sensors, and dev hardware.', icon: CircuitBoard, items: ['ESP32 / IoT', 'USB devices', 'sensor boards', 'dev boards'] },
+  { group: 'Connectivity', description: 'Boards where interfaces and connectors matter.', icon: Network, items: ['Ethernet', 'PoE', 'CAN', 'adapter boards'] },
+  { group: 'Power / Control', description: 'Layouts with power domains, loads, and IO.', icon: Gauge, items: ['motor controllers', 'LED controllers', 'battery/charger boards', 'robotics controllers'] },
+  { group: 'Mechanical / Custom', description: 'Outlines, fixtures, and shape-constrained PCBs.', icon: Layers3, items: ['custom-shaped PCBs', 'board outlines', 'test fixtures', 'drone flight controllers'] },
 ]
 
 const safetyCards = [
@@ -255,7 +264,7 @@ function WorkflowStrip() {
     <section className="workflow-strip" id="workflow">
       <div>
         <strong>From prompt to KiCad project - safely.</strong>
-        <span>Codex stays expressive. BoardForge keeps execution structured.</span>
+        <span>Codex reasons. BoardForge executes controlled KiCad actions. KiCad remains the source of truth.</span>
       </div>
       <div className="workflow-nodes">
         {workflowSteps.map((step, index) => (
@@ -264,6 +273,19 @@ function WorkflowStrip() {
             {step}
           </span>
         ))}
+      </div>
+    </section>
+  )
+}
+
+function TopBetaCTA() {
+  return (
+    <section className="top-beta-cta" aria-label="Plugin beta call to action">
+      <strong>BoardForge Plugin Beta is opening soon.</strong>
+      <div>
+        <a className="primary-action" href="#/plugin"><Plug size={16} /> Join Plugin Beta</a>
+        <a className="secondary-action" href="#/docs"><FileCheck2 size={16} /> Read Install Guide</a>
+        <a className="secondary-action" href="#/generate"><CircuitBoard size={16} /> Open Board Builder</a>
       </div>
     </section>
   )
@@ -281,6 +303,7 @@ function WhyBoardForgeSection() {
         {comparisonColumns.map((column) => (
           <article className={`comparison-column ${column.tone}`} key={column.title}>
             <h3>{column.title}</h3>
+            <p>{column.summary}</p>
             {column.items.map((item) => (
               <span key={item}>{column.tone === 'danger' ? <X size={15} /> : <CheckCircle2 size={15} />} {item}</span>
             ))}
@@ -373,6 +396,7 @@ function BoardBuilderSection() {
         <StatusBadge tone="green">browser board builder</StatusBadge>
         <h2>Start with the board shape.</h2>
         <p>Create custom outlines in the browser, save them to your board library, then send them to BoardForge Plugin to generate KiCad Edge.Cuts.</p>
+        <small className="builder-caption">Board outlines are saved as first-class assets and can become KiCad Edge.Cuts through the plugin.</small>
         <div className="builder-flow">
           {['Draw outline', 'Save board', 'Send to plugin'].map((step, index) => <span key={step}><small>{index + 1}</small>{step}</span>)}
         </div>
@@ -418,7 +442,7 @@ function PluginExecutionSection() {
       <div className="execution-layout">
         <div className="execution-diagram">
           {['Codex', 'BoardForge Plugin', 'localhost tool server', 'selected KiCad workspace', '.kicad_pro / .kicad_sch / .kicad_pcb'].map((node) => (
-            <span key={node}>{node}</span>
+            <span key={node}><ShieldCheck size={15} /> {node}</span>
           ))}
         </div>
         <div className="execution-card-grid">
@@ -442,6 +466,7 @@ function CapabilitiesGroupedSection() {
           return (
             <details key={group.title} open>
               <summary><Icon size={18} /> {group.title}</summary>
+              <p>{group.description}</p>
               {group.items.map((item) => <span key={item}><CheckCircle2 size={15} /> {item}</span>)}
             </details>
           )
@@ -459,12 +484,16 @@ function SupportedWorkflowsSection() {
         <h2>Built for all PCB engineers, not one niche.</h2>
       </div>
       <div className="workflow-group-grid">
-        {workflowGroups.map(([group, items]) => (
-          <article key={group}>
-            <h3>{group}</h3>
-            {(items as string[]).map((item) => <span key={item}>{item}</span>)}
+        {workflowGroups.map((workflow) => {
+          const Icon = workflow.icon
+          return (
+          <article key={workflow.group}>
+            <h3><Icon size={17} /> {workflow.group}</h3>
+            <p>{workflow.description}</p>
+            {workflow.items.map((item) => <span key={item}>{item}</span>)}
           </article>
-        ))}
+          )
+        })}
       </div>
     </section>
   )
@@ -572,6 +601,7 @@ export function LandingPage() {
   return (
     <main className="premium-landing-page">
       <LandingHero />
+      <TopBetaCTA />
       <WorkflowStrip />
       <WhyBoardForgeSection />
       <ProductPreviewSection />

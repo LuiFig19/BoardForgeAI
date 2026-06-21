@@ -2499,9 +2499,9 @@ summary {
   grid-template-columns: minmax(0, 0.82fr) minmax(480px, 1.18fr);
   gap: clamp(28px, 5vw, 72px);
   align-items: center;
-  min-height: calc(100vh - 68px);
-  padding-top: 60px;
-  padding-bottom: 42px;
+  min-height: min(760px, calc(100vh - 68px));
+  padding-top: 46px;
+  padding-bottom: 28px;
 }
 
 .premium-hero-copy {
@@ -2511,7 +2511,7 @@ summary {
 .premium-hero h1 {
   max-width: 720px;
   margin-bottom: 18px;
-  font-size: clamp(48px, 6.4vw, 90px);
+  font-size: clamp(46px, 6vw, 82px);
   line-height: 0.98;
 }
 
@@ -2541,7 +2541,7 @@ summary {
 
 .hero-product-visual {
   overflow: hidden;
-  min-height: 520px;
+  min-height: 450px;
 }
 
 .visual-window-bar {
@@ -2580,8 +2580,8 @@ summary {
   display: grid;
   grid-template-columns: minmax(0, 0.82fr) minmax(0, 1fr);
   grid-template-rows: auto 1fr;
-  gap: 14px;
-  min-height: 484px;
+  gap: 12px;
+  min-height: 414px;
   padding: 16px;
 }
 
@@ -2600,8 +2600,8 @@ summary {
 .json-panel {
   display: grid;
   align-content: start;
-  gap: 10px;
-  padding: 16px;
+  gap: 8px;
+  padding: 14px;
 }
 
 .command-panel small,
@@ -2618,7 +2618,7 @@ summary {
 .job-stack pre {
   margin: 0;
   color: #dffef9;
-  font: 13px/1.6 var(--mono);
+  font: 12px/1.55 var(--mono);
   white-space: pre-wrap;
 }
 
@@ -2653,8 +2653,8 @@ summary {
 .preview-status-row span,
 .preview-status,
 .mockup-tabs span {
-  min-height: 28px;
-  padding: 6px 9px;
+  min-height: 26px;
+  padding: 5px 8px;
   border: 1px solid rgba(94, 234, 212, 0.16);
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.52);
@@ -2688,8 +2688,8 @@ summary {
   grid-template-columns: minmax(260px, 0.34fr) 1fr;
   gap: 22px;
   align-items: center;
-  padding-top: 20px;
-  padding-bottom: 34px;
+  padding-top: 16px;
+  padding-bottom: 24px;
 }
 
 .workflow-strip > div:first-child {
@@ -2721,6 +2721,7 @@ summary {
   top: 50%;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(94, 234, 212, 0.82), rgba(250, 204, 21, 0.7), transparent);
+  animation: pipeline-pulse 4s ease-in-out infinite;
 }
 
 .workflow-node {
@@ -2728,7 +2729,7 @@ summary {
   z-index: 1;
   display: grid;
   gap: 4px;
-  min-height: 64px;
+  min-height: 56px;
   place-items: center;
   padding: 8px;
   border: 1px solid rgba(94, 234, 212, 0.18);
@@ -2745,8 +2746,8 @@ summary {
 }
 
 .premium-section {
-  padding-top: 54px;
-  padding-bottom: 54px;
+  padding-top: 42px;
+  padding-bottom: 42px;
 }
 
 .premium-section:nth-of-type(even) {
@@ -2755,7 +2756,7 @@ summary {
 
 .premium-section-head {
   max-width: 900px;
-  margin-bottom: 22px;
+  margin-bottom: 18px;
 }
 
 .premium-section-head.compact {
@@ -2767,7 +2768,7 @@ summary {
 .install-card h2,
 .premium-final-cta h2 {
   margin: 10px 0 12px;
-  font-size: clamp(30px, 4.4vw, 56px);
+  font-size: clamp(28px, 3.8vw, 48px);
   line-height: 1;
 }
 
@@ -2791,8 +2792,8 @@ summary {
 .comparison-column {
   display: grid;
   align-content: start;
-  gap: 10px;
-  padding: 20px;
+  gap: 8px;
+  padding: 17px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 8px;
   background: rgba(7, 18, 18, 0.74);
@@ -2805,14 +2806,23 @@ summary {
   color: #f8fffd;
 }
 
+.comparison-column p,
+.workflow-group-grid p,
+.capability-group-grid details p {
+  margin: 0;
+  color: #9ab4af;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .comparison-column span,
 .execution-card-grid span,
 .capability-group-grid details span {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
-  padding: 8px 10px;
+  min-height: 30px;
+  padding: 6px 9px;
   border-radius: 7px;
   background: rgba(15, 23, 42, 0.46);
   color: #dffef9;
@@ -2833,20 +2843,20 @@ summary {
 
 .command-center-mockup {
   display: grid;
-  grid-template-columns: minmax(260px, 0.34fr) 1fr;
-  gap: 16px;
-  padding: 16px;
+  grid-template-columns: minmax(220px, 0.3fr) 1fr;
+  gap: 12px;
+  padding: 14px;
 }
 
 .workflow-panel {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .workflow-panel div {
   display: grid;
-  gap: 6px;
-  padding: 14px;
+  gap: 4px;
+  padding: 11px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.42);
@@ -2868,7 +2878,7 @@ summary {
 
 .workflow-panel span {
   color: #9ab4af;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .project-preview-panel {
@@ -2886,7 +2896,7 @@ summary {
 .project-preview-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 0.44fr);
-  gap: 14px;
+  gap: 12px;
   align-items: stretch;
 }
 
@@ -2926,7 +2936,7 @@ summary {
 
 .premium-preview-card {
   display: grid;
-  grid-template-rows: 210px 1fr;
+  grid-template-rows: 178px 1fr;
   gap: 12px;
   padding: 14px;
   border: 1px solid rgba(94, 234, 212, 0.18);
@@ -2938,6 +2948,7 @@ summary {
   color: #9ab4af;
   font-size: 13px;
   line-height: 1.45;
+  min-height: 56px;
 }
 
 .premium-preview-card a {
@@ -2951,7 +2962,7 @@ summary {
 .premium-board {
   width: 100%;
   height: 100%;
-  min-height: 180px;
+  min-height: 154px;
   filter: drop-shadow(0 20px 34px rgba(20, 184, 166, 0.16));
 }
 
@@ -3013,6 +3024,14 @@ summary {
   margin: 18px 0;
 }
 
+.builder-caption {
+  display: block;
+  max-width: 570px;
+  color: #fcd34d;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .builder-flow span {
   display: inline-flex;
   align-items: center;
@@ -3036,12 +3055,12 @@ summary {
 
 .builder-product-panel svg {
   width: 100%;
-  min-height: 330px;
+  min-height: 300px;
 }
 
 .builder-product-panel text {
   fill: #dffef9;
-  font: 10px var(--mono);
+  font: 9px var(--mono);
 }
 
 .builder-product-panel rect,
@@ -3065,8 +3084,8 @@ summary {
 
 .execution-diagram {
   display: grid;
-  gap: 10px;
-  padding: 18px;
+  gap: 9px;
+  padding: 16px;
   border: 1px solid rgba(94, 234, 212, 0.18);
   border-radius: 8px;
   background: rgba(7, 18, 18, 0.74);
@@ -3077,6 +3096,7 @@ summary {
   display: grid;
   min-height: 42px;
   place-items: center;
+  gap: 7px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 7px;
   background: rgba(15, 23, 42, 0.48);
@@ -3112,7 +3132,7 @@ summary {
 .capability-group-grid details {
   display: grid;
   gap: 10px;
-  padding: 16px;
+  padding: 15px;
 }
 
 .capability-group-grid summary {
@@ -3132,11 +3152,21 @@ summary {
 .workflow-group-grid article {
   display: grid;
   align-content: start;
-  gap: 9px;
-  padding: 16px;
+  gap: 8px;
+  padding: 15px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 8px;
   background: rgba(7, 18, 18, 0.74);
+}
+
+.workflow-group-grid h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workflow-group-grid h3 svg {
+  color: #5eead4;
 }
 
 .workflow-group-grid span {
@@ -3147,8 +3177,8 @@ summary {
 .safety-card-grid article {
   display: grid;
   gap: 8px;
-  min-height: 126px;
-  padding: 16px;
+  min-height: 112px;
+  padding: 14px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 8px;
   background: rgba(7, 18, 18, 0.74);
@@ -3174,8 +3204,8 @@ summary {
 
 .install-card {
   display: grid;
-  gap: 18px;
-  padding: 22px;
+  gap: 16px;
+  padding: 20px;
 }
 
 .premium-setup-grid {
@@ -3191,7 +3221,7 @@ summary {
 .prompt-command-grid article {
   display: grid;
   gap: 12px;
-  padding: 14px;
+  padding: 13px;
 }
 
 .prompt-command-grid article > div {
@@ -3222,6 +3252,11 @@ summary {
   cursor: pointer;
 }
 
+.prompt-command-grid button:hover {
+  border-color: rgba(94, 234, 212, 0.5);
+  background: rgba(13, 148, 136, 0.2);
+}
+
 .prompt-command-grid code {
   color: #dffef9;
   font: 13px/1.65 var(--mono);
@@ -3229,7 +3264,12 @@ summary {
 
 .premium-final-cta {
   margin: 30px min(5vw, 72px) 72px;
-  padding: 34px;
+  padding: 32px;
+  border-color: rgba(94, 234, 212, 0.32);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(94, 234, 212, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(13, 148, 136, 0.18), rgba(37, 99, 235, 0.1)),
+    rgba(5, 12, 14, 0.9);
 }
 
 .premium-final-cta h2 {
@@ -3244,6 +3284,47 @@ summary {
   50% {
     opacity: 0;
   }
+}
+
+@keyframes pipeline-pulse {
+  0%,
+  100% {
+    opacity: 0.52;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.top-beta-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 min(5vw, 72px) 18px;
+  padding: 12px 14px;
+  border: 1px solid rgba(250, 204, 21, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(250, 204, 21, 0.1), transparent 42%),
+    rgba(49, 34, 9, 0.28);
+}
+
+.top-beta-cta strong {
+  color: #fde68a;
+}
+
+.top-beta-cta div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.top-beta-cta .primary-action,
+.top-beta-cta .secondary-action {
+  min-height: 34px;
+  padding: 0 11px;
+  font-size: 13px;
 }
 
 @media (max-width: 1100px) {
@@ -3295,6 +3376,11 @@ summary {
   .premium-hero,
   .workflow-strip {
     grid-template-columns: 1fr;
+  }
+
+  .top-beta-cta {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .hero-product-visual {
@@ -3451,7 +3537,8 @@ summary {
 
   .premium-hero {
     min-height: auto;
-    padding-top: 36px;
+    padding-top: 30px;
+    padding-bottom: 20px;
   }
 
   .premium-hero h1 {
@@ -3460,6 +3547,22 @@ summary {
 
   .workflow-nodes {
     grid-template-columns: 1fr;
+  }
+
+  .top-beta-cta {
+    margin-left: 18px;
+    margin-right: 18px;
+  }
+
+  .top-beta-cta div {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .top-beta-cta .primary-action,
+  .top-beta-cta .secondary-action {
+    width: 100%;
   }
 
   .workflow-nodes::before {
@@ -3473,6 +3576,10 @@ summary {
 
   .premium-preview-card {
     grid-template-rows: 190px 1fr;
+  }
+
+  .premium-preview-card p {
+    min-height: 0;
   }
 
   .builder-product-panel svg {
