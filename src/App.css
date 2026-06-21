@@ -2936,27 +2936,224 @@ summary {
 
 .premium-preview-card {
   display: grid;
-  grid-template-rows: 178px 1fr;
-  gap: 12px;
-  padding: 14px;
+  grid-template-rows: 214px 1fr;
+  gap: 14px;
+  padding: 12px;
   border: 1px solid rgba(94, 234, 212, 0.18);
   border-radius: 8px;
-  background: rgba(7, 18, 18, 0.74);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.7), rgba(4, 12, 12, 0.82)),
+    rgba(7, 18, 18, 0.74);
+  box-shadow: inset 0 1px 0 rgba(226, 232, 240, 0.05);
+}
+
+.pcb-example-frame {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    radial-gradient(circle at 50% 20%, rgba(94, 234, 212, 0.12), transparent 48%),
+    #06100f;
+  background-size: 18px 18px, 18px 18px, auto, auto;
+}
+
+.premium-preview-copy {
+  display: grid;
+  align-content: start;
+  gap: 10px;
 }
 
 .premium-preview-card p {
+  margin: 0;
   color: #9ab4af;
   font-size: 13px;
   line-height: 1.45;
-  min-height: 56px;
+  min-height: 76px;
 }
 
 .premium-preview-card a {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  width: fit-content;
+  margin-top: 2px;
   color: #67e8f9;
   text-decoration: none;
+}
+
+.preview-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preview-tag-row span {
+  min-height: 24px;
+  padding: 4px 7px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.58);
+  color: #b9d7d2;
+  font: 11px var(--mono);
+}
+
+.pcb-example-svg {
+  width: 100%;
+  height: 100%;
+  min-height: 202px;
+  overflow: visible;
+  filter: drop-shadow(0 18px 26px rgba(6, 95, 70, 0.32));
+}
+
+.pcb-example-svg .pcb-board {
+  fill: #126345;
+  stroke: rgba(187, 247, 208, 0.95);
+  stroke-width: 2;
+}
+
+.pcb-example-svg.usb-board .pcb-board {
+  fill: #0f5f68;
+}
+
+.pcb-example-svg.robotics-board .pcb-board {
+  fill: #275c42;
+}
+
+.pcb-example-svg.drone-board .pcb-board {
+  fill: #174f60;
+}
+
+.pcb-zone {
+  fill: rgba(10, 20, 20, 0.18);
+  stroke: rgba(167, 243, 208, 0.15);
+  stroke-width: 1;
+  stroke-dasharray: 4 5;
+}
+
+.power-zone {
+  fill: rgba(250, 204, 21, 0.08);
+}
+
+.control-zone {
+  fill: rgba(45, 212, 191, 0.08);
+}
+
+.pcb-hole {
+  fill: #050b0b;
+  stroke: #e5c76b;
+  stroke-width: 2.2;
+}
+
+.pcb-via,
+.pcb-pad {
+  fill: #d8b451;
+  stroke: rgba(255, 251, 235, 0.58);
+  stroke-width: 0.9;
+}
+
+.pcb-chip,
+.pcb-module,
+.pcb-inductor,
+.pcb-can,
+.pcb-header,
+.pcb-connector,
+.pcb-terminal,
+.pcb-usbc,
+.pcb-esc-pads,
+.pcb-button {
+  stroke: rgba(226, 232, 240, 0.6);
+  stroke-width: 1.15;
+}
+
+.pcb-chip,
+.pcb-module,
+.pcb-can {
+  fill: #17212c;
+}
+
+.pcb-chip.small,
+.pcb-header,
+.pcb-connector,
+.pcb-esc-pads {
+  fill: #263445;
+}
+
+.pcb-module {
+  stroke: rgba(203, 213, 225, 0.75);
+}
+
+.pcb-antenna {
+  fill: rgba(203, 213, 225, 0.12);
+  stroke: rgba(203, 213, 225, 0.38);
+}
+
+.pcb-inductor {
+  fill: #384150;
+}
+
+.pcb-terminal {
+  fill: #8d9aa8;
+}
+
+.pcb-usbc,
+.pcb-rj45,
+.pcb-metal-shell {
+  fill: #cbd5e1;
+  stroke: rgba(248, 250, 252, 0.78);
+  stroke-width: 1.1;
+}
+
+.pcb-rj45 {
+  fill: #d7dde5;
+}
+
+.pcb-button {
+  fill: #3f4d60;
+}
+
+.pcb-screw-slot {
+  stroke: rgba(15, 23, 42, 0.72);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.pcb-passives rect {
+  fill: #d5cba3;
+  stroke: rgba(255, 251, 235, 0.45);
+  stroke-width: 0.8;
+}
+
+.pcb-trace {
+  fill: none;
+  stroke: #d2a64f;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pcb-trace.diff {
+  stroke: #e5c76b;
+  stroke-width: 1.5;
+}
+
+.pcb-trace.thick {
+  stroke: #c89a39;
+  stroke-width: 3.4;
+}
+
+.pcb-silk {
+  fill: #e6fff8;
+  font: 8px var(--mono);
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(4, 12, 12, 0.65);
+  stroke-width: 2;
+  stroke-linejoin: round;
 }
 
 .premium-board {
