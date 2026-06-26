@@ -13,6 +13,7 @@ import {
   rerouteSegmentThroughLegalWaypoints,
   repairImportedRouteDimensions,
   rollbackCollateralDamage,
+  scanForbiddenViasInPcbText,
   scoreDrcHealth,
   shouldPromotePostRouteRepair,
 } from '../lib/external-routing/post-freerouting-repair.mjs';
@@ -95,6 +96,15 @@ test('scan forbidden vias guard keeps standard through-via layer pair', () => {
   const result = repairImportedRouteDimensions(SAMPLE_ROUTED);
   assert.doesNotMatch(result.pcbText, /blind|buried|micro/i);
   assert.match(result.pcbText, /\(layers "F\.Cu" "B\.Cu"\)/);
+});
+
+test('post-FreeRouting forbidden via scan ignores footprint descriptions', () => {
+  const pcb = SAMPLE_ROUTED.replace(
+    '(footprint "Keep:Part" (layer "F.Cu")',
+    '(footprint "Keep:Part" (layer "F.Cu")\n    (descr "datasheet at microchip.com")',
+  );
+  assert.deepEqual(scanForbiddenViasInPcbText(pcb), []);
+  assert.equal(scanForbiddenViasInPcbText('(via blind (at 1 1) (size 0.5) (drill 0.3) (layers "F.Cu" "In1.Cu"))').length, 1);
 });
 
 test('post-FreeRouting clearance repair classifies route-owned conflicts for local reroute', () => {

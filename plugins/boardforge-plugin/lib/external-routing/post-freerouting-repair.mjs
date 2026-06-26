@@ -100,6 +100,34 @@ export function repairImportedRouteDimensionsFile({ inputPath, outputPath, optio
   return summary;
 }
 
+export function scanForbiddenViasInPcbText(pcbText = '') {
+  const forbidden = [];
+  const lines = String(pcbText).split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!/^\s*\(via\b/.test(line)) continue;
+
+    const block = [line];
+    let depth = parenDelta(line);
+    while (index + 1 < lines.length && depth > 0) {
+      index += 1;
+      block.push(lines[index]);
+      depth += parenDelta(lines[index]);
+    }
+
+    const viaText = block.join('\n');
+    const match = viaText.match(/\b(blind|buried|microvia|via-in-pad)\b/i);
+    if (match) {
+      forbidden.push({
+        line: index - block.length + 2,
+        uuid: parseUuid(block),
+        type: match[1],
+      });
+    }
+  }
+  return forbidden;
+}
+
 export function mutateSegmentDoglegByUuid(pcbText, uuid, options = {}) {
   const offsetMm = options.offsetMm ?? 0.3;
   const lines = pcbText.split(/\r?\n/);

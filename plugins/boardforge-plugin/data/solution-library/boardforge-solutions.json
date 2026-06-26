@@ -2649,5 +2649,74 @@
     },
     "status": "active",
     "confidence": "medium"
+  },
+  {
+    "id": "post_freerouting_precise_forbidden_via_scan_001",
+    "createdAt": "2026-06-26T18:52:53.466Z",
+    "updatedAt": "2026-06-26T18:52:53.466Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC / motor-controller / dense-mixed-signal",
+    "problemType": "DRC/post-route validation",
+    "problemSignature": {
+      "errorCode": "FORBIDDEN_VIA_TEXT_SCAN_FALSE_POSITIVE",
+      "drcFamily": "forbidden_via",
+      "symptoms": [
+        "post-route summary flagged forbidden via text hit",
+        "hit came from footprint description URL containing microchip.com",
+        "actual KiCad via blocks remained standard through vias"
+      ]
+    },
+    "rootCause": "The post-route summary scanned the whole PCB text for blind/buried/micro terms instead of scanning only KiCad via blocks.",
+    "fixSummary": "Scan forbidden via terms only inside KiCad via S-expression blocks and ignore footprint descriptions, URLs, and documentation text.",
+    "implementation": {
+      "filesChanged": [
+        "lib/external-routing/post-freerouting-repair.mjs",
+        "tests/post-freerouting-repair.test.mjs",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [
+        "scanForbiddenViasInPcbText"
+      ],
+      "testsAdded": [
+        "test:post-freerouting-precise-forbidden-via-scan"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "conditions": [
+        "post-route cleanup",
+        "through-via-only policy",
+        "PCB text validation"
+      ]
+    },
+    "recipe": [
+      "Parse KiCad PCB text by S-expression via blocks",
+      "Detect blind, buried, microvia, or via-in-pad terms only inside via blocks",
+      "Ignore footprint descriptions and documentation URLs",
+      "Use this scan before promotion and final reporting"
+    ],
+    "safetyRules": [
+      "Do not weaken forbidden via policy",
+      "Do not count documentation text as geometry",
+      "Do not promote a route if a real via block uses forbidden technology"
+    ],
+    "evidence": {
+      "before": {
+        "falsePositive": "microchip.com footprint description counted as forbidden via hit"
+      },
+      "after": {
+        "falsePositiveRejected": true,
+        "realBlindViaDetected": true
+      },
+      "tests": [
+        "post-FreeRouting forbidden via scan ignores footprint descriptions"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]
