@@ -2936,5 +2936,176 @@
     },
     "status": "active",
     "confidence": "medium"
+  },
+  {
+    "id": "postroute_prescore_scaled_repair_pass_001",
+    "createdAt": "2026-06-26T20:24:18.009Z",
+    "updatedAt": "2026-06-26T20:24:18.009Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC / motor-controller / dense-mixed-signal",
+    "problemType": "DRC/post-route repair throughput",
+    "problemSignature": {
+      "errorCode": "POSTROUTE_PRESCORE_SCALED_REPAIR_PASS_001",
+      "symptoms": [
+        "Corrected pre-score needed to scale beyond a small proof pass on real post-FreeRouting ESC DRC clusters."
+      ]
+    },
+    "rootCause": "The previous capped pass validated pre-score correctness but only attempted 4 clusters and 10 full DRC candidates.",
+    "fixSummary": "Scale high-yield pre-scored repair over more clusters while keeping full KiCad DRC and collateral-damage promotion gate as the final acceptance rule.",
+    "implementation": {
+      "filesChanged": [
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [],
+      "testsAdded": []
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "conditions": [
+        "post-FreeRouting cleanup",
+        "guarded pre-score repair",
+        "remaining unconnected items"
+      ]
+    },
+    "recipe": [
+      "Run high-yield cluster selection",
+      "Pre-score mutation candidates",
+      "Run full KiCad DRC only on selected candidates",
+      "Promote only through collateral guard",
+      "Trigger exact-ratsnest pass only after stable DRC improvement"
+    ],
+    "safetyRules": [
+      "Do not weaken promotion gate",
+      "Do not attack unconnected while critical DRC families are unstable",
+      "Do not push board artifacts"
+    ],
+    "evidence": {
+      "before": {
+        "violations": 1257,
+        "weightedScore": 485899,
+        "hole_clearance": 116
+      },
+      "after": {
+        "violations": 1242,
+        "weightedScore": 483694,
+        "hole_clearance": 104
+      },
+      "repairsCommitted": 10,
+      "fullDrcCandidates": 30,
+      "collateralDamagePrevented": 11
+    },
+    "status": "active",
+    "confidence": "medium"
+  },
+  {
+    "id": "postroute_drc_checkpoint_batching_001",
+    "createdAt": "2026-06-26T20:24:18.009Z",
+    "updatedAt": "2026-06-26T20:24:18.009Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC / motor-controller / dense-mixed-signal",
+    "problemType": "DRC/post-route repair throughput",
+    "problemSignature": {
+      "errorCode": "POSTROUTE_DRC_CHECKPOINT_BATCHING_001",
+      "symptoms": [
+        "Large post-route DRC repair passes need checkpoints so good repairs are not lost during long KiCad DRC batches."
+      ]
+    },
+    "rootCause": "Full-board KiCad DRC is expensive and long repair batches can timeout or be interrupted.",
+    "fixSummary": "Checkpoint the PCB every 5 committed guarded repairs and retain the current work board separately from candidate boards.",
+    "implementation": {
+      "filesChanged": [
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [],
+      "testsAdded": []
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "conditions": [
+        "post-FreeRouting cleanup",
+        "guarded pre-score repair",
+        "remaining unconnected items"
+      ]
+    },
+    "recipe": [
+      "Run high-yield cluster selection",
+      "Pre-score mutation candidates",
+      "Run full KiCad DRC only on selected candidates",
+      "Promote only through collateral guard",
+      "Trigger exact-ratsnest pass only after stable DRC improvement"
+    ],
+    "safetyRules": [
+      "Do not weaken promotion gate",
+      "Do not attack unconnected while critical DRC families are unstable",
+      "Do not push board artifacts"
+    ],
+    "evidence": {
+      "checkpointEveryCommittedRepairs": 5,
+      "outputBoard": "FN-ESC1_boardforge_routed_postroute_cleanup9_scaled_prescore_guarded.kicad_pcb"
+    },
+    "status": "active",
+    "confidence": "medium"
+  },
+  {
+    "id": "postroute_safe_unconnected_trigger_001",
+    "createdAt": "2026-06-26T20:24:18.009Z",
+    "updatedAt": "2026-06-26T20:24:18.009Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC / motor-controller / dense-mixed-signal",
+    "problemType": "DRC/post-route repair throughput",
+    "problemSignature": {
+      "errorCode": "POSTROUTE_SAFE_UNCONNECTED_TRIGGER_001",
+      "symptoms": [
+        "Remaining unconnected routing should only start after post-route DRC is trending safely downward."
+      ]
+    },
+    "rootCause": "Routing new ratsnest items into a high-DRC board can trade connectivity for shorts, crossings, or clearance debt.",
+    "fixSummary": "Trigger unconnected routing only after weighted DRC improves, critical families stay stable, forbidden vias remain zero, and at least 10 DRC repairs commit.",
+    "implementation": {
+      "filesChanged": [
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [],
+      "testsAdded": []
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "conditions": [
+        "post-FreeRouting cleanup",
+        "guarded pre-score repair",
+        "remaining unconnected items"
+      ]
+    },
+    "recipe": [
+      "Run high-yield cluster selection",
+      "Pre-score mutation candidates",
+      "Run full KiCad DRC only on selected candidates",
+      "Promote only through collateral guard",
+      "Trigger exact-ratsnest pass only after stable DRC improvement"
+    ],
+    "safetyRules": [
+      "Do not weaken promotion gate",
+      "Do not attack unconnected while critical DRC families are unstable",
+      "Do not push board artifacts"
+    ],
+    "evidence": {
+      "triggered": true,
+      "exactItemsAttempted": 0,
+      "reason": "trigger reached after cleanup9; exact-ratsnest writer queued for next autonomous stage"
+    },
+    "status": "active",
+    "confidence": "medium"
   }
 ]
