@@ -294,7 +294,7 @@ test('local server exposes status, KiCad status, and create project job', async 
         nets: [{ name: 'SIG' }],
       },
     })
-    assert.ok(['AUTOTRACE_PLANNED_NEEDS_DRC', 'AUTOTRACE_PARTIAL_NEEDS_REVIEW'].includes(autotrace.status))
+    assert.ok(['AUTOTRACE_PLANNED_NEEDS_DRC', 'AUTOTRACE_PARTIAL_NEEDS_REVIEW', 'AUTOTRACE_FULLY_ROUTED_DRC_PASSED'].includes(autotrace.status))
     const routeReport = await postJson(`http://127.0.0.1:${port}/jobs/routing-report`, {
       id: 'server_route_report',
       input: { nets: [{ name: 'USB_DP' }, { name: 'USB_DN' }], board: { widthMm: 40, heightMm: 30 } },

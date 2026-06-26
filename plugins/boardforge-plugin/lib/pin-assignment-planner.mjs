@@ -77,21 +77,37 @@ function buildControllerPinMap(profile, interfaces, nets) {
 
 function mapPeripheral(component, nets) {
   const explicit = component.pinMap || {}
-  if (Object.keys(explicit).length) return { ref: component.ref, group: component.group, value: component.value, role: 'peripheral', pinMap: explicit }
+  const assetMap = synthesizePinMapFromAssets(component, nets)
+  if (Object.keys(explicit).length) {
+    return { ref: component.ref, group: component.group, value: component.value, role: 'peripheral', pinMap: { ...assetMap.pinMap, ...explicit }, synthesis: assetMap }
+  }
   const group = component.group || ''
   const byGroup = {
-    USB: { VBUS: 'VUSB', GND: 'GND', 'D+': 'USB_DP', 'D-': 'USB_DN', CC1: 'CC1', CC2: 'CC2' },
+    USB: usbPinMap(component),
     SENSOR_CONNECTOR: { GND: 'GND', '3V3': '3V3', SCL: 'I2C_SCL', SDA: 'I2C_SDA' },
     SWD: { '3V3': '3V3', SWDIO: 'SWDIO', SWCLK: 'SWCLK', NRST: 'NRST', GND: 'GND' },
     RJ45: { 'TX+': 'ETH_TX_P', 'TX-': 'ETH_TX_N', 'RX+': 'ETH_RX_P', 'RX-': 'ETH_RX_N', SHIELD: 'CHASSIS_GND' },
     ETHERNET_PHY: { TXP: 'ETH_TX_P', TXN: 'ETH_TX_N', RXP: 'ETH_RX_P', RXN: 'ETH_RX_N', MDC: 'ETH_MDC', MDIO: 'ETH_MDIO', REFCLK: 'ETH_REFCLK', VDDIO: '3V3', GND: 'GND' },
+    CAN_TRANSCEIVER: { 1: 'CANH', 2: 'CANL', 3: 'CAN_TX', 4: 'CAN_RX', 5: '3V3', 6: 'GND' },
+    RS485_TRANSCEIVER: { 1: 'RS485_A', 2: 'RS485_B', 3: 'RS485_TX', 4: 'RS485_RX', 5: '3V3', 6: 'GND' },
+    FIELD_CONNECTOR: { 1: 'CANH', 2: 'CANL', 3: 'RS485_A', 4: 'RS485_B', 5: 'FIELD_IN1', 6: 'FIELD_OUT1', 7: '24V_FIELD', 8: 'GND_FIELD' },
+    MOTOR_HEADER: { 1: 'GND', 2: 'VIN', 3: 'PWM_1', 4: 'PWM_2', 5: 'ENC_A', 6: 'ENC_B' },
+    TERMINAL_BLOCK: { 1: '24V_FIELD', 2: 'GND_FIELD', 3: 'FIELD_IN1', 4: 'FIELD_OUT1', 5: 'CANH', 6: 'CANL', 7: 'RS485_A', 8: 'RS485_B' },
+    ISOLATOR: { 1: '3V3', 2: 'GND', 3: 'FIELD_IN1', 4: 'FIELD_OUT1', 5: 'ISO_IN1', 6: 'ISO_OUT1', 7: 'GND_FIELD', 8: '24V_FIELD' },
+    RELAY_OR_DRIVER: { 1: '24V_FIELD', 2: 'FIELD_OUT1', 3: 'ISO_OUT1', 4: 'GND_FIELD', 5: '3V3', 6: 'GND', 7: 'FIELD_IN1', 8: 'ISO_IN1' },
     IMU: { VDD: '3V3', VDDIO: '3V3', GND: 'GND', SCL: 'I2C_SCL', SDA: 'I2C_SDA', INT1: 'IMU_INT1' },
     BAROMETER: { VDD: '3V3', GND: 'GND', SCL: 'I2C_SCL', SDA: 'I2C_SDA' },
     BLACKBOX: { CS: 'FLASH_CS', MOSI: 'SPI_MOSI', MISO: 'SPI_MISO', SCK: 'SPI_SCK', VCC: '3V3', GND: 'GND' },
     ESC_CONNECTOR: { GND: 'GND', VBAT: 'VBAT', M1: 'MOTOR_1', M2: 'MOTOR_2', M3: 'MOTOR_3', M4: 'MOTOR_4' },
   }
-  const selected = byGroup[group] || passivePinMap(component, nets)
-  return { ref: component.ref, group, value: component.value, role: 'peripheral', pinMap: selected }
+  const selected = Object.keys(assetMap.pinMap || {}).length ? assetMap.pinMap : byGroup[group] || passivePinMap(component, nets)
+  return { ref: component.ref, group, value: component.value, role: 'peripheral', pinMap: selected, synthesis: assetMap }
+}
+
+function usbPinMap(component) {
+  const footprint = String(component.footprint?.libId || component.footprint || component.footprintFile || '').toUpperCase()
+  const base = { VBUS: 'VUSB', GND: 'GND', 'D+': 'USB_DP', 'D-': 'USB_DN' }
+  return /PINHEADER|CONN_01X04|HEADER/.test(footprint) || /DEBUG HEADER/i.test(component.value || '') ? { 1: 'USB_DN', 2: 'USB_DP', 3: 'VUSB', 4: 'GND' } : { ...base, CC1: 'CC1', CC2: 'CC2' }
 }
 
 function passivePinMap(component, nets) {
@@ -198,3 +214,4 @@ function normalizeNets(nets, input) {
 function issue(severity, code, message, details = {}) {
   return { severity, code, message, details }
 }
+import { synthesizePinMapFromAssets } from './pin-map-synthesizer.mjs'

@@ -1,0 +1,14 @@
+{
+  "recipes": [
+    {
+      "id": "generated_drc_clearance_repair",
+      "families": ["clearance", "pad_clearance", "via_clearance", "tracks_crossing"],
+      "steps": ["classify generated objects", "mutate route", "rerun local DRC", "rollback only failed candidate"]
+    },
+    {
+      "id": "copper_edge_repair",
+      "families": ["copper_edge_clearance"],
+      "steps": ["validate full segment against Edge.Cuts", "pull route inward", "reroute with dogleg"]
+    }
+  ]
+}

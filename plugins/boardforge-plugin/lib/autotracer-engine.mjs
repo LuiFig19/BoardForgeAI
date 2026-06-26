@@ -69,7 +69,7 @@ export function runAutotrace(context = {}, mode = 'full_board') {
   const internalViolations = [...(routeValidation.errors || []), ...(routeQuality.errors || []), ...validateFabRules(job, routingPlan), ...validateModeSpecificRouting(job, routingPlan, mode)]
   const warnings = [...readiness.warnings, ...(routingPlan.warnings || []), ...(routeValidation.warnings || []), ...(routeQuality.warnings || [])]
   const routedNets = summarizeRoutes(routingPlan.routes?.filter((route) => route.status === 'routed') || [])
-  const unroutedNets = summarizeUnrouted(routingPlan.routes?.filter((route) => route.status !== 'routed') || [], selectedNets)
+  const unroutedNets = summarizeUnrouted(routingPlan.routes || [], selectedNets)
   const fullyRouted = selectedNets.length > 0 && unroutedNets.length === 0 && internalViolations.length === 0
   const status = fullyRouted ? 'planned' : routedNets.length ? 'partial' : 'failed'
   const routeRepairPlan = buildRouteRepairPlan(job, routingPlan, internalViolations, unroutedNets, routeQuality)
@@ -376,7 +376,7 @@ function summarizeRoutes(routes) {
 }
 
 function summarizeUnrouted(routes, selectedNets) {
-  const fromRoutes = routes.map((route) => ({ net: route.net, className: route.className, reason: route.status || 'unrouted' }))
+  const fromRoutes = routes.filter((route) => route.status !== 'routed').map((route) => ({ net: route.net, className: route.className, reason: route.status || 'unrouted' }))
   const routedNames = new Set(routes.map((route) => route.net))
   return fromRoutes.length ? fromRoutes : selectedNets.filter((net) => !routedNames.has(net.name)).map((net) => ({ net: net.name, className: net.className, reason: 'no route generated' }))
 }

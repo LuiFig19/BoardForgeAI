@@ -38,6 +38,7 @@ export async function validateJlcpcbPackage(projectDir, options = {}) {
       componentRefs: components.map((component) => component.ref).filter(Boolean).sort(),
       bomRefs: refsFromBom(bom).sort(),
       cplRefs: refsFromCpl(cpl).sort(),
+      readinessScore: assemblyReadinessScore({ bom, cpl, components, errors, warnings }),
     },
     errors,
     warnings,
@@ -101,8 +102,12 @@ function validateAssemblyTables({ bom, cpl, components }) {
   const placedRefs = components.filter((component) => isAssemblyComponent(component)).map((component) => component.ref).filter(Boolean)
   const missingInBom = placedRefs.filter((ref) => !bomRefs.has(ref))
   const missingInCpl = placedRefs.filter((ref) => !cplRefs.has(ref))
+  const bomOnlyRefs = [...bomRefs].filter((ref) => !cplRefs.has(ref) && isAssemblyRef(ref))
+  const cplOnlyRefs = [...cplRefs].filter((ref) => !bomRefs.has(ref) && isAssemblyRef(ref))
   if (missingInBom.length) errors.push(issue('ERROR', 'ASSEMBLY_REFS_MISSING_FROM_BOM', `${missingInBom.length} placed refs are missing from BOM.`, { refs: missingInBom }))
   if (missingInCpl.length) errors.push(issue('ERROR', 'ASSEMBLY_REFS_MISSING_FROM_CPL', `${missingInCpl.length} placed refs are missing from CPL.`, { refs: missingInCpl }))
+  if (bomOnlyRefs.length) errors.push(issue('ERROR', 'BOM_REFS_MISSING_FROM_CPL', `${bomOnlyRefs.length} BOM refs are missing from CPL placement rows.`, { refs: bomOnlyRefs }))
+  if (cplOnlyRefs.length) errors.push(issue('ERROR', 'CPL_REFS_MISSING_FROM_BOM', `${cplOnlyRefs.length} CPL refs are missing from BOM sourcing rows.`, { refs: cplOnlyRefs }))
   return errors
 }
 
@@ -136,6 +141,26 @@ function splitRefs(value) {
 
 function isAssemblyComponent(component) {
   return component?.ref && !component.dnp && !/^TP/i.test(component.ref) && !/MOUNT|HOLE|FIDUCIAL/i.test(`${component.group || ''} ${component.value || ''}`)
+}
+
+function isAssemblyRef(ref) {
+  return ref && !/^TP/i.test(ref) && !/^(MH|H|FID)/i.test(ref)
+}
+
+function assemblyReadinessScore({ bom, cpl, components, errors, warnings }) {
+  let score = 100
+  if (!bom.exists) score -= 25
+  if (!cpl.exists) score -= 25
+  score -= errors.filter((item) => /BOM|CPL|ASSEMBLY/.test(item.code)).length * 15
+  score -= warnings.filter((item) => /BOM|CPL|COMPONENT/.test(item.code)).length * 5
+  const assemblyCount = components.filter((component) => isAssemblyComponent(component)).length
+  if (assemblyCount && bom.exists && cpl.exists) {
+    const bomRefs = new Set(refsFromBom(bom))
+    const cplRefs = new Set(refsFromCpl(cpl))
+    const matched = components.filter((component) => isAssemblyComponent(component) && bomRefs.has(component.ref) && cplRefs.has(component.ref)).length
+    score -= Math.round((1 - matched / assemblyCount) * 30)
+  }
+  return Math.max(0, Math.min(100, score))
 }
 
 async function collectFiles(directory) {

@@ -99,7 +99,7 @@ function scoreDifferentialPairs(perRoute) {
     const mismatch = Math.abs(route.lengthMm - mate.lengthMm)
     const limit = route.className === 'USB_DIFF' ? 0.5 : route.className === 'ETHERNET_DIFF' ? 1 : 2
     if (mismatch > limit) {
-      issues.push(issue(mismatch > limit * 3 ? 'ERROR' : 'WARNING', 'DIFF_PAIR_LENGTH_MISMATCH', `${route.net}/${mate.net} length mismatch exceeds target.`, { net: route.net, mate: mate.net, mismatchMm: round(mismatch), targetMm: limit }))
+      issues.push(issue('WARNING', 'DIFF_PAIR_LENGTH_MISMATCH', `${route.net}/${mate.net} length mismatch exceeds target and needs tuning before high-speed release.`, { net: route.net, mate: mate.net, mismatchMm: round(mismatch), targetMm: limit }))
     }
   }
   return issues

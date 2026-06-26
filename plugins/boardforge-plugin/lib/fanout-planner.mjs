@@ -62,7 +62,11 @@ function fanoutForComponent(component, context) {
       powerPins,
       signalNets: signalNets.slice(0, 16),
       viaType: useBlindVia ? 'blind/microvia candidate' : 'standard through via',
+      escapeRings: escapeRingsFor({ className, pins, pitchMm, layerCount: context.layerCount, input: context.input }),
+      channelBudget: channelBudgetFor({ component, pins, pitchMm, layerCount: context.layerCount, board: context.board }),
+      viaInPad: viaInPadPolicy({ className, pitchMm, input: context.input, stackup: context.stackup }),
     },
+    manufacturability: manufacturabilityFor({ component, className, pins, pitchMm, layerCount: context.layerCount, input: context.input }),
     decouplingRules: [
       '100nF capacitor per power domain within 2 mm where mechanically possible',
       'bulk capacitor near each regulator or high-current rail entry',
@@ -120,9 +124,63 @@ function viaPolicyFor(layerCount, stackup, input) {
     buriedViasAllowed: Boolean(input.allowBuriedVias && hdi.allowed),
     microviasAllowed: Boolean(input.allowMicrovias && hdi.allowed),
     allowedTransitions: layerCount >= 4
-      ? [['F.Cu', 'In1.Cu'], ['F.Cu', 'B.Cu'], ['In2.Cu', 'B.Cu']]
+      ? stackup.viaTransitionMatrix?.allAllowed || [['F.Cu', 'In1.Cu'], ['F.Cu', 'B.Cu'], ['In2.Cu', 'B.Cu']]
       : [['F.Cu', 'B.Cu']],
     review: hdi.requiresAdvancedReview ? 'manufacturer HDI stackup approval required' : 'standard fab via rules apply',
+  }
+}
+
+function escapeRingsFor({ className, pins, pitchMm, layerCount, input }) {
+  if (className === 'BGA') {
+    const rings = Math.max(1, Math.ceil(Math.sqrt(pins) / 2))
+    return Array.from({ length: Math.min(rings, 6) }, (_, index) => ({
+      ring: index + 1,
+      preferredLayer: index < 2 ? 'F.Cu' : layerCount >= 6 ? `In${Math.min(index - 1, layerCount - 2)}.Cu` : 'B.Cu',
+      method: pitchMm <= 0.5 && input.allowMicrovias ? 'microvia_escape_review' : index < 2 ? 'dogbone_escape' : 'through_via_escape',
+    }))
+  }
+  if (className === 'QFN') return [
+    { ring: 1, preferredLayer: 'F.Cu', method: 'perimeter_stub_escape' },
+    { ring: 2, preferredLayer: layerCount >= 4 ? 'B.Cu' : 'F.Cu', method: 'selective_via_escape' },
+  ]
+  return [{ ring: 1, preferredLayer: 'F.Cu', method: 'perimeter_escape' }]
+}
+
+function channelBudgetFor({ component, pins, pitchMm, layerCount, board }) {
+  const area = Math.max(1, Number(board.widthMm || board.width || 50) * Number(board.heightMm || board.height || 30))
+  const density = pins / area
+  const channelsPerLayer = Math.max(4, Math.floor((1 / Math.max(0.25, pitchMm)) * 4))
+  return {
+    estimatedPinDensity: Number(density.toFixed(4)),
+    channelsPerSignalLayer: channelsPerLayer,
+    estimatedSignalLayersNeeded: Math.max(1, Math.ceil((pins * 0.55) / channelsPerLayer)),
+    risk: density > 0.08 || (pins >= 100 && layerCount < 6) ? 'high_dense_escape_risk' : density > 0.04 ? 'medium_escape_risk' : 'normal',
+    rule: `${component.ref || 'component'} fanout must reserve corridors before placing passives too close to package edges.`,
+  }
+}
+
+function viaInPadPolicy({ className, pitchMm, input, stackup }) {
+  const needed = className === 'BGA' && pitchMm <= 0.5
+  const allowed = Boolean(input.allowViaInPad || stackup?.hdi?.viaInPadAllowed)
+  return {
+    needed,
+    allowed,
+    status: needed && !allowed ? 'VIA_IN_PAD_REVIEW_REQUIRED' : needed ? 'VIA_IN_PAD_ALLOWED_WITH_FILLED_CAPPED_REVIEW' : 'NOT_REQUIRED',
+    rule: needed ? 'Use only filled/capped via-in-pad with assembly and fab approval; never open vias in paste pads.' : 'Prefer dogbone/perimeter escape.',
+  }
+}
+
+function manufacturabilityFor({ component, className, pins, pitchMm, layerCount, input }) {
+  return {
+    assemblyRisk: pitchMm < 0.5 ? 'fine_pitch_review' : pins >= 100 ? 'dense_part_review' : 'standard_review',
+    minimumRecommendedLayers: className === 'BGA' ? Math.max(6, layerCount) : pins >= 100 ? 6 : 4,
+    pasteMaskReview: className === 'QFN' || className === 'BGA',
+    fabApprovalRequired: Boolean(input.allowBlindVias || input.allowMicrovias || input.allowViaInPad || pitchMm < 0.5),
+    notes: [
+      'Verify courtyard and pick-and-place origin before release.',
+      'Keep decoupling close, but do not block escape corridors.',
+      'Reserve local ground via returns around package transitions.',
+    ],
   }
 }
 

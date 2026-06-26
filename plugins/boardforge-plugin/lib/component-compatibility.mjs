@@ -41,6 +41,7 @@ async function validateSingleComponentBinding(component) {
   const missingCriticalPins = criticalPins.filter((pin) => !pinMapKeys.some((key) => samePin(key, pin)) && !Object.values(pinMap).some((net) => samePin(net, pin)))
   const netCoverage = netCoverageFor(pinMap)
   const padTypeSummary = summarizePads(footprintPads)
+  const equivalence = scoreSymbolFootprintEquivalence({ component, symbolPins, footprintPads, pinMap })
 
   if (unmatchedPadKeys.length) {
     issues.push(issue('WARNING', 'PIN_MAP_KEYS_NOT_FOOTPRINT_PADS', `${component.ref} pin map has keys that do not match parsed footprint pads.`, { keys: unmatchedPadKeys.slice(0, 12), footprint: assetId(component.footprint) }))
@@ -51,8 +52,13 @@ async function validateSingleComponentBinding(component) {
   if (symbolPins.length && footprintPads.length && Math.abs(symbolPins.length - footprintPads.length) > Math.max(8, symbolPins.length * 0.5)) {
     issues.push(issue('WARNING', 'SYMBOL_FOOTPRINT_PIN_COUNT_DIVERGES', `${component.ref} symbol pin count and footprint pad count are far apart.`, { symbolPins: symbolPins.length, footprintPads: footprintPads.length }))
   }
+  if (equivalence.status === 'mismatch') {
+    issues.push(issue('ERROR', 'SYMBOL_FOOTPRINT_PIN_EQUIVALENCE_FAILED', `${component.ref} symbol pins, footprint pads, and pin map do not agree closely enough for safe schematic/PCB sync.`, equivalence))
+  } else if (equivalence.status === 'weak') {
+    issues.push(issue('WARNING', 'SYMBOL_FOOTPRINT_PIN_EQUIVALENCE_WEAK', `${component.ref} symbol/footprint equivalence is weak and should be reviewed.`, equivalence))
+  }
   if (missingCriticalPins.length) {
-    issues.push(issue('WARNING', 'CRITICAL_PIN_INTENT_MISSING', `${component.ref} pin map is missing critical power, ground, differential, or service pins.`, { missingCriticalPins }))
+    issues.push(issue('ERROR', 'CRITICAL_PIN_INTENT_MISSING', `${component.ref} pin map is missing critical power, ground, differential, or service pins.`, { missingCriticalPins }))
   }
   if (netCoverage.powerPins === 0 && requiresPower(component)) {
     issues.push(issue('WARNING', 'POWER_PIN_MAPPING_MISSING', `${component.ref} likely needs explicit power pin mapping before schematic/PCB sync.`))
@@ -73,15 +79,17 @@ async function validateSingleComponentBinding(component) {
     mappedPins: pinMapKeys.length,
     netCoverage,
     padTypeSummary,
+    equivalence,
     missingCriticalPins,
-    compatibilityScore: compatibilityScore({ symbolPins, footprintPads, pinMapKeys, issues, netCoverage }),
+    compatibilityScore: compatibilityScore({ symbolPins, footprintPads, pinMapKeys, issues, netCoverage, equivalence }),
     recommendedActions: recommendedActions(component, issues),
     issues,
   }
 }
 
 async function loadSymbolPins(symbol) {
-  const path = typeof symbol === 'object' ? symbol.path : null
+  if (symbol && typeof symbol === 'object' && Array.isArray(symbol.pins)) return symbol.pins
+  const path = symbol && typeof symbol === 'object' ? symbol.path : null
   const libId = assetId(symbol)
   if (!path) return []
   try {
@@ -92,7 +100,13 @@ async function loadSymbolPins(symbol) {
 }
 
 async function loadFootprintData(footprint) {
-  const path = typeof footprint === 'object' ? footprint.path : null
+  if (footprint && typeof footprint === 'object' && Array.isArray(footprint.pads)) {
+    return {
+      pads: footprint.pads,
+      courtyard: footprint.courtyard || { segments: [], bounds: null, width: 0, height: 0 },
+    }
+  }
+  const path = footprint && typeof footprint === 'object' ? footprint.path : null
   if (!path) return { pads: [], courtyard: { segments: [], bounds: null, width: 0, height: 0 } }
   try {
     const text = await readFile(path, 'utf8')
@@ -103,8 +117,35 @@ async function loadFootprintData(footprint) {
 }
 
 export function parseFootprintPadsFromText(text) {
-  return [...String(text || '').matchAll(/\(pad\s+"([^"]+)"\s+([^\s)]+)\s+([^\s)]+)/g)]
-    .map((match) => ({ name: match[1], type: match[2], shape: match[3] }))
+  const pads = []
+  const pattern = /\(pad\s+"([^"]+)"\s+([^\s)]+)\s+([^\s)]+)/g
+  let match = pattern.exec(String(text || ''))
+  while (match) {
+    const end = findClosingParen(text, match.index)
+    if (end < 0) break
+    const block = String(text || '').slice(match.index, end + 1)
+    const at = block.match(/\(at\s+([-\d.]+)\s+([-\d.]+)(?:\s+([-\d.]+))?/)
+    const size = block.match(/\(size\s+([-\d.]+)\s+([-\d.]+)/)
+    const drill = block.match(/\(drill\s+([-\d.]+)/)
+    const layers = [...block.matchAll(/"([^"]*\.Cu|\*\.Cu|[^"]*\.Mask|[^"]*\.Paste)"/g)].map((item) => item[1])
+    pads.push({
+      name: match[1],
+      type: match[2],
+      shape: match[3],
+      x: at ? Number(at[1]) : 0,
+      y: at ? Number(at[2]) : 0,
+      rotation: at?.[3] ? Number(at[3]) : 0,
+      widthMm: size ? Number(size[1]) : 0,
+      heightMm: size ? Number(size[2]) : 0,
+      drillMm: drill ? Number(drill[1]) : null,
+      layers,
+      throughHole: match[2] === 'thru_hole' || Boolean(drill),
+      copper: layers.some((layer) => layer === '*.Cu' || /\.Cu$/.test(layer)),
+    })
+    pattern.lastIndex = end + 1
+    match = pattern.exec(String(text || ''))
+  }
+  return pads
 }
 
 export function parseFootprintCourtyardFromText(text) {
@@ -171,7 +212,7 @@ function dedupePins(pins) {
   })
 }
 
-function compatibilityScore({ symbolPins, footprintPads, pinMapKeys, issues, netCoverage = {} }) {
+function compatibilityScore({ symbolPins, footprintPads, pinMapKeys, issues, netCoverage = {}, equivalence = {} }) {
   let score = 100
   if (!symbolPins.length) score -= 20
   if (!footprintPads.length) score -= 35
@@ -179,9 +220,39 @@ function compatibilityScore({ symbolPins, footprintPads, pinMapKeys, issues, net
   if ((netCoverage.powerPins || 0) === 0) score -= 8
   if ((netCoverage.groundPins || 0) === 0) score -= 8
   if ((netCoverage.differentialPins || 0) === 1) score -= 12
+  if (Number.isFinite(equivalence.score)) score -= Math.max(0, 100 - equivalence.score) * 0.35
   score -= issues.filter((item) => item.severity === 'ERROR').length * 30
   score -= issues.filter((item) => item.severity === 'WARNING').length * 8
   return Math.max(0, Math.min(100, score))
+}
+
+function scoreSymbolFootprintEquivalence({ component, symbolPins = [], footprintPads = [], pinMap = {} }) {
+  const padNames = new Set(footprintPads.map((pad) => normalizePin(pad.name)))
+  const symbolNumbers = new Set(symbolPins.map((pin) => normalizePin(pin.number)).filter(Boolean))
+  const symbolNames = new Set(symbolPins.map((pin) => normalizePin(pin.name)).filter(Boolean))
+  const mappedKeys = Object.keys(pinMap).map(normalizePin)
+  const mappedValues = Object.values(pinMap).map(normalizePin)
+  const keyPadHits = mappedKeys.filter((key) => padNames.has(key)).length
+  const keySymbolHits = mappedKeys.filter((key) => symbolNumbers.has(key) || symbolNames.has(key)).length
+  const critical = criticalPinsFor(component).map(normalizePin)
+  const criticalHits = critical.filter((pin) => mappedKeys.includes(pin) || mappedValues.includes(pin)).length
+  const hasPins = symbolPins.length || footprintPads.length || mappedKeys.length
+  const padScore = footprintPads.length ? keyPadHits / Math.max(mappedKeys.length, 1) : 0.5
+  const symbolScore = symbolPins.length ? keySymbolHits / Math.max(mappedKeys.length, 1) : 0.5
+  const criticalScore = critical.length ? criticalHits / critical.length : 1
+  const score = Math.round((padScore * 0.42 + symbolScore * 0.28 + criticalScore * 0.30) * 100)
+  const status = !hasPins ? 'unknown' : score >= 75 ? 'strong' : score >= 50 ? 'weak' : 'mismatch'
+  return {
+    status,
+    score,
+    keyPadHits,
+    keySymbolHits,
+    criticalHits,
+    criticalCount: critical.length,
+    symbolPinCount: symbolPins.length,
+    footprintPadCount: footprintPads.length,
+    mappedPinCount: mappedKeys.length,
+  }
 }
 
 function criticalPinsFor(component) {
@@ -190,6 +261,10 @@ function criticalPinsFor(component) {
   if (group === 'ESP32_S3') return ['3V3', 'GND', 'USB_DP', 'USB_DN', 'EN']
   if (group === 'RJ45') return ['ETH_TX_P', 'ETH_TX_N', 'ETH_RX_P', 'ETH_RX_N']
   if (group === 'ETHERNET_PHY') return ['3V3', 'GND', 'ETH_TX_P', 'ETH_TX_N', 'ETH_RX_P', 'ETH_RX_N', 'ETH_MDC', 'ETH_MDIO']
+  if (group === 'CAN_TRANSCEIVER') return ['CANH', 'CANL', 'CAN_TX', 'CAN_RX', '3V3', 'GND']
+  if (group === 'RS485_TRANSCEIVER') return ['RS485_A', 'RS485_B', 'RS485_TX', 'RS485_RX', '3V3', 'GND']
+  if (group === 'FIELD_CONNECTOR') return ['CANH', 'CANL', 'RS485_A', 'RS485_B']
+  if (group === 'TERMINAL_BLOCK') return ['24V_FIELD', 'GND_FIELD', 'FIELD_IN1', 'FIELD_OUT1']
   if (group === 'REGULATOR') return ['VIN', 'GND', '3V3']
   if (group === 'POE_FRONT_END') return ['POE_VDD', 'POE_RTN']
   if (group === 'SWD') return ['3V3', 'GND', 'SWDIO', 'SWCLK']
@@ -236,7 +311,7 @@ function requiresGround(component) {
 }
 
 function samePin(a, b) {
-  return String(a || '').toUpperCase() === String(b || '').toUpperCase()
+  return normalizeAlias(a) === normalizeAlias(b)
 }
 
 function issue(severity, code, message, details = {}) {
@@ -250,6 +325,38 @@ function assetId(asset) {
 
 function stripLeadingZeros(value) {
   return String(value).replace(/^0+/, '')
+}
+
+function normalizePin(value) {
+  return stripLeadingZeros(String(value || '').trim().toUpperCase())
+}
+
+function normalizeAlias(value) {
+  const key = normalizePin(value).replace(/_/g, '')
+  const aliases = {
+    VBUS: 'VUSB',
+    USBVBUS: 'VUSB',
+    DPLUS: 'USBDP',
+    'D+': 'USBDP',
+    DP: 'USBDP',
+    USBDP: 'USBDP',
+    DMINUS: 'USBDN',
+    'D-': 'USBDN',
+    DM: 'USBDN',
+    DN: 'USBDN',
+    USBDN: 'USBDN',
+    VDD: '3V3',
+    VCC: '3V3',
+    VDDIO: '3V3',
+    VSS: 'GND',
+    PGND: 'GND',
+    AGND: 'GND',
+    RESET: 'NRST',
+    RST: 'NRST',
+    BOOT0: 'BOOT',
+    IO0: 'BOOT',
+  }
+  return aliases[key] || key
 }
 
 function escapeRegExp(value) {

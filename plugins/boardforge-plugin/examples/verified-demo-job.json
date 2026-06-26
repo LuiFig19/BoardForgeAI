@@ -10,6 +10,8 @@
     "diagnosticAllowIncompleteSchematic": true,
     "manufacturerProfile": "JLCPCB_STANDARD",
     "powerInput": "VUSB",
-    "approveHighThermalRisk": true
+    "routeGroundNets": true,
+    "approveHighThermalRisk": true,
+    "approveAdvancedFab": true
   }
 }

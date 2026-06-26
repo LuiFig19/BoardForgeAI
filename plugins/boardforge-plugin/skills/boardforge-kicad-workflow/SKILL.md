@@ -29,6 +29,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 
 ## Allowed Workflows
 
+- `generate_custom_outline`
 - `create_outline_board`
 - `validate_board_outline`
 - `add_mounting_holes`
@@ -261,6 +262,8 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 1. Ask for missing required info such as board size, layer count, manufacturer, mounting pattern, MCU, power rails, interfaces, and constraints.
 2. Build a structured JSON job.
 3. Call the BoardForge local CLI or MCP server.
+   - Prefer `--job path.json` for saved workflows.
+   - Prefer `--job-json-b64` for inline Codex-generated jobs on Windows to avoid shell quoting errors.
 4. Inspect generated files and returned validation issues.
 5. Run `run_full_self_review` after outline, placement, routing, or export operations.
 6. Attempt safe fixes only through BoardForge commands.
@@ -268,7 +271,9 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 
 ## Current Real Capabilities
 
-- `create_outline_board` writes real `.kicad_pro`, `.kicad_pcb`, `README.md`, and `boardforge-review.json`.
+- `generate_custom_outline` converts prompt/point/sketch outline intent into validated board geometry with mounting holes, USB/RJ45 mechanical notches, fabrication warnings, and structured `generatedOutline` metadata.
+- `create_outline_board` writes real `.kicad_pro`, `.kicad_pcb`, `README.md`, `boardforge-outline-plan.json`, and `boardforge-review.json`.
+- `apply_edge_cuts`, `round_board_corners`, `add_mounting_holes`, `add_usb_c_edge_cutout`, and `add_rj45_edge_clearance` can transform outline-only projects and update `boardforge-project.json`; they refuse to rewrite populated PCB files unless explicitly approved after snapshotting.
 - `create_kicad_project` writes real `.kicad_pro`, `.kicad_sch`, `.kicad_pcb`, `README.md`, `boardforge-components.json`, `boardforge-bindings.json`, and `boardforge-review.json`.
 - Project creation writes persistent `boardforge-project.json` state with requirements, board geometry, component/library decisions, validation results, exports, generated files, and history.
 - `snapshot_project`, `list_project_snapshots`, and `restore_project_snapshot` provide controlled rollback for KiCad project files and BoardForge metadata before risky edits.
@@ -280,6 +285,7 @@ Gerbers, BOM, CPL, KiCad ZIP, JLCPCB package
 - `plan_mission_requirements` converts mission prompts into feasibility warnings, required user decisions, architecture, board families, long-range UAV support circuits, and a controlled workflow. It is the right first step for prompts like "drone that flies 15 miles and lasts 30 minutes."
 - `intake_user_bom` parses and normalizes user-supplied BOM rows into BoardForge components, inferred groups, pin maps, supplier identifiers, packages, and nets.
 - `audit_user_bom` compares a user BOM to mission/requirements goals, reports missing functions, compatibility issues, power-budget review, substitutions, and the controlled end-to-end user-BOM workflow.
+- Pin assignment and pin-map repair can synthesize reviewed pin maps from parsed KiCad symbol/footprint metadata. Prefer this controlled repair path before claiming schematic/PCB sync is authoritative.
 - `ingest_reference_design` parses datasheet/reference/prompt text for interfaces, required support circuits, numeric constraints, RF/layout warnings, and next schematic-block actions.
 - `synthesize_circuit_blocks` creates circuit blocks such as protection, power tree, USB, Ethernet, I2C, SPI, RF, motor power, clocking, and debug with support-component and net intent.
 - `plan_production_pipeline` returns the full controlled execution sequence from engineering questions through release gates.

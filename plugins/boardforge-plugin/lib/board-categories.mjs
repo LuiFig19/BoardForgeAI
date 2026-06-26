@@ -234,6 +234,7 @@ const categories = {
 
 const aliases = [
   [/compute module|carrier|cm4|sodimm|som|linux|mipi|pcie|pci-e|hdmi|ddr/i, 'compute_module_carrier'],
+  [/led|rgb|neopixel|strip|mosfet output|switched output|load switch/i, 'led_controller'],
   [/motor controller|esc|inverter|gate driver|mosfet|phase|bldc|foc/i, 'motor_controller'],
   [/bms|charger|charge|battery management|fuel gauge|balanc/i, 'battery_charger_bms'],
   [/poe|802\.3af|802\.3at|power over ethernet/i, 'poe_device'],
@@ -243,7 +244,6 @@ const aliases = [
   [/wearable|watch|ring|bracelet|flex|skin|tiny shape/i, 'wearable_pcb'],
   [/audio|codec|amplifier|microphone|speaker/i, 'audio_board'],
   [/\brf\b|antenna|lora|lte|gnss|gps|radio/i, 'rf_adjacent'],
-  [/led|rgb|neopixel|strip/i, 'led_controller'],
   [/test fixture|pogo|bed of nails/i, 'test_fixture'],
   [/breakout/i, 'breakout_board'],
   [/adapter|converter|pinout/i, 'adapter_board'],

@@ -136,8 +136,9 @@ function copperPourPlan(board, nets, zones) {
   const blockedZones = zones.filter((zone) => zone.allowCopper === false).map((zone) => zone.id)
   const pours = []
   if (hasGround) {
-    pours.push({ net: 'GND', layer: 'B.Cu', priority: 100, clearanceMm: 0.2, thermalRelief: true, avoidZones: blockedZones })
-    if (layerCount >= 4) pours.push({ net: 'GND', layer: 'In1.Cu', priority: 100, clearanceMm: 0.2, thermalRelief: false, avoidZones: blockedZones })
+    pours.push({ net: 'GND', layer: 'F.Cu', priority: 110, clearanceMm: 0.15, thermalRelief: false, avoidZones: blockedZones })
+    pours.push({ net: 'GND', layer: 'B.Cu', priority: 100, clearanceMm: 0.15, thermalRelief: false, avoidZones: blockedZones })
+    if (layerCount >= 4) pours.push({ net: 'GND', layer: 'In1.Cu', priority: 100, clearanceMm: 0.15, thermalRelief: false, avoidZones: blockedZones })
   }
   if (nets.some((net) => ['BATTERY', 'POWER_HIGH_CURRENT'].includes(net.className))) {
     pours.push({ net: 'VIN', layer: 'F.Cu', priority: 80, clearanceMm: 0.35, thermalRelief: false, avoidZones: blockedZones })
@@ -155,7 +156,12 @@ function viaRulesForBoard(board, profile, context = {}) {
     minViaDiameterMm: profile.minViaDiameterMm || 0.45,
     minViaDrillMm: profile.minViaDrillMm || 0.2,
     advancedVias: stackup.hdi,
-    allowedTransitions: stackup.hdi.allowed ? [...stackup.hdi.supportedBlindViaPairs, ...stackup.hdi.supportedBuriedViaPairs, ['F.Cu', 'B.Cu']] : [['F.Cu', 'B.Cu']],
+    allowedTransitions: stackup.viaTransitionMatrix?.allAllowed?.length
+      ? stackup.viaTransitionMatrix.allAllowed
+      : stackup.hdi.allowed
+        ? [...stackup.hdi.recommendedBlindViaPairs, ...stackup.hdi.recommendedBuriedViaPairs, ['F.Cu', 'B.Cu']]
+        : defaultViaTransitionsForLayerCount(board.layerCount || 2),
+    maxModeledLayers: 12,
     viaToEdgeClearanceMm: Math.max(0.5, profile.minClearanceMm || 0.15),
     viaToComponentClearanceMm: Math.max(0.35, profile.componentToComponentClearanceMm || 0.25),
     stitching: {
@@ -165,6 +171,27 @@ function viaRulesForBoard(board, profile, context = {}) {
       avoidAntennaKeepouts: true,
     },
   }
+}
+
+function defaultViaTransitionsForLayerCount(layerCount = 2) {
+  if (layerCount >= 6) {
+    return [
+      ['F.Cu', 'In1.Cu'],
+      ['F.Cu', 'In2.Cu'],
+      ['In1.Cu', 'In2.Cu'],
+      ['In2.Cu', 'B.Cu'],
+      ['F.Cu', 'B.Cu'],
+    ]
+  }
+  if (layerCount >= 4) {
+    return [
+      ['F.Cu', 'In1.Cu'],
+      ['F.Cu', 'In2.Cu'],
+      ['In2.Cu', 'B.Cu'],
+      ['F.Cu', 'B.Cu'],
+    ]
+  }
+  return [['F.Cu', 'B.Cu']]
 }
 
 function layerPolicyForBoard(board) {

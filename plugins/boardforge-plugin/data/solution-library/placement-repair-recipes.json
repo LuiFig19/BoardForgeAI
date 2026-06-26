@@ -1,0 +1,8 @@
+{
+  "recipes": [
+    {
+      "id": "fixed_outline_internal_relayout",
+      "steps": ["preserve Edge.Cuts", "preserve mounting holes", "move/rotate existing components only", "rerun original spec audit"]
+    }
+  ]
+}

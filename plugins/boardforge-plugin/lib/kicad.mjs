@@ -1,14 +1,116 @@
 import crypto from 'node:crypto'
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { polygonBounds, round } from './geometry.mjs'
+import { assignNetsToClasses } from './net-classes.mjs'
 import { atomNumber, atomText, child, children, descendants, parseSExpr } from './sexpr.mjs'
 
 const uuid = () => crypto.randomUUID()
 const text = (value) => String(value).replace(/"/g, "'")
 
-export function kicadProjectFile(board, netClasses = []) {
-  return JSON.stringify({ meta: { version: 1 }, board: { design_settings: { defaults: {}, rules: {}, net_classes: netClasses } }, boards: [], cvpcb: {}, libraries: {}, net_settings: {}, pcbnew: {}, schematic: {}, sheets: [], text_variables: { BOARD_NAME: board.name, BOARDFORGE_MODE: 'outline_only', BOARDFORGE_EXECUTOR: 'boardforge-plugin-cli' } }, null, 2)
+export function kicadProjectFile(board, netClasses = [], profile = {}, nets = []) {
+  const rules = projectRules(profile)
+  const nativeNetSettings = kicadNativeNetSettings(netClasses, nets, profile)
+  return JSON.stringify({
+    meta: { version: 1 },
+    board: { design_settings: { defaults: {}, rules, net_classes: netClasses } },
+    boards: [],
+    cvpcb: {},
+    libraries: {},
+    net_settings: nativeNetSettings,
+    pcbnew: {},
+    schematic: {},
+    sheets: [],
+    text_variables: { BOARD_NAME: board.name, BOARDFORGE_MODE: 'outline_only', BOARDFORGE_EXECUTOR: 'boardforge-plugin-cli' },
+  }, null, 2)
+}
+
+export async function syncKiCadProjectNetSettings({ projectFile, nets = [], netClasses = [], profile = {} }) {
+  if (!projectFile) return { status: 'PROJECT_NET_SETTINGS_SKIPPED', changed: false, reason: 'No .kicad_pro file supplied.' }
+  const content = await readFile(projectFile, 'utf8')
+  const project = JSON.parse(content)
+  const currentClasses = netClasses.length ? netClasses : project.board?.design_settings?.net_classes || []
+  const nextSettings = kicadNativeNetSettings(currentClasses, nets, profile)
+  project.board = project.board || {}
+  project.board.design_settings = project.board.design_settings || {}
+  project.board.design_settings.net_classes = currentClasses
+  project.net_settings = nextSettings
+  const nextContent = `${JSON.stringify(project, null, 2)}\n`
+  if (nextContent === content) return { status: 'PROJECT_NET_SETTINGS_CURRENT', changed: false, projectFile, netCount: nets.length, classCount: currentClasses.length }
+  await writeFile(projectFile, nextContent, 'utf8')
+  return { status: 'PROJECT_NET_SETTINGS_SYNCED', changed: true, projectFile, netCount: nets.length, classCount: currentClasses.length, assignedNetCount: Object.keys(nextSettings.netclass_assignments || {}).length }
+}
+
+function kicadNativeNetSettings(netClasses = [], nets = [], profile = {}) {
+  const classes = normalizeNetClasses(netClasses, profile).map((item, index) => ({
+    bus_width: 12,
+    clearance: round(item.clearanceMm ?? profile.minClearanceMm ?? 0.15),
+    diff_pair_gap: round(item.differentialPairGapMm ?? 0.25),
+    diff_pair_via_gap: round(item.differentialPairViaGapMm ?? item.differentialPairGapMm ?? 0.25),
+    diff_pair_width: round(item.differentialPairWidthMm ?? item.traceWidthMm ?? 0.15),
+    line_style: 0,
+    microvia_diameter: round(profile.hdi?.minMicroviaDiameterMm ?? 0.3),
+    microvia_drill: round(profile.hdi?.minMicroviaDrillMm ?? 0.1),
+    name: item.name === 'DEFAULT' ? 'Default' : item.name,
+    pcb_color: 'rgba(0, 0, 0, 0.000)',
+    priority: item.name === 'DEFAULT' ? 2147483647 : Math.max(1, 1000 - Number(item.priority ?? index)),
+    schematic_color: 'rgba(0, 0, 0, 0.000)',
+    track_width: round(item.traceWidthMm ?? profile.minTraceWidthMm ?? 0.15),
+    tuning_profile: '',
+    via_diameter: round(item.viaDiameterMm ?? profile.minViaDiameterMm ?? 0.45),
+    via_drill: round(item.viaDrillMm ?? profile.minViaDrillMm ?? 0.2),
+    wire_width: 6,
+  }))
+  const assignments = {}
+  for (const net of assignNetsToClasses(nets || [])) {
+    if (!net?.name) continue
+    const className = net.className === 'DEFAULT' ? 'Default' : net.className
+    if (className && className !== 'Default') assignments[net.name] = className
+  }
+  return {
+    classes,
+    meta: { version: 5 },
+    net_colors: null,
+    netclass_assignments: Object.keys(assignments).length ? assignments : null,
+    netclass_patterns: [],
+  }
+}
+
+function normalizeNetClasses(netClasses, profile) {
+  if (netClasses?.length) return netClasses
+  return [{
+    name: 'DEFAULT',
+    traceWidthMm: profile.minTraceWidthMm || 0.15,
+    clearanceMm: profile.minClearanceMm || 0.15,
+    viaDiameterMm: profile.minViaDiameterMm || 0.45,
+    viaDrillMm: profile.minViaDrillMm || 0.2,
+  }]
+}
+
+function projectRules(profile = {}) {
+  const minViaDrill = Number(profile.minViaDrillMm || 0.2)
+  const minHole = Math.min(Number(profile.minHoleSizeMm || minViaDrill), minViaDrill)
+  return {
+    max_error: 0.005,
+    min_clearance: Number(profile.minClearanceMm || 0.127),
+    min_connection: 0,
+    min_copper_edge_clearance: Number(profile.edgeClearanceMm || 0.35),
+    min_groove_width: 0,
+    min_hole_clearance: 0.25,
+    min_hole_to_hole: 0.25,
+    min_microvia_diameter: Number(profile.hdi?.minMicroviaDiameterMm || 0.2),
+    min_microvia_drill: Number(profile.hdi?.minMicroviaDrillMm || 0.1),
+    min_resolved_spokes: 2,
+    min_silk_clearance: 0,
+    min_text_height: 0.8,
+    min_text_thickness: 0.08,
+    min_through_hole_diameter: minHole,
+    min_track_width: Number(profile.minTraceWidthMm || 0.127),
+    min_via_annular_width: 0.1,
+    min_via_diameter: Number(profile.minViaDiameterMm || 0.45),
+    solder_mask_to_copper_clearance: 0,
+    use_height_for_length_calcs: true,
+  }
 }
 
 const grLine = (a, b) => `  (gr_line (start ${round(a.x)} ${round(a.y)}) (end ${round(b.x)} ${round(b.y)})\n    (stroke (width 0.1) (type solid)) (layer "Edge.Cuts") (uuid "${uuid()}"))`
@@ -20,8 +122,24 @@ export function kicadPcbFile(board, options = {}) {
   const edgeCuts = points.map((point, index) => grLine(point, points[(index + 1) % points.length]))
   const holes = (board.mountingHoles || []).flatMap((hole) => [grCircle(hole, hole.diameterMm / 2), grText(hole.id, hole.x, hole.y + hole.diameterMm + 1.2)])
   const bounds = polygonBounds(points)
-  const classes = options.netClasses?.length ? `\n  (net_class "BoardForge generated classes" ""\n${options.netClasses.map((item) => `    (add_net "${item.name}")`).join('\n')}\n  )` : ''
+  const classes = netClassText(options.netClasses || [], options.nets || [])
   return `(kicad_pcb (version 20240108) (generator "BoardForge Plugin CLI")\n  (general (thickness 1.6))\n  (paper "A4")\n  (layers\n    (0 "F.Cu" signal)\n    (1 "In1.Cu" signal)\n    (2 "In2.Cu" signal)\n    (31 "B.Cu" signal)\n    (36 "B.SilkS" user)\n    (37 "F.SilkS" user)\n    (38 "B.Mask" user)\n    (39 "F.Mask" user)\n    (44 "Edge.Cuts" user)\n    (45 "Margin" user)\n    (46 "B.CrtYd" user)\n    (47 "F.CrtYd" user)\n    (48 "B.Fab" user)\n    (49 "F.Fab" user)\n  )${classes}\n  (setup (pad_to_mask_clearance 0))\n${edgeCuts.join('\n')}\n${holes.join('\n')}\n${grText(`BoardForge outline-only: ${board.name}`, bounds.minX, bounds.minY - 3)}\n${(options.footprints || []).join('\n')}\n)\n`
+}
+
+function netClassText(netClasses, nets) {
+  if (!netClasses.length) return ''
+  const netsByClass = new Map()
+  for (const net of nets || []) {
+    if (!net?.name) continue
+    const className = net.className || 'DEFAULT'
+    if (!netsByClass.has(className)) netsByClass.set(className, [])
+    netsByClass.get(className).push(net.name)
+  }
+  return netClasses.map((item) => {
+    const netNames = [...new Set(netsByClass.get(item.name) || [])]
+    const addNets = netNames.map((name) => `    (add_net "${text(name)}")`).join('\n')
+    return `\n  (net_class "${text(item.name)}" ""\n    (clearance ${round(item.clearanceMm || 0.15)})\n    (trace_width ${round(item.traceWidthMm || 0.15)})\n    (via_dia ${round(item.viaDiameterMm || 0.45)})\n    (via_drill ${round(item.viaDrillMm || 0.2)})${addNets ? `\n${addNets}` : ''}\n  )`
+  }).join('')
 }
 
 export function kicadSchematicFile(board, options = {}) {
@@ -171,6 +289,7 @@ function padFromTree(pad, footprint, netByNumber, index) {
   const local = { x: atomNumber(at?.[1]), y: atomNumber(at?.[2]) }
   const center = transformLocalPoint(local, footprint)
   const netNumber = net ? atomNumber(net[1], null) : null
+  const netName = netNameFromNode(net, netByNumber)
   const layersNode = child(pad, 'layers')
   return {
     id: `${footprint.ref}:${name}`,
@@ -186,7 +305,7 @@ function padFromTree(pad, footprint, netByNumber, index) {
     widthMm: atomNumber(size?.[1], 0.6),
     heightMm: atomNumber(size?.[2], 0.6),
     netNumber,
-    netName: atomText(net?.[2]) || netByNumber.get(netNumber) || null,
+    netName,
     layers: layersNode ? layersNode.slice(1).map(atomText) : [],
     throughHole: atomText(pad[2]) === 'thru_hole',
     drillMm: atomNumber(child(pad, 'drill')?.[1], 0),
@@ -203,7 +322,7 @@ function edgeCutsOutlineTree(tree) {
 function parseTracksTree(tree, netByNumber) {
   return children(tree, 'segment').map((segment, index) => {
     const netNumber = atomNumber(child(segment, 'net')?.[1], null)
-    return { id: `track_${index + 1}`, start: pointNode(child(segment, 'start')), end: pointNode(child(segment, 'end')), widthMm: atomNumber(child(segment, 'width')?.[1]), layer: child(segment, 'layer')?.[1] || 'F.Cu', netNumber, netName: netByNumber.get(netNumber) || null }
+    return { id: `track_${index + 1}`, start: pointNode(child(segment, 'start')), end: pointNode(child(segment, 'end')), widthMm: atomNumber(child(segment, 'width')?.[1]), layer: child(segment, 'layer')?.[1] || 'F.Cu', netNumber, netName: netNameFromNode(child(segment, 'net'), netByNumber) }
   })
 }
 
@@ -211,15 +330,22 @@ function parseViasTree(tree, netByNumber) {
   return children(tree, 'via').map((via, index) => {
     const netNumber = atomNumber(child(via, 'net')?.[1], null)
     const layersNode = child(via, 'layers')
-    return { id: `via_${index + 1}`, ...pointNode(child(via, 'at')), diameterMm: atomNumber(child(via, 'size')?.[1]), drillMm: atomNumber(child(via, 'drill')?.[1]), layers: layersNode ? layersNode.slice(1).map(atomText) : [], netNumber, netName: netByNumber.get(netNumber) || null, viaType: child(via, 'type')?.[1] || 'through' }
+    return { id: `via_${index + 1}`, ...pointNode(child(via, 'at')), diameterMm: atomNumber(child(via, 'size')?.[1]), drillMm: atomNumber(child(via, 'drill')?.[1]), layers: layersNode ? layersNode.slice(1).map(atomText) : [], netNumber, netName: netNameFromNode(child(via, 'net'), netByNumber), viaType: child(via, 'type')?.[1] || 'through' }
   })
 }
 
 function parseZonesTree(tree, netByNumber) {
   return children(tree, 'zone').map((zone, index) => {
     const netNumber = atomNumber(child(zone, 'net')?.[1], null)
-    return { id: `zone_${index + 1}`, netNumber, netName: child(zone, 'net_name')?.[1] || netByNumber.get(netNumber) || null, layer: child(zone, 'layer')?.[1] || null, polygon: descendants(zone, 'xy').map(pointNode) }
+    return { id: `zone_${index + 1}`, netNumber, netName: child(zone, 'net_name')?.[1] || netNameFromNode(child(zone, 'net'), netByNumber), layer: child(zone, 'layer')?.[1] || null, polygon: descendants(zone, 'xy').map(pointNode) }
   })
+}
+
+function netNameFromNode(netNode, netByNumber) {
+  if (!netNode) return null
+  const numeric = atomNumber(netNode[1], null)
+  if (numeric !== null) return atomText(netNode[2]) || netByNumber.get(numeric) || null
+  return atomText(netNode[1]) || null
 }
 
 function parseMountingHolesTree(tree) {
@@ -425,8 +551,8 @@ function findClosingParen(text, start) {
 
 function transformLocalPoint(local, footprint) {
   const radians = ((footprint.rotation || 0) * Math.PI) / 180
-  const x = local.x * Math.cos(radians) - local.y * Math.sin(radians)
-  const y = local.x * Math.sin(radians) + local.y * Math.cos(radians)
+  const x = local.x * Math.cos(radians) + local.y * Math.sin(radians)
+  const y = -local.x * Math.sin(radians) + local.y * Math.cos(radians)
   return { x: round(footprint.x + x), y: round(footprint.y + y) }
 }
 

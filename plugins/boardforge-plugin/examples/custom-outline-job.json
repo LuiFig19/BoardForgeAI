@@ -1,0 +1,13 @@
+{
+  "id": "job_custom_outline_usb_notch",
+  "type": "create_outline_board",
+  "allowOverwrite": true,
+  "input": {
+    "projectName": "Custom USB Notched Outline",
+    "manufacturerProfile": "JLCPCB_STANDARD",
+    "outlinePrompt": "custom notched board 48 x 30 mm with USB-C notch on the left edge and four mounting holes",
+    "layerCount": 4,
+    "holeDiameterMm": 2.7,
+    "holeInsetMm": 4.8
+  }
+}

@@ -132,19 +132,26 @@ function planRegulators(sources, rails, components) {
   return rails
     .filter((rail) => rail.kind === 'regulated' && rail.name !== source.name && rail.voltage > 0)
     .map((rail) => {
-      const regulatorComponent = components.find((component) => /(REGULATOR|LDO|BUCK|PMIC)/i.test(`${component.group || ''} ${component.value || ''}`) && `${component.value || ''} ${component.ref || ''}`.includes(rail.name.replace('V', '')))
+      const regulatorComponent = components.find((component) => {
+        const text = `${component.group || ''} ${component.value || ''} ${component.ref || ''}`
+        const railTokens = [rail.name, rail.name.replace(/V/g, ''), rail.name.replace(/V/, '.')]
+        return /(REGULATOR|LDO|BUCK|PMIC)/i.test(text) && railTokens.some((token) => token && text.toUpperCase().includes(String(token).toUpperCase()))
+      })
+      const explicitBuck = /BUCK|DC-DC|DCDC|SWITCH/i.test(`${regulatorComponent?.group || ''} ${regulatorComponent?.value || ''}`)
       const dropout = Math.max(0, Number(source.voltage || 0) - Number(rail.voltage || 0))
       const lossMwLinear = Math.round(dropout * rail.requiredCurrentMa)
       const buckRecommended = lossMwLinear > 350 || rail.requiredCurrentMa > 250 || Number(source.voltage || 0) > 6
+      const estimatedLossMw = explicitBuck ? Math.round(Number(rail.voltage || 0) * rail.requiredCurrentMa * 0.08 / 100) : lossMwLinear
       return {
         ref: regulatorComponent?.ref || suggestedRegRef(rail.name),
         rail: rail.name,
         inputRail: source.name,
         outputVoltage: rail.voltage,
         requiredCurrentMa: rail.requiredCurrentMa,
-        topology: buckRecommended ? 'buck regulator recommended' : 'low-noise LDO acceptable if thermal review passes',
+        topology: explicitBuck ? 'buck regulator selected' : buckRecommended ? 'buck regulator recommended' : 'low-noise LDO acceptable if thermal review passes',
         estimatedLinearLossMw: lossMwLinear,
-        thermalRisk: lossMwLinear > 700 ? 'high' : lossMwLinear > 350 ? 'medium' : 'low',
+        estimatedSelectedLossMw: estimatedLossMw,
+        thermalRisk: estimatedLossMw > 700 ? 'high' : estimatedLossMw > 350 ? 'medium' : 'low',
         placementRules: [
           'input capacitor within 2 mm of regulator input pin',
           'output capacitor within 2 mm of regulator output pin',

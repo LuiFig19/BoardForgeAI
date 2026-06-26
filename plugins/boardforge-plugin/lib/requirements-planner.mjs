@@ -2,10 +2,10 @@ const templateCircuits = {
   general_mcu_core: {
     components: [
       component('U1', 'MCU', 'Generic QFN MCU', { role: 'mcu' }),
-      component('C1', 'CAP', '100nF MCU decoupling', { netA: '3V3', netB: 'GND' }),
-      component('C2', 'CAP', '10uF local bulk capacitor', { netA: '3V3', netB: 'GND' }),
-      component('Y1', 'CRYSTAL', 'MCU crystal / oscillator', { netA: 'XTAL_IN', netB: 'XTAL_OUT' }),
-      component('R1', 'RES', '10k reset pull-up', { netA: 'NRST', netB: '3V3' }),
+      component('C1', 'CAP', '100nF MCU decoupling', { netA: '3V3', netB: 'GND', supportsRef: 'U1' }),
+      component('C2', 'CAP', '10uF local bulk capacitor', { netA: '3V3', netB: 'GND', supportsRef: 'U1' }),
+      component('Y1', 'CRYSTAL', 'MCU crystal / oscillator', { netA: 'XTAL_IN', netB: 'XTAL_OUT', supportsRef: 'U1' }),
+      component('R1', 'RES', '10k reset pull-up', { netA: 'NRST', netB: '3V3', supportsRef: 'U1' }),
     ],
     nets: ['3V3', 'GND', 'NRST', 'BOOT0', 'XTAL_IN', 'XTAL_OUT', 'SWDIO', 'SWCLK'],
     constraints: ['MCU needs fanout room and decoupling within manufacturer assembly spacing', 'Crystal nets must stay short and quiet'],
@@ -23,10 +23,10 @@ const templateCircuits = {
   esp32_s3_core: {
     components: [
       component('U1', 'ESP32_S3', 'ESP32-S3-WROOM-1-N8R8', { role: 'mcu_rf_module' }),
-      component('C101', 'CAP', '100nF ESP32 decoupling', { netA: '3V3', netB: 'GND' }),
-      component('C102', 'CAP', '10uF ESP32 bulk cap', { netA: '3V3', netB: 'GND' }),
-      component('R101', 'RES', '10k EN pull-up', { netA: 'EN', netB: '3V3' }),
-      component('R102', 'RES', '10k BOOT pull-up', { netA: 'BOOT', netB: '3V3' }),
+      component('C101', 'CAP', '100nF ESP32 decoupling', { netA: '3V3', netB: 'GND', supportsRef: 'U1' }),
+      component('C102', 'CAP', '10uF ESP32 bulk cap', { netA: '3V3', netB: 'GND', supportsRef: 'U1' }),
+      component('R101', 'RES', '10k EN pull-up', { netA: 'EN', netB: '3V3', supportsRef: 'U1' }),
+      component('R102', 'RES', '10k BOOT pull-up', { netA: 'BOOT', netB: '3V3', supportsRef: 'U1' }),
       component('SW1', 'SWITCH', 'Reset tactile switch', { package: 'SW_SPST', pinMap: { 1: 'EN', 2: 'GND' } }),
       component('SW2', 'SWITCH', 'Boot tactile switch', { package: 'SW_SPST', pinMap: { 1: 'BOOT', 2: 'GND' } }),
     ],
@@ -35,10 +35,10 @@ const templateCircuits = {
   },
   regulator_3v3: {
     components: [
-      component('U10', 'REGULATOR', '3V3 regulator', { role: 'power_regulator' }),
-      component('C10', 'CAP', '10uF regulator input capacitor', { netA: 'VIN', netB: 'GND' }),
-      component('C11', 'CAP', '10uF regulator output capacitor', { netA: '3V3', netB: 'GND' }),
-      component('L10', 'INDUCTOR', 'ferrite bead / power inductor', { netA: 'VUSB', netB: 'VIN' }),
+      component('U10', 'REGULATOR', '3V3 buck regulator', { role: 'power_regulator' }),
+      component('C10', 'CAP', '10uF regulator input capacitor', { netA: 'VIN', netB: 'GND', supportsRef: 'U10' }),
+      component('C11', 'CAP', '10uF regulator output capacitor', { netA: '3V3', netB: 'GND', supportsRef: 'U10' }),
+      component('L10', 'INDUCTOR', 'ferrite bead / power inductor', { netA: 'VUSB', netB: 'VIN', supportsRef: 'U10' }),
     ],
     nets: ['VUSB', 'VIN', '3V3', 'GND', 'EN'],
     constraints: ['Input/output capacitors must be close to regulator pins', 'Power path traces need width review'],
@@ -46,8 +46,8 @@ const templateCircuits = {
   i2c_sensor_header: {
     components: [
       component('J20', 'SENSOR_CONNECTOR', 'I2C sensor connector', { role: 'edge_sensor_header' }),
-      component('R20', 'RES', '4.7k I2C SCL pull-up', { netA: 'I2C_SCL', netB: '3V3' }),
-      component('R21', 'RES', '4.7k I2C SDA pull-up', { netA: 'I2C_SDA', netB: '3V3' }),
+      component('R20', 'RES', '4.7k I2C SCL pull-up', { netA: 'I2C_SCL', netB: '3V3', supportsRef: 'J20' }),
+      component('R21', 'RES', '4.7k I2C SDA pull-up', { netA: 'I2C_SDA', netB: '3V3', supportsRef: 'J20' }),
     ],
     nets: ['3V3', 'GND', 'I2C_SCL', 'I2C_SDA'],
     constraints: ['I2C pull-ups should be near the bus source or connector'],
@@ -188,6 +188,7 @@ function selectCircuits(text, input) {
   const add = (id) => {
     if (!selected.some((item) => item.id === id)) selected.push({ id, ...templateCircuits[id] })
   }
+  const droneFlightController = /drone|flight controller|uav|imu|blackbox/.test(text) || input.templateId === 'DRONE_FC_30X30' || input.templateId === 'DRONE_AIO_WHOOP'
   if (/mcu|microcontroller|embedded controller|generic controller|controller board/.test(text)) add('general_mcu_core')
   if (/esp32|s3|wifi|wi-fi|ble/.test(text) || input.templateId === 'ESP32_S3_SENSOR' || input.templateId === 'ESP32_S3_POE_SENSOR') add('esp32_s3_core')
   if (/usb|type c|type-c|debug/.test(text) || input.interfaces?.includes('USB')) add('usb_c_device')
@@ -195,13 +196,16 @@ function selectCircuits(text, input) {
   if (/i2c|sensor|sht|scd|bme|bmp|barometer/.test(text) || input.interfaces?.includes('I2C')) add('i2c_sensor_header')
   if (/swd|program|debug/.test(text)) add('swd_debug')
   if (/poe|ethernet|rj45|802\.3/.test(text) || input.templateId === 'ESP32_S3_POE_SENSOR' || input.interfaces?.includes('Ethernet')) add('poe_ethernet')
-  if (/robotics|robot controller|encoder|can|rs485|servo/.test(text) || input.interfaces?.includes('CAN')) add('robotics_io')
-  if (/motor controller|esc|inverter|gate driver|mosfet|phase|bldc|foc|motor driver|motor drivers/.test(text)) add('motor_controller_power_stage')
+  if (/robotics|robot controller|encoder|rs485|servo/.test(text) || (!droneFlightController && (/can/.test(text) || input.interfaces?.includes('CAN')))) add('robotics_io')
+  const ledOrLoadSwitchContext = /led|rgb|strip|neopixel|load switch|switched output|mosfet output/.test(text) && !/motor|bldc|phase|esc|inverter|gate driver/.test(text)
+  const explicitMotorPowerStage = !ledOrLoadSwitchContext && /motor controller|inverter|gate driver|mosfet|phase current|phase output|bldc|foc|motor driver|motor drivers/.test(text)
+    || (/esc/.test(text) && !/esc\s+(signal\s+)?connector|flight controller|drone|uav/.test(text))
+  if (explicitMotorPowerStage && !droneFlightController) add('motor_controller_power_stage')
   if (/bms|battery charger|charger|charge controller|fuel gauge|thermistor|protection fet/.test(text)) add('battery_charger_bms')
   if (/led|rgb|strip|neopixel/.test(text)) add('led_controller_outputs')
   if (/industrial|relay|isolat|terminal block|24v|plc|field io|field i\/o/.test(text)) add('industrial_io')
   if (/compute module|carrier|cm4|sodimm|som|linux|mipi|pcie|pci-e|hdmi|ddr/.test(text)) add('compute_module_carrier')
-  if (/drone|flight controller|uav|imu|blackbox/.test(text) || input.templateId === 'DRONE_FC_30X30' || input.templateId === 'DRONE_AIO_WHOOP') add('drone_fc_core')
+  if (droneFlightController) add('drone_fc_core')
   if (/long range|15 miles|mile|miles|gps|gnss|telemetry|receiver|elrs|return to home|current sense|battery life|30 min|30 minutes/.test(text)) {
     add('drone_fc_core')
     add('long_range_uav_support')
@@ -213,6 +217,7 @@ function selectCircuits(text, input) {
   }
   if (!selected.some((item) => item.id === 'regulator_3v3') && selected.some((item) => ['general_mcu_core', 'esp32_s3_core', 'drone_fc_core', 'poe_ethernet', 'robotics_io', 'compute_module_carrier'].includes(item.id))) add('regulator_3v3')
   if (!selected.some((item) => ['general_mcu_core', 'esp32_s3_core', 'drone_fc_core', 'compute_module_carrier'].includes(item.id)) && selected.some((item) => ['robotics_io', 'motor_controller_power_stage', 'battery_charger_bms', 'led_controller_outputs', 'industrial_io'].includes(item.id))) add('general_mcu_core')
+  if (selected.some((item) => item.id === 'esp32_s3_core')) return selected.filter((item) => item.id !== 'general_mcu_core')
   return selected
 }
 

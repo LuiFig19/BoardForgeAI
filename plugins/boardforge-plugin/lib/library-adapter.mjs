@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { parseFootprintCourtyardFromText, parseFootprintPadsFromText, parseSymbolPinsFromText } from './component-compatibility.mjs'
 
 export const officialKiCadLibrarySources = {
   symbols: {
@@ -31,6 +32,12 @@ const defaultAliases = {
   BLACKBOX: ['soic-8', 'wson', 'flash', 'package_so'],
   SENSOR_CONNECTOR: ['pinheader_1x04', 'pinheader', 'connector_pinheader'],
   ESC_CONNECTOR: ['pinheader_1x08', 'pinheader', 'connector_pinheader'],
+  GNSS: ['pinheader_1x06', 'pinheader', 'connector_pinheader'],
+  RECEIVER: ['pinheader_1x04', 'pinheader', 'connector_pinheader'],
+  TELEMETRY: ['pinheader_1x04', 'pinheader', 'connector_pinheader'],
+  BUZZER: ['pinheader_1x02', 'pinheader', 'connector_pinheader'],
+  CURRENT_SENSOR: ['sot-23-5', 'sot23-5', 'sensor_current', 'package_to_sot_smd'],
+  SWITCH: ['sw_spst', 'button_switch_smd'],
   CAP: ['c_0603', 'capacitor_smd'],
   RES: ['r_0603', 'resistor_smd'],
   INDUCTOR: ['l_0603', 'inductor_smd'],
@@ -39,20 +46,33 @@ const defaultAliases = {
   ETHERNET_PHY: ['qfn', 'ethernet', 'lan8720', 'phy'],
   POE_FRONT_END: ['soic-8', 'poe', 'power_management'],
   POWER_INPUT: ['terminalblock', 'connector', 'conn_01x02'],
+  CAN_TRANSCEIVER: ['pinheader_1x06', 'connector_pinheader', 'can', 'transceiver'],
+  RS485_TRANSCEIVER: ['pinheader_1x06', 'connector_pinheader', 'rs485', 'transceiver'],
+  FIELD_CONNECTOR: ['pinheader_1x08', 'connector_pinheader', 'field', 'connector'],
+  MOTOR_HEADER: ['pinheader_1x06', 'connector_pinheader', 'motor', 'header'],
+  TERMINAL_BLOCK: ['terminalblock', 'bornier', 'connector', 'conn_01x08'],
+  ISOLATOR: ['soic-8', 'optocoupler', 'isolator', 'package_so'],
+  RELAY_OR_DRIVER: ['soic-8', 'relay', 'driver', 'package_so'],
+  TVS: ['sod-323', 'diode_smd', 'tvs'],
   SWD: ['pinheader_1x05', 'tag-connect', 'programming', 'connector_pinheader'],
 }
 
 const preferredAssetIds = {
   USB: {
     symbols: ['Connector:USB_C_Receptacle', 'Connector:USB_C_Plug'],
-    footprints: ['Connector_USB:USB_C_Receptacle_Amphenol_12401610E4-2A'],
+    footprints: [
+      'Connector_USB:USB_C_Receptacle_HRO_TYPE-C-31-M-12',
+      'Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A',
+      'Connector_USB:USB_C_Receptacle_USB2.0_16P',
+      'Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical',
+    ],
   },
   RJ45: {
     symbols: ['Connector:8P8C_Shielded', 'Connector:RJ45'],
     footprints: ['Connector_RJ:RJ45_Amphenol_RJHSE538X'],
   },
   ESP32_S3: {
-    symbols: ['MCU_Espressif:ESP32-S3', 'RF_Module:ESP32-S3-WROOM-1'],
+    symbols: ['RF_Module:ESP32-S3-WROOM-1', 'MCU_Espressif:ESP32-S3'],
     footprints: ['RF_Module:ESP32-S3-WROOM-1', 'RF_Module:ESP32-S2-MINI-1'],
   },
   REGULATOR: {
@@ -73,11 +93,35 @@ const preferredAssetIds = {
   },
   SENSOR_CONNECTOR: {
     symbols: ['Connector_Generic:Conn_01x04'],
-    footprints: ['Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical'],
+    footprints: ['Connector_PinHeader_1.27mm:PinHeader_1x04_P1.27mm_Vertical_SMD_Pin1Left', 'Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical'],
   },
   ESC_CONNECTOR: {
     symbols: ['Connector_Generic:Conn_01x08'],
-    footprints: ['Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical'],
+    footprints: ['Connector_PinHeader_1.27mm:PinHeader_1x08_P1.27mm_Vertical_SMD_Pin1Left', 'Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical'],
+  },
+  GNSS: {
+    symbols: ['Connector_Generic:Conn_01x06'],
+    footprints: ['Connector_PinHeader_1.27mm:PinHeader_1x06_P1.27mm_Vertical_SMD_Pin1Left'],
+  },
+  RECEIVER: {
+    symbols: ['Connector_Generic:Conn_01x04'],
+    footprints: ['Connector_PinHeader_1.27mm:PinHeader_1x04_P1.27mm_Vertical_SMD_Pin1Left'],
+  },
+  TELEMETRY: {
+    symbols: ['Connector_Generic:Conn_01x04'],
+    footprints: ['Connector_PinHeader_1.27mm:PinHeader_1x04_P1.27mm_Vertical_SMD_Pin1Left'],
+  },
+  BUZZER: {
+    symbols: ['Connector_Generic:Conn_01x02'],
+    footprints: ['Connector_PinHeader_1.27mm:PinHeader_1x02_P1.27mm_Vertical_SMD_Pin1Left'],
+  },
+  CURRENT_SENSOR: {
+    symbols: ['Amplifier_Current:INA180A1'],
+    footprints: ['Package_TO_SOT_SMD:SOT-23-5'],
+  },
+  SWITCH: {
+    symbols: ['Switch:SW_Push'],
+    footprints: ['Button_Switch_SMD:SW_SPST_B3S-1000'],
   },
   IMU: {
     symbols: ['Sensor_Motion:ICM-42688-P', 'Sensor_Motion:MPU-6050'],
@@ -101,7 +145,39 @@ const preferredAssetIds = {
   },
   POWER_INPUT: {
     symbols: ['Connector_Generic:Conn_01x02'],
-    footprints: ['TerminalBlock:TerminalBlock_bornier-2_P5.08mm'],
+    footprints: ['TerminalBlock:TerminalBlock_MaiXu_MX126-5.0-02P_1x02_P5.00mm'],
+  },
+  CAN_TRANSCEIVER: {
+    symbols: ['Connector_Generic:Conn_01x06'],
+    footprints: ['Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical'],
+  },
+  RS485_TRANSCEIVER: {
+    symbols: ['Connector_Generic:Conn_01x06'],
+    footprints: ['Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical'],
+  },
+  FIELD_CONNECTOR: {
+    symbols: ['Connector_Generic:Conn_01x08'],
+    footprints: ['Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical'],
+  },
+  MOTOR_HEADER: {
+    symbols: ['Connector_Generic:Conn_01x06'],
+    footprints: ['Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical'],
+  },
+  TERMINAL_BLOCK: {
+    symbols: ['Connector_Generic:Conn_01x08'],
+    footprints: ['TerminalBlock:TerminalBlock_MaiXu_MX126-5.0-08P_1x08_P5.00mm', 'Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical'],
+  },
+  ISOLATOR: {
+    symbols: ['Connector_Generic:Conn_01x08'],
+    footprints: ['Package_SO:SOIC-8_3.9x4.9mm_P1.27mm'],
+  },
+  RELAY_OR_DRIVER: {
+    symbols: ['Connector_Generic:Conn_01x08'],
+    footprints: ['Package_SO:SOIC-8_3.9x4.9mm_P1.27mm'],
+  },
+  TVS: {
+    symbols: ['Device:D_TVS', 'Device:D'],
+    footprints: ['Diode_SMD:D_SOD-323'],
   },
   SWD: {
     symbols: ['Connector_Generic:Conn_01x05'],
@@ -267,6 +343,14 @@ export async function renderPlacedFootprintsFromLibraries(components = [], optio
   const rendered = []
   const missing = []
   for (const component of components) {
+    if (shouldUseControlledUsbFootprint(component, options)) {
+      rendered.push(controlledUsbCUsb2Footprint(component))
+      continue
+    }
+    if (shouldUseControlledUsbEsdFootprint(component, options)) {
+      rendered.push(controlledUsbEsdFootprint(component))
+      continue
+    }
     const resolved = resolveSingleComponent(component, manifest, options)
     const footprint = resolved.footprint
     if (!footprint?.path) {
@@ -276,10 +360,14 @@ export async function renderPlacedFootprintsFromLibraries(components = [], optio
     }
     try {
       let content = await readFile(footprint.path, 'utf8')
-      content = content.replace(/\(footprint\s+"([^"]+)"/, `(footprint "${footprint.libId}"`)
+      const renderedLibId = sanitizedFootprintLibId(component, footprint.libId)
+      content = content.replace(/\(footprint\s+"([^"]+)"/, `(footprint "${renderedLibId}"`)
       content = content.replace(/(\(layer\s+"F\.Cu"\)\s*)/, `$1\n\t(at ${Number(component.x).toFixed(3)} ${Number(component.y).toFixed(3)} ${component.rotation || 0})\n`)
       content = content.replace(/REF\*\*/g, component.ref)
       content = content.replace(/\(property\s+"Value"\s+"[^"]+"/, `(property "Value" "${safeText(component.value)}"`)
+      if (shouldHideGeneratedSilk(component)) content = hideTextProperties(content, ['Reference', 'Value'])
+      if (shouldSanitizeFootprintInternals(component)) content = removeNestedFootprintVias(content)
+      if (shouldSanitizeUsbCopperPads(component, footprint.libId)) content = sanitizeUsbCopperPadClearance(content)
       const modelPath = normalize3dModelPath(resolved.model3d?.path, roots)
       if (modelPath && !content.includes('(model ')) {
         content = content.replace(/\)\s*$/, `\n\t(model "${modelPath}"\n\t\t(offset (xyz 0 0 0))\n\t\t(scale (xyz 1 1 1))\n\t\t(rotate (xyz 0 0 0))\n\t)\n)\n`)
@@ -292,6 +380,252 @@ export async function renderPlacedFootprintsFromLibraries(components = [], optio
     }
   }
   return { rendered, missing }
+}
+
+export function boardForgeFootprintLibraryFiles(components = [], options = {}) {
+  const needsUsb = components.some((component) => shouldUseControlledUsbFootprint(component, options))
+  const needsUsbEsd = components.some((component) => shouldUseControlledUsbEsdFootprint(component, options))
+  if (!needsUsb && !needsUsbEsd) return []
+  const footprints = []
+  if (needsUsb) footprints.push({
+    path: 'boardforge.pretty/USB_C_Receptacle_USB2_Routeable.kicad_mod',
+    content: controlledUsbCUsb2Footprint({ ref: 'J?', value: 'BoardForge USB-C USB2', x: 0, y: 0 }).replace('(footprint "BoardForge_USB_C_Receptacle_USB2_Routeable"', '(footprint "USB_C_Receptacle_USB2_Routeable"'),
+  })
+  if (needsUsbEsd) footprints.push({
+    path: 'boardforge.pretty/USB_ESD_Array_USB2_Routeable.kicad_mod',
+    content: controlledUsbEsdFootprint({ ref: 'D?', value: 'BoardForge USB2 ESD', x: 0, y: 0 }).replace('(footprint "BoardForge_USB_ESD_Array_USB2_Routeable"', '(footprint "USB_ESD_Array_USB2_Routeable"'),
+  })
+  return [
+    {
+      path: 'fp-lib-table',
+      content: `(fp_lib_table
+  (lib (name "BoardForge")(type "KiCad")(uri "\${KIPRJMOD}/boardforge.pretty")(options "")(descr "BoardForge generated controlled footprints for verified local projects"))
+)
+`,
+    },
+    ...footprints,
+  ]
+}
+
+function sanitizedFootprintLibId(component = {}, libId = '') {
+  return shouldSanitizeFootprintInternals(component) ? `BoardForge_${safeText(libId || component.footprint || component.group).replace(/[:\\/\s]+/g, '_')}_generated` : libId
+}
+
+function shouldSanitizeFootprintInternals(component = {}) {
+  return ['ESP32_S3', 'MCU_MODULE', 'RF_MODULE'].includes(component.group) || /ESP32|WROOM|RF_Module/i.test(`${component.footprint || ''} ${component.value || ''}`)
+}
+
+function shouldSanitizeUsbCopperPads(component = {}, libId = '') {
+  return component.group === 'USB' || /USB_C|TYPE-C|TYPE_C/i.test(`${libId} ${component.footprint || ''} ${component.value || ''}`)
+}
+
+function shouldUseControlledUsbFootprint(component = {}, options = {}) {
+  if (options.useKiCadNativeUsbFootprint === true || component.useKiCadNativeUsbFootprint === true) return false
+  const group = String(component.group || '')
+  const footprint = String(component.footprint?.libId || component.footprint || '')
+  return /^USB(_C)?$/i.test(group) || /USB_C|TYPE-C|TYPE_C/i.test(footprint)
+}
+
+function shouldUseControlledUsbEsdFootprint(component = {}, options = {}) {
+  if (options.useKiCadNativeUsbEsdFootprint === true || component.useKiCadNativeUsbEsdFootprint === true) return false
+  const group = String(component.group || '')
+  const footprint = String(component.footprint?.libId || component.footprint || '')
+  const value = String(component.value || '')
+  return /^TVS$/i.test(group) || /USB_ESD_Array_USB2_Routeable|USB.*ESD|ESD.*USB|TVS/i.test(`${footprint} ${value}`)
+}
+
+function controlledUsbCUsb2Footprint(component = {}) {
+  const ref = safeText(component.ref || 'J?')
+  const value = safeText(component.value || 'BoardForge USB-C USB2')
+  const x = Number(component.x || 0).toFixed(3)
+  const y = Number(component.y || 0).toFixed(3)
+  const rotation = Number(component.rotation || 0)
+  const uuid = () => cryptoRandomUuid()
+  const pad = (name, px, py, width, height, extra = '', layers = '"F.Cu" "F.Mask" "F.Paste"') => `\t(pad "${name}" smd roundrect
+\t\t(at ${px} ${py})
+\t\t(size ${width} ${height})
+\t\t(layers ${layers})
+\t\t(roundrect_rratio 0.25)
+\t\t(uuid "${uuid()}")${extra}
+\t)`
+  const npth = (name, px, py) => `\t(pad "${name}" np_thru_hole circle
+\t\t(at ${px} ${py})
+\t\t(size 1.05 1.05)
+\t\t(drill 1.05)
+\t\t(layers "*.Cu" "*.Mask")
+\t\t(uuid "${uuid()}")
+\t)`
+  return `  (footprint "BoardForge_USB_C_Receptacle_USB2_Routeable"
+\t(layer "F.Cu")
+\t(at ${x} ${y} ${rotation})
+\t(descr "BoardForge-controlled USB-C USB2 receptacle abstraction for generated autorouted boards")
+\t(tags "BoardForge USB-C USB2 routeable generated")
+\t(property "Reference" "${ref}"
+\t\t(at 0 -5.7 ${rotation})
+\t\t(layer "F.SilkS")
+\t\t(uuid "${uuid()}")
+\t\t(effects (font (size 0.8 0.8) (thickness 0.12)))
+\t)
+\t(property "Value" "${value}"
+\t\t(at 0 4.7 ${rotation})
+\t\t(layer "F.Fab")
+\t\t(uuid "${uuid()}")
+\t\t(effects (font (size 0.7 0.7) (thickness 0.1)))
+\t)
+\t(attr smd)
+\t(fp_line (start -4.5 -3.4) (end 4.5 -3.4) (stroke (width 0.12) (type solid)) (layer "F.SilkS") (uuid "${uuid()}"))
+\t(fp_line (start -4.5 2.5) (end 4.5 2.5) (stroke (width 0.12) (type solid)) (layer "F.SilkS") (uuid "${uuid()}"))
+\t(fp_rect (start -5 -4) (end 5 3) (stroke (width 0.05) (type solid)) (fill none) (layer "F.CrtYd") (uuid "${uuid()}"))
+\t(fp_rect (start -4.4 -3.1) (end 4.4 2.6) (stroke (width 0.08) (type solid)) (fill none) (layer "F.Fab") (uuid "${uuid()}"))
+${pad('A1', -3.8, 1.7, 1.1, 1.2, '', '"B.Cu" "B.Mask"')}
+${pad('A4', -3.0, -2.9, 0.36, 0.72)}
+${pad('A5', -1.5, -2.9, 0.22, 0.72)}
+${pad('A7', 0.0, -2.9, 0.22, 0.72)}
+${pad('A6', 1.5, -2.9, 0.22, 0.72)}
+${pad('B5', 3.0, -2.9, 0.22, 0.72)}
+${pad('SH1', 3.8, 1.7, 1.1, 1.2, '', '"B.Cu" "B.Mask"')}
+${npth('MH1', -4.1, -0.3)}
+${npth('MH2', 4.1, -0.3)}
+\t(model "\${KICAD10_3DMODEL_DIR}/Connector_USB.3dshapes/USB_C_Receptacle_HRO_TYPE-C-31-M-12.wrl"
+\t\t(offset (xyz 0 0 0))
+\t\t(scale (xyz 1 1 1))
+\t\t(rotate (xyz 0 0 0))
+\t)
+  )`
+}
+
+function controlledUsbEsdFootprint(component = {}) {
+  const ref = safeText(component.ref || 'D?')
+  const value = safeText(component.value || 'BoardForge USB2 ESD')
+  const x = Number(component.x || 0).toFixed(3)
+  const y = Number(component.y || 0).toFixed(3)
+  const rotation = Number(component.rotation || 0)
+  const uuid = () => cryptoRandomUuid()
+  const pad = (name, px, py, width = 0.55, height = 0.7) => `\t(pad "${name}" smd roundrect
+\t\t(at ${px} ${py})
+\t\t(size ${width} ${height})
+\t\t(layers "F.Cu" "F.Mask" "F.Paste")
+\t\t(roundrect_rratio 0.22)
+\t\t(uuid "${uuid()}")
+\t)`
+  return `  (footprint "BoardForge_USB_ESD_Array_USB2_Routeable"
+\t(layer "F.Cu")
+\t(at ${x} ${y} ${rotation})
+\t(descr "BoardForge-controlled routeable USB2 ESD abstraction with exact 4-pin net model")
+\t(tags "BoardForge USB2 ESD TVS routeable generated")
+\t(property "Reference" "${ref}"
+\t\t(at 0 -1.7 ${rotation})
+\t\t(layer "F.Fab")
+\t\t(uuid "${uuid()}")
+\t\t(effects (font (size 0.8 0.8) (thickness 0.1)))
+\t)
+\t(property "Value" "${value}"
+\t\t(at 0 1.7 ${rotation})
+\t\t(layer "F.Fab")
+\t\t(uuid "${uuid()}")
+\t\t(effects (font (size 0.8 0.8) (thickness 0.1)))
+\t)
+\t(attr smd)
+\t(fp_rect (start -1.45 -1.1) (end 1.45 1.1) (stroke (width 0.05) (type solid)) (fill none) (layer "F.CrtYd") (uuid "${uuid()}"))
+\t(fp_rect (start -1.0 -0.72) (end 1.0 0.72) (stroke (width 0.07) (type solid)) (fill none) (layer "F.Fab") (uuid "${uuid()}"))
+${pad('1', -0.65, -0.55)}
+${pad('2', 0.65, -0.55)}
+${pad('3', -0.65, 0.55)}
+${pad('4', 0.65, 0.55)}
+\t(model "\${KICAD10_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-143.wrl"
+\t\t(offset (xyz 0 0 0))
+\t\t(scale (xyz 1 1 1))
+\t\t(rotate (xyz 0 0 0))
+\t)
+  )`
+}
+
+function sanitizeUsbCopperPadClearance(content) {
+  return rewritePadBlocks(content, (block, padName) => {
+    if (!/smd\s+roundrect/.test(block) || !/\(layers\s+"F\.Cu"\s+"F\.Mask"\s+"F\.Paste"\)/.test(block)) return block
+    if (/^(A|B)(1|4|9|12)$/i.test(padName)) return block.replace(/\(size\s+0\.6\s+1\.45\)/, '(size 0.42 0.28)')
+    if (/^(A|B)(5|6|7|8)$/i.test(padName)) return block.replace(/\(size\s+0\.3\s+1\.45\)/, '(size 0.22 0.24)')
+    return block
+  })
+}
+
+function rewritePadBlocks(content, rewrite) {
+  let output = ''
+  let cursor = 0
+  const pattern = /\(pad\s+"([^"]*)"/g
+  let match = pattern.exec(content)
+  while (match) {
+    output += content.slice(cursor, match.index)
+    const end = findClosingParen(content, match.index)
+    if (end < 0) {
+      cursor = match.index
+      break
+    }
+    const block = content.slice(match.index, end + 1)
+    output += rewrite(block, match[1])
+    cursor = end + 1
+    pattern.lastIndex = cursor
+    match = pattern.exec(content)
+  }
+  return output + content.slice(cursor)
+}
+
+function removeNestedFootprintVias(content) {
+  let output = ''
+  let cursor = 0
+  const pattern = /\n\s*\(via\b/g
+  let match = pattern.exec(content)
+  while (match) {
+    output += content.slice(cursor, match.index)
+    const end = findClosingParen(content, match.index + match[0].indexOf('(via'))
+    if (end < 0) {
+      cursor = match.index + match[0].length
+      break
+    }
+    cursor = end + 1
+    pattern.lastIndex = cursor
+    match = pattern.exec(content)
+  }
+  return output + content.slice(cursor)
+}
+
+function shouldHideGeneratedSilk(component = {}) {
+  return ['CAP', 'RES', 'TVS'].includes(component.group) || component.role === 'support_component'
+}
+
+function hideTextProperties(content, names = []) {
+  let text = content
+  for (const name of names) {
+    text = rewritePropertyBlock(text, name, (block) => block.includes('(hide yes)') ? block : block.replace(/(\(effects\s*)/, `(hide yes)\n\t\t$1`))
+  }
+  return text
+}
+
+function rewritePropertyBlock(content, name, rewrite) {
+  const marker = `(property "${name}"`
+  let cursor = 0
+  let text = content
+  while (cursor < text.length) {
+    const start = text.indexOf(marker, cursor)
+    if (start < 0) break
+    const end = findClosingParen(text, start)
+    if (end < 0) break
+    const block = text.slice(start, end + 1)
+    const replacement = rewrite(block)
+    text = `${text.slice(0, start)}${replacement}${text.slice(end + 1)}`
+    cursor = start + replacement.length
+  }
+  return text
+}
+
+function findClosingParen(text, start) {
+  let depth = 0
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === '(') depth += 1
+    if (text[index] === ')') depth -= 1
+    if (depth === 0) return index
+  }
+  return -1
 }
 
 async function loadOrBuildManifest(workspace, input = {}) {
@@ -342,6 +676,8 @@ async function indexFootprints(root, maxAssets) {
     const description = content.match(/\(descr\s+"([^"]+)"/)?.[1] || ''
     const tags = content.match(/\(tags\s+"([^"]+)"/)?.[1] || ''
     const models3d = [...content.matchAll(/\(model\s+"([^"]+)"/g)].map((match) => match[1])
+    const pads = parseFootprintPadsFromText(content)
+    const courtyard = parseFootprintCourtyardFromText(content)
     assets.push({
       kind: 'footprint',
       libId: `${library}:${name}`,
@@ -351,6 +687,12 @@ async function indexFootprints(root, maxAssets) {
       description,
       tags,
       models3d,
+      pads,
+      padCount: pads.length,
+      padNames: pads.map((pad) => pad.name),
+      courtyard,
+      widthMm: courtyard.width || footprintSizeFromPads(pads).widthMm,
+      heightMm: courtyard.height || footprintSizeFromPads(pads).heightMm,
       keywords: normalizeText(`${library} ${name} ${description} ${tags}`).split(/\s+/).filter(Boolean),
     })
   }
@@ -374,18 +716,35 @@ async function indexSymbols(root, maxAssets) {
       .filter((name) => !name.includes('_0_') && !name.includes('_1_') && !name.includes('_2_'))
       .slice(0, 500)
     for (const name of names) {
+      const libId = `${library}:${name.includes(':') ? name.split(':').pop() : name}`
+      const pins = parseSymbolPinsFromText(content, libId)
       assets.push({
         kind: 'symbol',
-        libId: `${library}:${name.includes(':') ? name.split(':').pop() : name}`,
+        libId,
         library,
         name: name.includes(':') ? name.split(':').pop() : name,
         path: file,
+        pins,
+        pinCount: pins.length,
+        pinNumbers: pins.map((pin) => pin.number).filter(Boolean),
+        pinNames: pins.map((pin) => pin.name).filter(Boolean),
         keywords: normalizeText(`${library} ${name}`).split(/\s+/).filter(Boolean),
       })
       if (assets.length >= maxAssets) return assets
     }
   }
   return assets
+}
+
+function footprintSizeFromPads(pads = []) {
+  const useful = pads.filter((pad) => Number.isFinite(pad.x) && Number.isFinite(pad.y))
+  if (!useful.length) return { widthMm: 0, heightMm: 0 }
+  const xs = useful.flatMap((pad) => [pad.x - (pad.widthMm || 0) / 2, pad.x + (pad.widthMm || 0) / 2])
+  const ys = useful.flatMap((pad) => [pad.y - (pad.heightMm || 0) / 2, pad.y + (pad.heightMm || 0) / 2])
+  return {
+    widthMm: Math.round((Math.max(...xs) - Math.min(...xs)) * 1000) / 1000,
+    heightMm: Math.round((Math.max(...ys) - Math.min(...ys)) * 1000) / 1000,
+  }
 }
 
 async function index3dModels(root, maxAssets) {
@@ -402,7 +761,9 @@ async function index3dModels(root, maxAssets) {
 }
 
 function resolveSingleComponent(component, manifest, input = {}) {
-  const forced = component.footprint ? manifest.footprints.find((asset) => asset.libId === component.footprint) : null
+  const forcedFootprintId = assetId(component.footprint)
+  const forcedSymbolId = assetId(component.symbol)
+  const forced = forcedFootprintId ? manifest.footprints.find((asset) => asset.libId === forcedFootprintId) : null
   const searchText = normalizeText([
     component.ref,
     component.group,
@@ -414,7 +775,7 @@ function resolveSingleComponent(component, manifest, input = {}) {
   const terms = searchText.split(/\s+/).filter(Boolean)
   const preferred = preferredAssetIds[component.group] || {}
   const footprint = forced || firstByLibId(manifest.footprints, preferred.footprints) || rankAssets(manifest.footprints, terms)[0] || null
-  const symbol = component.symbol ? manifest.symbols.find((asset) => asset.libId === component.symbol) : firstByLibId(manifest.symbols, preferred.symbols) || rankAssets(manifest.symbols, terms)[0] || null
+  const symbol = forcedSymbolId ? manifest.symbols.find((asset) => asset.libId === forcedSymbolId) : firstByLibId(manifest.symbols, preferred.symbols) || rankAssets(manifest.symbols, terms)[0] || null
   const model3d = footprint?.models3d?.length
     ? manifest.models3d.find((asset) => footprint.models3d.some((model) => normalizeText(model).includes(normalizeText(asset.stem)))) || { path: footprint.models3d[0] }
     : rankAssets(manifest.models3d, terms)[0] || null
@@ -425,6 +786,11 @@ function resolveSingleComponent(component, manifest, input = {}) {
     model3d,
     confidence: scoreConfidence({ component, symbol, footprint, model3d, terms, strict: input.strict }),
   }
+}
+
+function assetId(asset) {
+  if (!asset) return null
+  return typeof asset === 'string' ? asset : asset.libId || asset.name || null
 }
 
 function firstByLibId(assets = [], ids = []) {

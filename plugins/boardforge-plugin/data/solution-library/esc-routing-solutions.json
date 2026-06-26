@@ -1,0 +1,1073 @@
+[
+  {
+    "createdAt": "2026-06-25T19:36:44.017Z",
+    "updatedAt": "2026-06-25T19:36:44.017Z",
+    "implementation": {
+      "filesChanged": [],
+      "functionsAdded": [],
+      "testsAdded": []
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [],
+      "conditions": [
+        "existing-board-trace",
+        "fixed-outline"
+      ]
+    },
+    "safetyRules": [
+      "Do not change footprints",
+      "Do not remove parts",
+      "Do not move mounting holes"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "esc_original_spec_protection_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "placement",
+    "problemSignature": {
+      "errorCode": "ORIGINAL_SPEC_DRIFT",
+      "symptoms": [
+        "footprint/package substitution risk",
+        "part deletion risk"
+      ]
+    },
+    "rootCause": "Routing experiments can mutate BOM identity unless original spec is audited first.",
+    "fixSummary": "Audit and lock original parts, footprints, pads, nets, board outline, and mounting holes before routing.",
+    "recipe": [
+      "Compare derivative against original reference",
+      "Restore changed footprints/packages/pads/nets",
+      "Reject route runs if original spec is not verified"
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.019Z",
+    "updatedAt": "2026-06-25T19:36:44.019Z",
+    "implementation": {
+      "filesChanged": [],
+      "functionsAdded": [],
+      "testsAdded": []
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "LOW_SPEED_SIGNAL",
+        "GATE_DRIVE",
+        "CURRENT_SENSE"
+      ],
+      "conditions": [
+        "dense-routing"
+      ]
+    },
+    "safetyRules": [
+      "Do not fake routing",
+      "Do not rollback unrelated retained copper"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "esc_retained_copper_transaction_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "routing",
+    "problemSignature": {
+      "errorCode": "GOOD_COPPER_ROLLED_BACK_BY_BATCH_FAILURE",
+      "symptoms": [
+        "one failed net resets board",
+        "retained segments drop to zero"
+      ]
+    },
+    "rootCause": "Batch-level rollback erased valid routes when one candidate failed DRC.",
+    "fixSummary": "Route one net transactionally, prove retained copper, and rollback only the failed candidate.",
+    "recipe": [
+      "Scan retained copper before route",
+      "Write one route",
+      "Rescan KiCad file",
+      "Run local DRC",
+      "Rollback only failed net"
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.019Z",
+    "updatedAt": "2026-06-25T19:36:44.019Z",
+    "implementation": {
+      "filesChanged": [],
+      "functionsAdded": [],
+      "testsAdded": []
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller"
+      ],
+      "netRoles": [
+        "HIGH_CURRENT_POWER",
+        "GATE_DRIVE",
+        "CURRENT_SENSE_KELVIN"
+      ],
+      "conditions": [
+        "8-layer-pcb"
+      ]
+    },
+    "safetyRules": [
+      "Do not route current sense through switching copper",
+      "Do not route VBAT as thin signal trace"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "esc_8_layer_policy_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "netclass",
+    "problemSignature": {
+      "errorCode": "TWO_LAYER_ROUTING_ON_8_LAYER_ESC",
+      "symptoms": [
+        "routes crowd F.Cu/B.Cu",
+        "control nets near phase copper"
+      ]
+    },
+    "rootCause": "Router selected layers by convenience instead of ESC electrical role.",
+    "fixSummary": "Use explicit 8-layer ESC layer roles for power, return, control, rails, and protected sense routing.",
+    "recipe": [
+      "Classify net role",
+      "Select layer from ESC role policy",
+      "Reject sensitive control routes on In2.Cu unless justified"
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.019Z",
+    "updatedAt": "2026-06-25T19:36:44.019Z",
+    "implementation": {
+      "filesChanged": [],
+      "functionsAdded": [],
+      "testsAdded": []
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "HIGH_CURRENT_POWER",
+        "GND",
+        "CURRENT_SENSE_KELVIN"
+      ],
+      "conditions": [
+        "through-via-only"
+      ]
+    },
+    "safetyRules": [
+      "No blind vias",
+      "No buried vias",
+      "No microvias",
+      "No via-in-pad"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "esc_via_policy_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "routing",
+    "problemSignature": {
+      "errorCode": "FORBIDDEN_OR_ILLEGAL_VIA",
+      "drcFamily": "via_clearance",
+      "symptoms": [
+        "via in keepout",
+        "via too close to pad",
+        "via-in-pad risk"
+      ]
+    },
+    "rootCause": "Via placement guessed sites without class-specific keepout and pad clearance checks.",
+    "fixSummary": "Use standard through vias only, class by signal/power/stitching/sense, and reject illegal sites before writing.",
+    "recipe": [
+      "Classify via class",
+      "Check pad/hole/edge/keepout clearance",
+      "Use via arrays for high current",
+      "Reject blind/buried/micro/via-in-pad"
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.019Z",
+    "updatedAt": "2026-06-25T19:36:44.019Z",
+    "implementation": {
+      "filesChanged": [],
+      "functionsAdded": [],
+      "testsAdded": []
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "SWD_DEBUG",
+        "I2C",
+        "GATE_DRIVE"
+      ],
+      "conditions": [
+        "dense-pad-field"
+      ]
+    },
+    "safetyRules": [
+      "Do not weaken pad-to-pad verifier",
+      "Reject wrong-layer SMD contact"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "esc_pad_contact_not_near_pad_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "routing",
+    "problemSignature": {
+      "errorCode": "NEAR_PAD_FAKE_CONTACT",
+      "drcFamily": "unconnected_items",
+      "symptoms": [
+        "floating generated track island",
+        "track stops near pad"
+      ]
+    },
+    "rootCause": "Route generator stopped near pad geometry while verifier correctly required copper contact.",
+    "fixSummary": "Generate pad-edge contact and escape geometry that physically touches pad copper on the correct layer.",
+    "recipe": [
+      "Extract pad copper geometry",
+      "Generate legal pad-edge contact",
+      "Stitch escape to main route",
+      "Reject floating generated copper"
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.019Z",
+    "updatedAt": "2026-06-25T19:36:44.019Z",
+    "implementation": {
+      "filesChanged": [],
+      "functionsAdded": [],
+      "testsAdded": []
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "LOW_SPEED_SIGNAL",
+        "GATE_DRIVE",
+        "CURRENT_SENSE"
+      ],
+      "conditions": [
+        "existing-drc-debt"
+      ]
+    },
+    "safetyRules": [
+      "Do not globally suppress DRC",
+      "Do not call imported DRC fixed by hiding generated errors"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "esc_generated_drc_repair_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "DRC",
+    "problemSignature": {
+      "errorCode": "DRC_ERROR_REGRESSION",
+      "drcFamily": "clearance",
+      "symptoms": [
+        "route commits then worsens clearance",
+        "candidate rolled back"
+      ]
+    },
+    "rootCause": "Route mutation did not classify generated DRC by exact family before selecting repair.",
+    "fixSummary": "Classify generated DRC separately from imported debt, mutate only the route candidate, and keep other retained copper.",
+    "recipe": [
+      "Run local DRC after candidate",
+      "Map DRC objects to generated route",
+      "Dogleg/shift/change layer/move via",
+      "Rollback only unrepaired candidate"
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.019Z",
+    "updatedAt": "2026-06-25T19:36:44.019Z",
+    "implementation": {
+      "filesChanged": [],
+      "functionsAdded": [],
+      "testsAdded": []
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "power"
+      ],
+      "netRoles": [
+        "HIGH_CURRENT_POWER",
+        "MOTOR_PHASE"
+      ],
+      "conditions": [
+        "replacement-required"
+      ]
+    },
+    "safetyRules": [
+      "No theoretical replacements",
+      "No fake stock",
+      "Do not commit secrets"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "esc_sourcing_gate_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "sourcing",
+    "problemSignature": {
+      "errorCode": "UNVERIFIED_REPLACEMENT_PART",
+      "symptoms": [
+        "theoretical footprint replacement",
+        "missing stock proof"
+      ]
+    },
+    "rootCause": "Replacement flow could select parts without live stock or manual verification.",
+    "fixSummary": "Gate replacements on exact MPN, supplier SKU, stock, lifecycle, ratings, pinout, and footprint compatibility.",
+    "recipe": [
+      "Extract current MPN",
+      "Search supplier or import manual stock file",
+      "Verify ratings/pinout/footprint",
+      "Reject unverified stock"
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.019Z",
+    "updatedAt": "2026-06-25T19:36:44.019Z",
+    "implementation": {
+      "filesChanged": [],
+      "functionsAdded": [],
+      "testsAdded": []
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller"
+      ],
+      "netRoles": [
+        "BOOTSTRAP",
+        "GATE_DRIVE"
+      ],
+      "conditions": [
+        "dense-power-stage",
+        "existing-drc-debt"
+      ]
+    },
+    "safetyRules": [
+      "Do not suppress switching-node clearance",
+      "Do not change footprint/package",
+      "Rollback only failed bootstrap candidate"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "medium",
+    "id": "esc_bootstrap_generated_drc_promotion_guard_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "DRC",
+    "problemSignature": {
+      "errorCode": "BOOTSTRAP_ROUTE_GENERATED_CLEARANCE",
+      "drcFamily": "clearance",
+      "symptoms": [
+        "bootstrap route retained but creates BOOT_SEL or switching-pad clearance errors"
+      ]
+    },
+    "rootCause": "Bootstrap/support routes can satisfy pad contact while still violating dense switching-node clearance against existing generated or pad copper.",
+    "fixSummary": "Before promoting bootstrap routes, map generated DRC objects back to the candidate and require clean/repairable clearance against BOOT_SEL, SW pads, and nearby gate-drive copper.",
+    "recipe": [
+      "Run local DRC after bootstrap candidate",
+      "Map clearance items to candidate net",
+      "Try alternate pad edge or dogleg",
+      "Rollback candidate if generated clearance remains"
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.023Z",
+    "updatedAt": "2026-06-25T19:36:44.023Z",
+    "implementation": {
+      "filesChanged": [
+        "lib/esc-routelet-success.mjs",
+        "lib/jobs.mjs",
+        "tests/ratsnest-supervisor.test.mjs"
+      ],
+      "functionsAdded": [
+        "parseKiCadUnconnectedItems",
+        "extractRatsnestEndpointPairs",
+        "verifyUnconnectedItemResolved",
+        "routeByExactUnconnectedItem",
+        "commitOnlyConnectivityProgress"
+      ],
+      "testsAdded": [
+        "test:esc-parse-kicad-unconnected-items",
+        "test:esc-ratsnest-endpoint-routing",
+        "test:esc-route-commit-requires-unconnected-reduction"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "GATE_DRIVE",
+        "BOOTSTRAP",
+        "CURRENT_SENSE",
+        "CONTROL_SIGNAL",
+        "HIGH_CURRENT_POWER"
+      ],
+      "conditions": [
+        "existing-board-trace",
+        "fixed-outline",
+        "through-via-only"
+      ]
+    },
+    "safetyRules": [
+      "Do not count segments as success",
+      "Do not commit no-proof copper",
+      "Do not weaken pad-contact verification",
+      "Do not fake DRC/ERC pass"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "esc_route_by_ratsnest_not_net_label_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "routing",
+    "problemSignature": {
+      "errorCode": "UNCONNECTED_NOT_REDUCED",
+      "drcFamily": "unconnected_items",
+      "symptoms": [
+        "segments retained while KiCad unconnected count stays flat",
+        "copper drawn on a named net without resolving exact ratsnest item"
+      ]
+    },
+    "rootCause": "Router treated net labels as the work queue and committed copper without proving that the exact KiCad disconnected pad-to-pad item disappeared.",
+    "fixSummary": "Use KiCad unconnected_items as the routing source of truth; route exact source/target endpoint pairs and commit only when the item disappears, unconnected count drops, island count drops, or KiCad confirms connectivity.",
+    "recipe": [
+      "Run KiCad DRC and parse unconnected_items.",
+      "Map each unconnected item to exact source and target pads.",
+      "Route one exact ratsnest item transactionally.",
+      "Rerun KiCad DRC.",
+      "Commit only if that exact unconnected item disappears or net island/unconnected count decreases.",
+      "Rollback copper that adds segments without KiCad connectivity proof."
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.023Z",
+    "updatedAt": "2026-06-25T19:36:44.023Z",
+    "implementation": {
+      "filesChanged": [
+        "lib/jobs.mjs",
+        "tests/ratsnest-supervisor.test.mjs"
+      ],
+      "functionsAdded": [
+        "consumeRatsnestQueueWithPhysicalRouter"
+      ],
+      "testsAdded": [
+        "test:esc-ratsnest-queue-feeds-router",
+        "test:esc-ratsnest-items-physically-attempted",
+        "test:esc-no-queued-not-attempted-final-state"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "CONTROL_SIGNAL",
+        "GATE_DRIVE",
+        "BOOTSTRAP",
+        "CURRENT_SENSE",
+        "HIGH_CURRENT_POWER"
+      ],
+      "conditions": [
+        "ratsnest-driven-routing",
+        "existing-board-trace"
+      ]
+    },
+    "safetyRules": [
+      "Do not count queue creation as routing",
+      "Do not count segments as success",
+      "Rollback candidates without KiCad connectivity proof"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "esc_ratsnest_queue_must_drive_physical_router_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "routing",
+    "problemSignature": {
+      "errorCode": "RATSNEST_QUEUE_NOT_CONSUMED",
+      "drcFamily": "unconnected_items",
+      "symptoms": [
+        "KiCad unconnected items parsed",
+        "ratsnest queue populated",
+        "physical route attempt count remains zero"
+      ]
+    },
+    "rootCause": "BoardForge built the exact KiCad ratsnest work queue but stopped after audit/queue generation instead of passing queued endpoint pairs to the physical route generator.",
+    "fixSummary": "The ratsnest queue must feed routeByExactUnconnectedItem and every queued item must end as committed, rolled back, precheck rejected, blocked with exact reason, or deferred with checkpoint.",
+    "recipe": [
+      "Parse KiCad unconnected_items into exact endpoint pairs.",
+      "Pass queued endpoint pairs into the physical route generator.",
+      "Count precheck rejected, physically attempted, written, committed, rolled back, blocked, and resolved outcomes.",
+      "Reject QUEUED_NOT_ATTEMPTED as a final state unless a checkpoint is saved for runtime limit."
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.023Z",
+    "updatedAt": "2026-06-25T19:36:44.023Z",
+    "implementation": {
+      "filesChanged": [
+        "lib/jobs.mjs",
+        "lib/esc-routelet-success.mjs",
+        "tests/ratsnest-supervisor.test.mjs"
+      ],
+      "functionsAdded": [
+        "repairConnectingRatsnestRoute",
+        "mutateRouteToFixDrc",
+        "precheckRatsnestRouteCandidateAgainstDrc",
+        "diffKiCadUnconnectedItems"
+      ],
+      "testsAdded": [
+        "test:esc-repair-connecting-route-before-rollback",
+        "test:esc-drc-aware-ratsnest-routing",
+        "test:esc-unconnected-item-diff"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "CONTROL_SIGNAL",
+        "GATE_DRIVE",
+        "BOOTSTRAP",
+        "CURRENT_SENSE"
+      ],
+      "conditions": [
+        "ratsnest-driven-routing",
+        "existing-drc-debt"
+      ]
+    },
+    "safetyRules": [
+      "Do not keep DRC-unsafe copper",
+      "Do not rollback connecting routes before repair attempts",
+      "Rollback only the failed candidate"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "esc_repair_connecting_route_before_rollback_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "DRC",
+    "problemSignature": {
+      "errorCode": "CONNECTING_ROUTE_DRC_UNSAFE",
+      "drcFamily": "generated_route_drc_regression",
+      "symptoms": [
+        "route resolves exact ratsnest item",
+        "raw KiCad DRC worsens",
+        "candidate rolled back without local repair"
+      ]
+    },
+    "rootCause": "BoardForge rolled back routes that connected exact KiCad ratsnest items because generated DRC worsened, without attempting local route repair or mutation first.",
+    "fixSummary": "If a route connects the exact KiCad ratsnest item, classify generated DRC and attempt dogleg/layer/via/clearance repair before rollback.",
+    "recipe": [
+      "Write exact ratsnest candidate transactionally.",
+      "Verify exact unconnected item disappeared.",
+      "If DRC worsens, classify generated DRC instead of immediate rollback.",
+      "Try alternate layer, dogleg, via relocation/no-via, and clearance mutations.",
+      "Commit repaired route only if connectivity proof remains and DRC is not worse."
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.023Z",
+    "updatedAt": "2026-06-25T19:36:44.023Z",
+    "implementation": {
+      "filesChanged": [
+        "lib/jobs.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "lib/solution-library/esc-solutions.mjs"
+      ],
+      "functionsAdded": [
+        "repairConnectedRouteBundle",
+        "shoveRouteAroundObstacle",
+        "rerouteSegmentWithDogleg",
+        "rerouteSegmentOnAlternateLayer",
+        "moveViaToLegalSite",
+        "splitRouteIntoMultiSegmentBundle",
+        "repairConnectedRouteRouteClearance",
+        "repairRoutePadClearance",
+        "repairCopperEdgeClearance",
+        "repairRouteKeepoutConflict",
+        "transactionalRerouteGeneratedCopper",
+        "selectEscRouteWidthForNet"
+      ],
+      "testsAdded": [
+        "test:esc-connected-route-drc-repair-engine",
+        "test:esc-shove-route-around-obstacle",
+        "test:esc-reroute-generated-copper-transaction",
+        "test:esc-net-role-width-selection",
+        "test:esc-signal-net-not-routed-as-high-current"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "CONTROL_SIGNAL",
+        "GATE_DRIVE",
+        "BOOTSTRAP",
+        "CURRENT_SENSE",
+        "REGULATED_RAIL"
+      ],
+      "conditions": [
+        "ratsnest-driven-routing",
+        "connected-candidate-drc-regression",
+        "retained-generated-copper"
+      ]
+    },
+    "safetyRules": [
+      "Do not globally suppress DRC",
+      "Do not change footprints/packages/outline",
+      "No forbidden vias",
+      "Rollback only failed repaired bundle"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "esc_connected_route_drc_repair_engine_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "DRC",
+    "problemSignature": {
+      "errorCode": "CONNECTED_ROUTE_DRC_UNSAFE_REPAIR_FAILED",
+      "drcFamily": "generated_route_drc_regression",
+      "symptoms": [
+        "exact ratsnest item connects transiently",
+        "candidate creates generated DRC",
+        "route is rolled back after failed generic repair"
+      ]
+    },
+    "rootCause": "BoardForge could temporarily connect exact KiCad ratsnest items, but the local repair loop did not classify generated DRC precisely enough to shove, dogleg, change layer, adjust width, or transactionally reroute blocking generated copper.",
+    "fixSummary": "Run a local DRC-clean repair engine for connected candidates: classify generated DRC, apply net-role widths, dogleg/shove/change layer/move via, and transactionally reroute BoardForge-generated copper before final rollback.",
+    "recipe": [
+      "Audit transiently connected candidates and classify generated DRC by family.",
+      "Select trace width from net role instead of using high-current defaults for signals.",
+      "Try dogleg, route shove, alternate layer, via relocation, and multi-segment bundles.",
+      "If generated copper blocks the route, transactionally reroute only generated copper and preserve original board spec.",
+      "Commit only if exact connectivity remains and generated DRC is repaired or improved."
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.023Z",
+    "updatedAt": "2026-06-25T19:36:44.023Z",
+    "implementation": {
+      "filesChanged": [
+        "lib/single-ratsnest-solver.mjs",
+        "tests/single-ratsnest-solver.test.mjs",
+        "lib/solution-library/esc-solutions.mjs"
+      ],
+      "functionsAdded": [
+        "buildMicroRouteProblemModel",
+        "buildSingleNetObstacleMap",
+        "inflateObstaclesForNetRole",
+        "searchMultiSegmentRoute",
+        "searchViaAssistedRoute",
+        "scoreRouteByDrcRisk",
+        "findClearanceAwarePathForRatsnestItem",
+        "solveSingleRatsnestItemToCompletion"
+      ],
+      "testsAdded": [
+        "test:esc-single-ratsnest-solve-to-completion",
+        "test:esc-clearance-aware-single-net-pathfinder",
+        "test:esc-m1-c-vdd-route-clean",
+        "test:esc-single-net-drc-repair-budget",
+        "test:esc-no-smoke-test-final-state",
+        "test:solution-library-single-ratsnest-solve"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "REGULATED_RAIL",
+        "GATE_DRIVE",
+        "BOOTSTRAP",
+        "CONTROL_SIGNAL",
+        "CURRENT_SENSE"
+      ],
+      "conditions": [
+        "exact-ratsnest-routing",
+        "existing-drc-debt",
+        "through-via-only-policy",
+        "fixed-outline"
+      ]
+    },
+    "safetyRules": [
+      "Do not treat candidate generation as routing progress.",
+      "Do not keep routes without exact KiCad connectivity proof.",
+      "Do not weaken DRC/ERC gates.",
+      "Do not change footprints, packages, board outline, mounting holes, pads, or nets.",
+      "Use standard through vias only."
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "esc_single_ratsnest_item_solve_to_completion_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "routing",
+    "problemSignature": {
+      "errorCode": "SINGLE_RATSNEST_SMOKE_TESTING",
+      "drcFamily": "generated_route_drc_regression",
+      "netRole": "REGULATED_RAIL",
+      "symptoms": [
+        "exact ratsnest item connects transiently",
+        "only a tiny number of doglegs/layer changes are tried",
+        "route is rolled back without an exhausted local search",
+        "segment count changes but exact KiCad connectivity does not improve"
+      ]
+    },
+    "rootCause": "BoardForge was smoke-testing routes instead of solving one exact ratsnest item to DRC-clean completion or mathematically proving the geometry was blocked.",
+    "fixSummary": "For every exact ratsnest item, build a micro-route model, run clearance-aware pathfinding and local DRC repair with a real search budget, then commit only when KiCad connectivity is proven or return exact physical blocker geometry.",
+    "recipe": [
+      "Select one exact KiCad unconnected item as the work unit.",
+      "Build a micro-route model from scanned KiCad pads, layers, tracks, vias, keepouts, and board outline.",
+      "Run clearance-aware obstacle inflation by net-role width and clearance before writing copper.",
+      "Search direct, dogleg, multi-segment, alternate-layer, and via-assisted paths with a real budget.",
+      "If a candidate connects but fails DRC, classify and locally repair it before rollback.",
+      "Commit only when exact KiCad connectivity is proven and generated DRC is clean or exactly reviewed.",
+      "If blocked, report exact layer/object/corridor geometry and the forbidden change required."
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.023Z",
+    "updatedAt": "2026-06-25T19:36:44.023Z",
+    "implementation": {
+      "filesChanged": [
+        "lib/external-routing/router-backend-detection.mjs",
+        "tests/external-routing-workflow.test.mjs"
+      ],
+      "functionsAdded": [
+        "detectJavaRuntime",
+        "detectFreerouting",
+        "summarizeBackendDetection"
+      ],
+      "testsAdded": [
+        "test:external-routing-backend",
+        "test:java-detection",
+        "test:freerouting-detection"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "ANY"
+      ],
+      "conditions": [
+        "external-autorouter-desired"
+      ]
+    },
+    "safetyRules": [
+      "Do not modify PCB during backend detection",
+      "Do not fake DSN/SES support"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "external_router_backend_detection_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "routing",
+    "problemSignature": {
+      "errorCode": "EXTERNAL_ROUTER_BACKEND_UNRESOLVED",
+      "symptoms": [
+        "Java missing",
+        "FreeRouting missing",
+        "DSN/SES workflow unknown"
+      ]
+    },
+    "rootCause": "BoardForge previously stopped at an audit result instead of installing/detecting a real backend and separating router availability from DSN/SES workflow availability.",
+    "fixSummary": "Detect Java, FreeRouting, and DSN/SES workflow independently; select automated routing only when all are present, otherwise generate a manual GUI bridge.",
+    "recipe": [
+      "Probe Java.",
+      "Probe FreeRouting.",
+      "Probe DSN/SES export/import.",
+      "Select automated workflow only when all prerequisites are satisfied."
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.023Z",
+    "updatedAt": "2026-06-25T19:36:44.023Z",
+    "implementation": {
+      "filesChanged": [
+        "lib/external-routing/freerouting.mjs",
+        "tests/external-routing-workflow.test.mjs"
+      ],
+      "functionsAdded": [
+        "freeroutingInstallRecord",
+        "parseFreeroutingProbeOutput"
+      ],
+      "testsAdded": [
+        "test:freerouting-detection",
+        "test:java-detection"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller"
+      ],
+      "netRoles": [
+        "ANY"
+      ],
+      "conditions": [
+        "freerouting-2.2.4",
+        "windows"
+      ]
+    },
+    "safetyRules": [
+      "Keep tools local and reversible",
+      "Record exact Java path/version"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "freerouting_java_setup_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "routing",
+    "problemSignature": {
+      "errorCode": "FREEROUTING_JAVA_RUNTIME_REQUIRED",
+      "symptoms": [
+        "java not on PATH",
+        "FreeRouting JAR class version newer than Java runtime"
+      ]
+    },
+    "rootCause": "FreeRouting v2.2.4 is built with Java 25 and fails under Java 21 with UnsupportedClassVersionError.",
+    "fixSummary": "Install a portable Java 25 runtime in project tools and run FreeRouting with that explicit java.exe path.",
+    "recipe": [
+      "Install portable Java 25.",
+      "Run java -jar freerouting.jar with the Java 25 binary.",
+      "Treat Java 21 class-version failure as a runtime mismatch, not router failure."
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.023Z",
+    "updatedAt": "2026-06-25T19:36:44.023Z",
+    "implementation": {
+      "filesChanged": [
+        "lib/external-routing/kicad-dsn-ses-workflow.mjs",
+        "tests/external-routing-workflow.test.mjs"
+      ],
+      "functionsAdded": [
+        "detectDsnSesWorkflow"
+      ],
+      "testsAdded": [
+        "test:dsn-ses-workflow-detection"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "ANY"
+      ],
+      "conditions": [
+        "kicad-cli-no-specctra"
+      ]
+    },
+    "safetyRules": [
+      "Do not invent DSN files",
+      "Do not claim automated import without a verified API"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "kicad_dsn_ses_workflow_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "routing",
+    "problemSignature": {
+      "errorCode": "KICAD_CLI_NO_DSN_SES",
+      "symptoms": [
+        "KiCad CLI export lacks DSN",
+        "KiCad CLI import lacks SES"
+      ]
+    },
+    "rootCause": "Installed KiCad 10 CLI exposes PCB export/import commands but not Specctra DSN export or Specctra Session import.",
+    "fixSummary": "Detect CLI/Python/GUI DSN/SES paths separately and use the KiCad GUI manual bridge when CLI automation is unavailable.",
+    "recipe": [
+      "Inspect KiCad CLI export/import help.",
+      "Inspect Python API if available.",
+      "If GUI is available, generate exact manual Specctra DSN/SES bridge steps."
+    ]
+  },
+  {
+    "createdAt": "2026-06-25T19:36:44.023Z",
+    "updatedAt": "2026-06-25T19:36:44.023Z",
+    "implementation": {
+      "filesChanged": [
+        "lib/external-routing/kicad-dsn-ses-workflow.mjs",
+        "tests/external-routing-workflow.test.mjs"
+      ],
+      "functionsAdded": [
+        "buildManualDsnSesWorkflow",
+        "buildFreeroutingCommand"
+      ],
+      "testsAdded": [
+        "test:external-router-manual-workflow-report",
+        "test:freerouting-command-builder"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "ANY"
+      ],
+      "conditions": [
+        "manual-kicad-gui-bridge"
+      ]
+    },
+    "safetyRules": [
+      "Backup before import",
+      "Validate no forbidden vias",
+      "Verify original spec and unconnected reduction after import"
+    ],
+    "evidence": {
+      "before": {},
+      "after": {},
+      "tests": []
+    },
+    "status": "active",
+    "confidence": "high",
+    "id": "external_router_manual_gui_fallback_001",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "routing",
+    "problemSignature": {
+      "errorCode": "MANUAL_GUI_DSN_SES_BRIDGE_REQUIRED",
+      "symptoms": [
+        "FreeRouting runnable",
+        "KiCad CLI cannot export/import DSN/SES"
+      ]
+    },
+    "rootCause": "A real autorouter is installed, but KiCad automation cannot hand off DSN/SES from the command line on this machine.",
+    "fixSummary": "Generate a precise manual KiCad PCB Editor workflow plus exact FreeRouting command using project-local Java and JAR paths.",
+    "recipe": [
+      "Export Specctra DSN from KiCad PCB Editor.",
+      "Run FreeRouting with -de input.dsn -do output.ses.",
+      "Import Specctra Session in KiCad PCB Editor.",
+      "Run BoardForge DRC/ERC validation."
+    ]
+  }
+]

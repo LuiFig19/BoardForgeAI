@@ -142,6 +142,8 @@ export function normalizeComponents(components) {
     ref: component.ref,
     group: component.group || null,
     value: component.value || null,
+    role: component.role || null,
+    supportsRef: component.supportsRef || null,
     x: Number(component.x || 0),
     y: Number(component.y || 0),
     rotation: Number(component.rotation || 0),

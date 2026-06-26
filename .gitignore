@@ -13,6 +13,30 @@ dist-ssr
 .next
 .boardforge/
 *.local
+.env
+.env.*
+!.env.example
+
+# Generated PCB/routing artifacts and local autorouter tools
+*.kicad_pcb
+*.kicad_sch
+*.kicad_pro
+*.kicad_prl
+*.dsn
+*.ses
+*.bak
+*.rpt
+*.zip
+*.jar
+tools/java/
+tools/freerouting/
+
+# BoardForge local run outputs
+tmp/
+plugins/boardforge-plugin/tmp/
+plugins/boardforge-plugin/tmp-*/
+plugins/boardforge-plugin/.boardforge/
+plugins/boardforge-plugin/boardforge-*.json
 
 # Editor directories and files
 .vscode/*

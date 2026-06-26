@@ -7,16 +7,19 @@ export function selectViaStrategy(input = {}) {
   const hdi = profile.hdi || {}
   const board = input.board || {}
   const compact = isCompactBoard(board, input.components || [])
+  const stackup = input.stackup || {}
   const allowBlind = Boolean(input.allowBlindVias) && /supported|review|quote/i.test(hdi.blindVias || '')
   const allowBuried = Boolean(input.allowBuriedVias) && /supported|review|quote/i.test(hdi.buriedVias || '')
   const allowMicro = Boolean(input.allowMicrovias) && /supported|review|quote/i.test(hdi.microvias || '')
-  const allowedTransitions = transitions(layerCount, { allowBlind, allowBuried, allowMicro })
+  const allowedTransitions = transitions(layerCount, { allowBlind, allowBuried, allowMicro, stackup })
   const strategies = nets.map((net) => {
     const sensitive = ['USB_DIFF', 'ETHERNET_DIFF', 'MIPI_DIFF', 'PCIe_DIFF', 'LVDS_DIFF', 'RF', 'ANTENNA', 'CRYSTAL', 'CLOCK'].includes(net.className)
     const highCurrent = ['BATTERY', 'MOTOR_PHASE', 'POWER_HIGH_CURRENT', 'HIGH_VOLTAGE'].includes(net.className)
     const denseHighSpeed = compact && sensitive && layerCount >= 4
     const viaType = highCurrent
       ? 'through_parallel_array'
+      : input.allowViaInPad && allowMicro && denseHighSpeed && /BGA|WLCSP|QFN/i.test(`${net.package || ''} ${net.componentPackage || ''} ${input.packageHint || ''}`)
+        ? 'via_in_pad_filled_review'
       : allowMicro && denseHighSpeed && ['MIPI_DIFF', 'PCIe_DIFF', 'LVDS_DIFF'].includes(net.className)
         ? 'microvia_review'
         : allowBlind && denseHighSpeed
@@ -39,6 +42,7 @@ export function selectViaStrategy(input = {}) {
       returnViaRequired: sensitive || /POWER|BATTERY|MOTOR|HIGH_CURRENT|HIGH_VOLTAGE/i.test(net.className),
       viaArray: highCurrent ? { minParallelVias: Math.max(2, Math.ceil(Number(net.currentA || input.currentA || 2) / 1.5)), rule: 'parallel vias reduce current density and thermal rise' } : null,
       compactBoardPolicy: compact ? 'Prefer fewer layer changes, short escapes, reviewed blind/microvias only when stackup/manufacturer approve them.' : 'Use standard through vias unless signal/current class requires review.',
+      denseBoardLogic: denseBoardLogicFor({ net, viaType, compact, layerCount, allowBlind, allowBuried, allowMicro }),
       warnings: [
         ...(sensitive ? ['Sensitive/high-speed nets should avoid vias unless stackup/return path is reviewed.'] : []),
         ...(viaType.includes('blind') || viaType.includes('micro') ? ['Advanced vias increase cost and require manufacturer stackup approval.'] : []),
@@ -49,7 +53,9 @@ export function selectViaStrategy(input = {}) {
   const errors = []
   if (input.allowMicrovias && !allowMicro) errors.push(issue('ERROR', 'MICROVIAS_UNSUPPORTED_BY_PROFILE', `${profile.name || 'Selected manufacturer'} does not support requested microvias in this profile.`))
   if (input.allowBlindVias && !allowBlind) errors.push(issue('ERROR', 'BLIND_VIAS_UNSUPPORTED_BY_PROFILE', `${profile.name || 'Selected manufacturer'} does not support requested blind vias in this profile.`))
+  if (input.allowBuriedVias && !allowBuried) errors.push(issue('ERROR', 'BURIED_VIAS_UNSUPPORTED_BY_PROFILE', `${profile.name || 'Selected manufacturer'} does not support requested buried vias in this profile.`))
   if ((input.allowBlindVias || input.allowMicrovias) && layerCount < 4) errors.push(issue('ERROR', 'ADVANCED_VIAS_NEED_4PLUS_LAYERS', 'Blind and microvia strategies require at least a reviewed 4-layer stackup.'))
+  if (layerCount > 12) errors.push(issue('ERROR', 'LAYER_COUNT_ABOVE_MODELED_LIMIT', 'BoardForge currently validates via strategy up to 12 layers.'))
   return {
     schemaVersion: 1,
     status: errors.length ? 'VIA_STRATEGY_BLOCKED' : strategies.some((item) => item.warnings.length) ? 'VIA_STRATEGY_NEEDS_REVIEW' : 'VIA_STRATEGY_READY',
@@ -58,6 +64,8 @@ export function selectViaStrategy(input = {}) {
     hdi: { allowBlind, allowBuried, allowMicro, profile: hdi },
     compactBoard: compact,
     allowedTransitions,
+    transitionCount: allowedTransitions.length,
+    maxModeledLayers: 12,
     strategies,
     warnings: strategies.flatMap((item) => item.warnings.map((message) => issue('WARNING', 'VIA_STRATEGY_REVIEW', `${item.net}: ${message}`, { net: item.net }))),
     errors,
@@ -66,14 +74,30 @@ export function selectViaStrategy(input = {}) {
 }
 
 function transitions(layerCount, policy) {
+  const fromStackup = policy.stackup?.viaTransitionMatrix?.allAllowed
+  if (fromStackup?.length) return fromStackup
   if (layerCount < 4) return [['F.Cu', 'B.Cu']]
-  const bottomInner = `In${Math.max(1, layerCount - 2)}.Cu`
+  const names = layerNames(layerCount)
+  const bottom = names[names.length - 1]
+  const bottomInner = names[names.length - 2]
   return [
-    ['F.Cu', 'B.Cu'],
-    ...(policy.allowBlind ? [['F.Cu', 'In1.Cu'], ['B.Cu', bottomInner]] : []),
-    ...(policy.allowBuried ? [['In1.Cu', 'In2.Cu']] : []),
-    ...(policy.allowMicro ? [['F.Cu', 'In1.Cu'], ['B.Cu', bottomInner]] : []),
+    ['F.Cu', bottom],
+    ...(policy.allowBlind ? [['F.Cu', 'In1.Cu'], [bottom, bottomInner], ...(layerCount >= 6 ? [['F.Cu', 'In2.Cu'], [bottom, names[names.length - 3]]] : [])] : []),
+    ...(policy.allowBuried ? buriedPairs(names) : []),
+    ...(policy.allowMicro ? [['F.Cu', 'In1.Cu'], [bottom, bottomInner]] : []),
   ]
+}
+
+function layerNames(layerCount) {
+  if (layerCount <= 1) return ['F.Cu']
+  if (layerCount === 2) return ['F.Cu', 'B.Cu']
+  return ['F.Cu', ...Array.from({ length: layerCount - 2 }, (_, index) => `In${index + 1}.Cu`), 'B.Cu']
+}
+
+function buriedPairs(names) {
+  const pairs = []
+  for (let index = 1; index < names.length - 2; index += 2) pairs.push([names[index], names[index + 1]])
+  return pairs
 }
 
 function preferredLayersFor(net, layerCount) {
@@ -108,6 +132,21 @@ function maxLayerChangesFor(net, viaType, layerCount) {
   if (/USB|ETH|MIPI|PCIe|LVDS/i.test(`${net.name} ${net.className}`)) return viaType.includes('blind') || viaType.includes('micro') ? 2 : 0
   if (/POWER|BATTERY|MOTOR|HIGH_CURRENT|HIGH_VOLTAGE/i.test(net.className)) return layerCount >= 4 ? 4 : 2
   return layerCount >= 4 ? 4 : 2
+}
+
+function denseBoardLogicFor({ net, viaType, compact, layerCount, allowBlind, allowBuried, allowMicro }) {
+  return {
+    useAdvancedOnlyWhenNeeded: true,
+    preferredReason: viaType,
+    escapeOrder: /GND|POWER|BATTERY|MOTOR/i.test(`${net.name} ${net.className}`) ? 'power/ground first with parallel vias' : 'short escape first, then main route',
+    returnViaSpacingMm: /USB|ETH|MIPI|PCIe|LVDS|CLOCK|RF|ANT/i.test(`${net.name} ${net.className}`) ? 1.5 : 4,
+    allowedAdvancedTypes: [
+      ...(allowBlind ? ['blind'] : []),
+      ...(allowBuried ? ['buried'] : []),
+      ...(allowMicro ? ['microvia'] : []),
+    ],
+    compactLayerAdvice: compact && layerCount >= 6 ? 'prefer adjacent-layer blind/microvia escapes, then transition to inner stripline corridors' : 'use through vias sparingly and keep reference continuity',
+  }
 }
 
 function isCompactBoard(board, components = []) {

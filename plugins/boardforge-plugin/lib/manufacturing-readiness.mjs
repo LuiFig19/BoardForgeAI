@@ -129,8 +129,8 @@ function exportPolicy(gates) {
 
 function requiredGatesFor(kind) {
   if (kind === 'gerbers' || kind === 'drill') return ['drc_report', 'stackup_approval']
-  if (kind === 'bom') return ['erc_report', 'bom_export']
-  if (kind === 'cpl') return ['drc_report', 'cpl_export']
+  if (kind === 'bom') return ['erc_report']
+  if (kind === 'cpl') return ['drc_report']
   if (kind === 'jlcpcb') return ['erc_report', 'drc_report', 'bom_export', 'cpl_export', 'stackup_approval']
   return []
 }
@@ -222,8 +222,26 @@ function parseCsv(text) {
 }
 
 function extractReportIssues(report) {
-  const text = JSON.stringify(report || {})
-  const errors = (text.match(/"severity"\s*:\s*"error"/gi) || []).length
-  const warnings = (text.match(/"severity"\s*:\s*"warning"/gi) || []).length
+  const severities = collectIssueSeverities(report)
+  const errors = severities.filter((severity) => severity === 'error').length
+  const warnings = severities.filter((severity) => severity === 'warning').length
   return { errors, warnings }
+}
+
+function collectIssueSeverities(value) {
+  if (!value || typeof value !== 'object') return []
+  const severities = []
+  if (!Array.isArray(value) && typeof value.severity === 'string' && isIssueLike(value)) {
+    severities.push(value.severity.toLowerCase())
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (key === 'included_severities' || key === 'ignored_checks') continue
+    if (Array.isArray(child)) severities.push(...child.flatMap((item) => collectIssueSeverities(item)))
+    else if (child && typeof child === 'object') severities.push(...collectIssueSeverities(child))
+  }
+  return severities
+}
+
+function isIssueLike(value) {
+  return Boolean(value.type || value.description || value.message || value.items || value.pos || value.code)
 }

@@ -1,16 +1,18 @@
 import { polygonBounds, round } from './geometry.mjs'
 import { getManufacturerProfile, manufacturerProfiles } from './manufacturers.mjs'
 
-const signalLayers = ['F.Cu', 'In1.Cu', 'In2.Cu', 'In3.Cu', 'In4.Cu', 'In5.Cu', 'B.Cu']
+const maxSupportedLayers = 12
 
 export function planStackup(input = {}) {
   const board = input.board || {}
-  const layerCount = Number(input.layerCount || board.layerCount || 4)
+  const requestedLayerCount = Number(input.layerCount || board.layerCount || 4)
+  const layerCount = Math.min(maxSupportedLayers, Math.max(1, requestedLayerCount))
   const profile = getManufacturerProfile(input.manufacturerProfile || input.manufacturer || 'JLCPCB_STANDARD')
   const complexity = scoreBoardComplexity({ ...input, board: { ...board, layerCount } })
   const layers = buildLayerStack(layerCount, input)
   const hdi = planHdiViaPolicy({ input, profile, layerCount, complexity })
   const warnings = [
+    ...(requestedLayerCount > maxSupportedLayers ? [{ severity: 'WARNING', code: 'LAYER_COUNT_CLAMPED_TO_12', message: `BoardForge currently models up to ${maxSupportedLayers} copper layers; requested ${requestedLayerCount} was clamped for planning.` }] : []),
     ...(!profile.layerOptions?.includes(layerCount) ? [{ severity: 'WARNING', code: 'LAYER_COUNT_REQUIRES_FAB_REVIEW', message: `${profile.name} profile does not list ${layerCount} layers as a standard option.` }] : []),
     ...hdi.warnings,
   ]
@@ -20,8 +22,10 @@ export function planStackup(input = {}) {
     manufacturer: { id: profile.id, name: profile.name },
     layerCount,
     layers,
+    layerRoles: summarizeLayerRoles(layers),
     complexity,
     hdi,
+    viaTransitionMatrix: viaTransitionMatrixFor(layers, hdi, input),
     impedanceIntent: impedanceIntentFor(input, layers),
     copperStrategy: copperStrategyFor(input, layers),
     thermalStrategy: thermalStrategyFor(input),
@@ -131,17 +135,24 @@ function buildLayerStack(layerCount, input) {
     { index: 2, name: 'B.Cu', role: 'ground_pour_secondary_signals', reference: null },
   ]
   const layers = []
+  const names = copperLayerNames(layerCount)
   for (let index = 0; index < layerCount; index += 1) {
-    const name = signalLayers[index] || `In${index}.Cu`
-    const last = index === layerCount - 1
+    const name = names[index]
     layers.push({
       index: index + 1,
-      name: last ? 'B.Cu' : name,
+      name,
       role: layerRole(index, layerCount, input),
-      reference: index === 0 ? 'In1.Cu' : index === layerCount - 1 ? `In${Math.max(1, layerCount - 2)}.Cu` : null,
+      reference: referenceForLayer(index, names),
+      routePreference: routePreferenceForLayer(index, layerCount, input),
     })
   }
   return layers
+}
+
+function copperLayerNames(layerCount) {
+  if (layerCount === 1) return ['F.Cu']
+  if (layerCount === 2) return ['F.Cu', 'B.Cu']
+  return ['F.Cu', ...Array.from({ length: layerCount - 2 }, (_, index) => `In${index + 1}.Cu`), 'B.Cu']
 }
 
 function layerRole(index, layerCount, input) {
@@ -149,8 +160,36 @@ function layerRole(index, layerCount, input) {
   if (index === 1) return 'continuous_ground_reference'
   if (index === 2) return /motor|battery|poe|power/i.test(JSON.stringify(input)) ? 'power_planes_high_current' : 'power_planes'
   if (index === layerCount - 1) return 'bottom_components_secondary_signals'
-  if (index % 2 === 1) return 'ground_or_return_reference'
-  return 'inner_signals_or_split_power'
+  if (index === layerCount - 2) return 'bottom_return_reference'
+  if (index % 3 === 1) return 'ground_or_return_reference'
+  if (index % 3 === 2) return /motor|battery|poe|power/i.test(JSON.stringify(input)) ? 'power_or_high_current_plane' : 'inner_signal_stripline'
+  return 'inner_signal_routing'
+}
+
+function referenceForLayer(index, names) {
+  if (names.length < 3) return index === 0 ? names[names.length - 1] : null
+  if (index === 0) return names[1]
+  if (index === names.length - 1) return names[names.length - 2]
+  const previous = names[index - 1]
+  const next = names[index + 1]
+  return /In1|In4|In7|In10/.test(previous) ? previous : next || previous
+}
+
+function routePreferenceForLayer(index, layerCount, input) {
+  if (index === 0) return 'short component escape, RF, USB, controlled edge fanout'
+  if (index === layerCount - 1) return 'secondary signals, debug, low-speed escape'
+  const text = JSON.stringify(input || '').toLowerCase()
+  if (index === 1 || index === layerCount - 2) return 'solid uninterrupted ground/reference plane'
+  if (/motor|battery|poe|high current/.test(text) && index === 2) return 'wide power plane and high-current pours'
+  return index % 2 === 0 ? 'stripline signals with adjacent return plane' : 'reference/quiet return copper'
+}
+
+function summarizeLayerRoles(layers) {
+  return {
+    signalLayers: layers.filter((layer) => /signal|escape|routing|components/i.test(layer.role)).map((layer) => layer.name),
+    referenceLayers: layers.filter((layer) => /ground|return/i.test(layer.role)).map((layer) => layer.name),
+    powerLayers: layers.filter((layer) => /power|current/i.test(layer.role)).map((layer) => layer.name),
+  }
 }
 
 function planHdiViaPolicy({ input, profile, layerCount, complexity }) {
@@ -167,19 +206,60 @@ function planHdiViaPolicy({ input, profile, layerCount, complexity }) {
   return {
     requested,
     allowed: requested ? allowed && !errors.length : false,
-    requiresAdvancedReview: requested || warnings.some((item) => /HDI/.test(item.code)),
+    requiresAdvancedReview: requested,
     blindVias: hdi.blindVias || 'not_supported',
     buriedVias: hdi.buriedVias || 'not_supported',
     microvias: hdi.microvias || 'not_supported',
     viaInPad: hdi.viaInPad || 'not_supported',
     supportedBlindViaPairs: hdi.supportedBlindViaPairs || [],
     supportedBuriedViaPairs: hdi.supportedBuriedViaPairs || [],
+    recommendedBlindViaPairs: recommendedBlindViaPairs(layerCount, hdi),
+    recommendedBuriedViaPairs: recommendedBuriedViaPairs(layerCount, hdi),
+    viaInPadAllowed: requested && /supported|review|filled|capped/i.test(hdi.viaInPad || ''),
     minMicroviaDiameterMm: hdi.minMicroviaDiameterMm || null,
     minMicroviaDrillMm: hdi.minMicroviaDrillMm || null,
     costMultiplier: hdi.costMultiplier || 1,
     warnings,
     errors,
   }
+}
+
+function recommendedBlindViaPairs(layerCount, hdi = {}) {
+  const names = copperLayerNames(layerCount)
+  const pairs = [
+    [names[0], names[1]],
+    [names[names.length - 1], names[names.length - 2]],
+    ...(layerCount >= 6 ? [[names[0], names[2]], [names[names.length - 1], names[names.length - 3]]] : []),
+  ].filter(([a, b]) => a && b)
+  const supported = hdi.supportedBlindViaPairs || []
+  return pairs.filter((pair) => !supported.length || supported.some(([a, b]) => samePair(pair, [a, b])) || /supported/i.test(hdi.blindVias || ''))
+}
+
+function recommendedBuriedViaPairs(layerCount, hdi = {}) {
+  const names = copperLayerNames(layerCount)
+  const pairs = []
+  for (let index = 1; index < names.length - 2; index += 2) pairs.push([names[index], names[index + 1]])
+  const supported = hdi.supportedBuriedViaPairs || []
+  return pairs.filter((pair) => !supported.length || supported.some(([a, b]) => samePair(pair, [a, b])) || /supported/i.test(hdi.buriedVias || ''))
+}
+
+function viaTransitionMatrixFor(layers, hdi = {}, input = {}) {
+  const names = layers.map((layer) => layer.name)
+  const through = names.length > 1 ? [[names[0], names[names.length - 1]]] : []
+  const blind = wantsAdvancedVias(input) ? recommendedBlindViaPairs(names.length, hdi) : []
+  const buried = wantsAdvancedVias(input) ? recommendedBuriedViaPairs(names.length, hdi) : []
+  const microvia = input.allowMicrovias ? blind.filter((pair) => Math.abs(names.indexOf(pair[0]) - names.indexOf(pair[1])) === 1) : []
+  return {
+    through,
+    blind,
+    buried,
+    microvia,
+    allAllowed: [...through, ...blind, ...buried, ...microvia].filter((pair, index, all) => all.findIndex((candidate) => samePair(pair, candidate)) === index),
+  }
+}
+
+function samePair(a, b) {
+  return (a[0] === b[0] && a[1] === b[1]) || (a[0] === b[1] && a[1] === b[0])
 }
 
 function impedanceIntentFor(input, layers) {

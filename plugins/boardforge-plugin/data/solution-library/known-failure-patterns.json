@@ -1,0 +1,311 @@
+[
+  {
+    "id": "esc_original_spec_protection_001",
+    "problemSignature": {
+      "errorCode": "ORIGINAL_SPEC_DRIFT",
+      "symptoms": [
+        "footprint/package substitution risk",
+        "part deletion risk"
+      ]
+    },
+    "rootCause": "Routing experiments can mutate BOM identity unless original spec is audited first.",
+    "recipe": [
+      "Compare derivative against original reference",
+      "Restore changed footprints/packages/pads/nets",
+      "Reject route runs if original spec is not verified"
+    ]
+  },
+  {
+    "id": "esc_retained_copper_transaction_001",
+    "problemSignature": {
+      "errorCode": "GOOD_COPPER_ROLLED_BACK_BY_BATCH_FAILURE",
+      "symptoms": [
+        "one failed net resets board",
+        "retained segments drop to zero"
+      ]
+    },
+    "rootCause": "Batch-level rollback erased valid routes when one candidate failed DRC.",
+    "recipe": [
+      "Scan retained copper before route",
+      "Write one route",
+      "Rescan KiCad file",
+      "Run local DRC",
+      "Rollback only failed net"
+    ]
+  },
+  {
+    "id": "esc_8_layer_policy_001",
+    "problemSignature": {
+      "errorCode": "TWO_LAYER_ROUTING_ON_8_LAYER_ESC",
+      "symptoms": [
+        "routes crowd F.Cu/B.Cu",
+        "control nets near phase copper"
+      ]
+    },
+    "rootCause": "Router selected layers by convenience instead of ESC electrical role.",
+    "recipe": [
+      "Classify net role",
+      "Select layer from ESC role policy",
+      "Reject sensitive control routes on In2.Cu unless justified"
+    ]
+  },
+  {
+    "id": "esc_via_policy_001",
+    "problemSignature": {
+      "errorCode": "FORBIDDEN_OR_ILLEGAL_VIA",
+      "drcFamily": "via_clearance",
+      "symptoms": [
+        "via in keepout",
+        "via too close to pad",
+        "via-in-pad risk"
+      ]
+    },
+    "rootCause": "Via placement guessed sites without class-specific keepout and pad clearance checks.",
+    "recipe": [
+      "Classify via class",
+      "Check pad/hole/edge/keepout clearance",
+      "Use via arrays for high current",
+      "Reject blind/buried/micro/via-in-pad"
+    ]
+  },
+  {
+    "id": "esc_pad_contact_not_near_pad_001",
+    "problemSignature": {
+      "errorCode": "NEAR_PAD_FAKE_CONTACT",
+      "drcFamily": "unconnected_items",
+      "symptoms": [
+        "floating generated track island",
+        "track stops near pad"
+      ]
+    },
+    "rootCause": "Route generator stopped near pad geometry while verifier correctly required copper contact.",
+    "recipe": [
+      "Extract pad copper geometry",
+      "Generate legal pad-edge contact",
+      "Stitch escape to main route",
+      "Reject floating generated copper"
+    ]
+  },
+  {
+    "id": "esc_generated_drc_repair_001",
+    "problemSignature": {
+      "errorCode": "DRC_ERROR_REGRESSION",
+      "drcFamily": "clearance",
+      "symptoms": [
+        "route commits then worsens clearance",
+        "candidate rolled back"
+      ]
+    },
+    "rootCause": "Route mutation did not classify generated DRC by exact family before selecting repair.",
+    "recipe": [
+      "Run local DRC after candidate",
+      "Map DRC objects to generated route",
+      "Dogleg/shift/change layer/move via",
+      "Rollback only unrepaired candidate"
+    ]
+  },
+  {
+    "id": "esc_sourcing_gate_001",
+    "problemSignature": {
+      "errorCode": "UNVERIFIED_REPLACEMENT_PART",
+      "symptoms": [
+        "theoretical footprint replacement",
+        "missing stock proof"
+      ]
+    },
+    "rootCause": "Replacement flow could select parts without live stock or manual verification.",
+    "recipe": [
+      "Extract current MPN",
+      "Search supplier or import manual stock file",
+      "Verify ratings/pinout/footprint",
+      "Reject unverified stock"
+    ]
+  },
+  {
+    "id": "esc_bootstrap_generated_drc_promotion_guard_001",
+    "problemSignature": {
+      "errorCode": "BOOTSTRAP_ROUTE_GENERATED_CLEARANCE",
+      "drcFamily": "clearance",
+      "symptoms": [
+        "bootstrap route retained but creates BOOT_SEL or switching-pad clearance errors"
+      ]
+    },
+    "rootCause": "Bootstrap/support routes can satisfy pad contact while still violating dense switching-node clearance against existing generated or pad copper.",
+    "recipe": [
+      "Run local DRC after bootstrap candidate",
+      "Map clearance items to candidate net",
+      "Try alternate pad edge or dogleg",
+      "Rollback candidate if generated clearance remains"
+    ]
+  },
+  {
+    "id": "esc_route_by_ratsnest_not_net_label_001",
+    "problemSignature": {
+      "errorCode": "UNCONNECTED_NOT_REDUCED",
+      "drcFamily": "unconnected_items",
+      "symptoms": [
+        "segments retained while KiCad unconnected count stays flat",
+        "copper drawn on a named net without resolving exact ratsnest item"
+      ]
+    },
+    "rootCause": "Router treated net labels as the work queue and committed copper without proving that the exact KiCad disconnected pad-to-pad item disappeared.",
+    "recipe": [
+      "Run KiCad DRC and parse unconnected_items.",
+      "Map each unconnected item to exact source and target pads.",
+      "Route one exact ratsnest item transactionally.",
+      "Rerun KiCad DRC.",
+      "Commit only if that exact unconnected item disappears or net island/unconnected count decreases.",
+      "Rollback copper that adds segments without KiCad connectivity proof."
+    ]
+  },
+  {
+    "id": "esc_ratsnest_queue_must_drive_physical_router_001",
+    "problemSignature": {
+      "errorCode": "RATSNEST_QUEUE_NOT_CONSUMED",
+      "drcFamily": "unconnected_items",
+      "symptoms": [
+        "KiCad unconnected items parsed",
+        "ratsnest queue populated",
+        "physical route attempt count remains zero"
+      ]
+    },
+    "rootCause": "BoardForge built the exact KiCad ratsnest work queue but stopped after audit/queue generation instead of passing queued endpoint pairs to the physical route generator.",
+    "recipe": [
+      "Parse KiCad unconnected_items into exact endpoint pairs.",
+      "Pass queued endpoint pairs into the physical route generator.",
+      "Count precheck rejected, physically attempted, written, committed, rolled back, blocked, and resolved outcomes.",
+      "Reject QUEUED_NOT_ATTEMPTED as a final state unless a checkpoint is saved for runtime limit."
+    ]
+  },
+  {
+    "id": "esc_repair_connecting_route_before_rollback_001",
+    "problemSignature": {
+      "errorCode": "CONNECTING_ROUTE_DRC_UNSAFE",
+      "drcFamily": "generated_route_drc_regression",
+      "symptoms": [
+        "route resolves exact ratsnest item",
+        "raw KiCad DRC worsens",
+        "candidate rolled back without local repair"
+      ]
+    },
+    "rootCause": "BoardForge rolled back routes that connected exact KiCad ratsnest items because generated DRC worsened, without attempting local route repair or mutation first.",
+    "recipe": [
+      "Write exact ratsnest candidate transactionally.",
+      "Verify exact unconnected item disappeared.",
+      "If DRC worsens, classify generated DRC instead of immediate rollback.",
+      "Try alternate layer, dogleg, via relocation/no-via, and clearance mutations.",
+      "Commit repaired route only if connectivity proof remains and DRC is not worse."
+    ]
+  },
+  {
+    "id": "esc_connected_route_drc_repair_engine_001",
+    "problemSignature": {
+      "errorCode": "CONNECTED_ROUTE_DRC_UNSAFE_REPAIR_FAILED",
+      "drcFamily": "generated_route_drc_regression",
+      "symptoms": [
+        "exact ratsnest item connects transiently",
+        "candidate creates generated DRC",
+        "route is rolled back after failed generic repair"
+      ]
+    },
+    "rootCause": "BoardForge could temporarily connect exact KiCad ratsnest items, but the local repair loop did not classify generated DRC precisely enough to shove, dogleg, change layer, adjust width, or transactionally reroute blocking generated copper.",
+    "recipe": [
+      "Audit transiently connected candidates and classify generated DRC by family.",
+      "Select trace width from net role instead of using high-current defaults for signals.",
+      "Try dogleg, route shove, alternate layer, via relocation, and multi-segment bundles.",
+      "If generated copper blocks the route, transactionally reroute only generated copper and preserve original board spec.",
+      "Commit only if exact connectivity remains and generated DRC is repaired or improved."
+    ]
+  },
+  {
+    "id": "esc_single_ratsnest_item_solve_to_completion_001",
+    "problemSignature": {
+      "errorCode": "SINGLE_RATSNEST_SMOKE_TESTING",
+      "drcFamily": "generated_route_drc_regression",
+      "netRole": "REGULATED_RAIL",
+      "symptoms": [
+        "exact ratsnest item connects transiently",
+        "only a tiny number of doglegs/layer changes are tried",
+        "route is rolled back without an exhausted local search",
+        "segment count changes but exact KiCad connectivity does not improve"
+      ]
+    },
+    "rootCause": "BoardForge was smoke-testing routes instead of solving one exact ratsnest item to DRC-clean completion or mathematically proving the geometry was blocked.",
+    "recipe": [
+      "Select one exact KiCad unconnected item as the work unit.",
+      "Build a micro-route model from scanned KiCad pads, layers, tracks, vias, keepouts, and board outline.",
+      "Run clearance-aware obstacle inflation by net-role width and clearance before writing copper.",
+      "Search direct, dogleg, multi-segment, alternate-layer, and via-assisted paths with a real budget.",
+      "If a candidate connects but fails DRC, classify and locally repair it before rollback.",
+      "Commit only when exact KiCad connectivity is proven and generated DRC is clean or exactly reviewed.",
+      "If blocked, report exact layer/object/corridor geometry and the forbidden change required."
+    ]
+  },
+  {
+    "id": "external_router_backend_detection_001",
+    "problemSignature": {
+      "errorCode": "EXTERNAL_ROUTER_BACKEND_UNRESOLVED",
+      "symptoms": [
+        "Java missing",
+        "FreeRouting missing",
+        "DSN/SES workflow unknown"
+      ]
+    },
+    "rootCause": "BoardForge previously stopped at an audit result instead of installing/detecting a real backend and separating router availability from DSN/SES workflow availability.",
+    "recipe": [
+      "Probe Java.",
+      "Probe FreeRouting.",
+      "Probe DSN/SES export/import.",
+      "Select automated workflow only when all prerequisites are satisfied."
+    ]
+  },
+  {
+    "id": "freerouting_java_setup_001",
+    "problemSignature": {
+      "errorCode": "FREEROUTING_JAVA_RUNTIME_REQUIRED",
+      "symptoms": [
+        "java not on PATH",
+        "FreeRouting JAR class version newer than Java runtime"
+      ]
+    },
+    "rootCause": "FreeRouting v2.2.4 is built with Java 25 and fails under Java 21 with UnsupportedClassVersionError.",
+    "recipe": [
+      "Install portable Java 25.",
+      "Run java -jar freerouting.jar with the Java 25 binary.",
+      "Treat Java 21 class-version failure as a runtime mismatch, not router failure."
+    ]
+  },
+  {
+    "id": "kicad_dsn_ses_workflow_001",
+    "problemSignature": {
+      "errorCode": "KICAD_CLI_NO_DSN_SES",
+      "symptoms": [
+        "KiCad CLI export lacks DSN",
+        "KiCad CLI import lacks SES"
+      ]
+    },
+    "rootCause": "Installed KiCad 10 CLI exposes PCB export/import commands but not Specctra DSN export or Specctra Session import.",
+    "recipe": [
+      "Inspect KiCad CLI export/import help.",
+      "Inspect Python API if available.",
+      "If GUI is available, generate exact manual Specctra DSN/SES bridge steps."
+    ]
+  },
+  {
+    "id": "external_router_manual_gui_fallback_001",
+    "problemSignature": {
+      "errorCode": "MANUAL_GUI_DSN_SES_BRIDGE_REQUIRED",
+      "symptoms": [
+        "FreeRouting runnable",
+        "KiCad CLI cannot export/import DSN/SES"
+      ]
+    },
+    "rootCause": "A real autorouter is installed, but KiCad automation cannot hand off DSN/SES from the command line on this machine.",
+    "recipe": [
+      "Export Specctra DSN from KiCad PCB Editor.",
+      "Run FreeRouting with -de input.dsn -do output.ses.",
+      "Import Specctra Session in KiCad PCB Editor.",
+      "Run BoardForge DRC/ERC validation."
+    ]
+  }
+]

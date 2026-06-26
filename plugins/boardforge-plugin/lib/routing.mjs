@@ -17,6 +17,9 @@ export function generateRoutingPlan(nets, options = {}) {
     const end = net.end || endpoints.end
     const viaPlan = planViasForRoute({ net, start, end, board: { ...board, layerCount }, zones: designIntent.zones, profile: options.profile || {} })
     const waypoints = start && end ? routeWaypoints({ start, end, net, viaPlan }) : []
+    const routeLayerPreference = viaPlan.candidates?.length
+      ? [viaPlan.candidates[0].targetLayer || viaTargetLayer(viaPlan.candidates[0]) || 'B.Cu']
+      : profile.layerPreference
     return {
       net: net.name,
       className: net.className || 'DEFAULT',
@@ -26,7 +29,7 @@ export function generateRoutingPlan(nets, options = {}) {
       strategy: strategyForClass(net.className || 'DEFAULT', layerCount),
       widthMm: profile.traceWidthMm,
       clearanceMm: profile.clearanceMm,
-      layerPreference: profile.layerPreference,
+      layerPreference: routeLayerPreference,
       viaPlan,
       waypoints,
       estimatedLengthMm: estimatePathLength(waypoints),
@@ -42,6 +45,11 @@ export function generateRoutingPlan(nets, options = {}) {
     designIntent,
     warnings: ['CLI MVP generates a routing/via/copper-pour plan only. It does not claim full autorouting.', 'Use KiCad interactive routing or a later BoardForge routing adapter for completed copper.', 'Sensitive antenna, thermal, and analog/IMU keepouts require human review before manufacturing.'],
   }
+}
+
+function viaTargetLayer(via = {}) {
+  const layers = via.layers || []
+  return layers.find((layer) => String(layer) !== 'F.Cu') || null
 }
 
 function routeWaypoints({ start, end, net, viaPlan }) {

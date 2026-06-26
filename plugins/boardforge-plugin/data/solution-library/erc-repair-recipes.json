@@ -1,0 +1,9 @@
+{
+  "recipes": [
+    {
+      "id": "esc_erc_intent_classification",
+      "families": ["pin_to_pin", "lib_symbol_mismatch", "isolated_pin_label"],
+      "steps": ["classify true error vs review item", "repair local metadata only if electrically valid", "do not globally suppress ERC"]
+    }
+  ]
+}

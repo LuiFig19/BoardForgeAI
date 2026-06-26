@@ -16,6 +16,13 @@ export function validateBoardOutline(board, profile) {
   if (points.length < 3) return [issue('BLOCKER', 'OUTLINE_TOO_FEW_POINTS', 'Board outline needs at least three points.')]
   if (Math.abs(polygonArea(points)) < 1) issues.push(issue('BLOCKER', 'OUTLINE_ZERO_AREA', 'Board outline area is too small or invalid.'))
   if (hasSelfIntersections(points)) issues.push(issue('BLOCKER', 'OUTLINE_SELF_INTERSECTION', 'Board outline has self-intersecting Edge.Cuts geometry.'))
+  const minEdge = Math.max(0.25, profile.edgeClearanceMm || 0.35)
+  const shortSegments = points
+    .map((point, index) => ({ start: point, end: points[(index + 1) % points.length], lengthMm: distance(point, points[(index + 1) % points.length]) }))
+    .filter((segment) => segment.lengthMm < minEdge)
+  if (shortSegments.length) issues.push(issue('WARNING', 'OUTLINE_SHORT_EDGE_SEGMENTS', 'Board outline has very short Edge.Cuts segments that may create fabrication or DRC noise.', { count: shortSegments.length, minEdgeMm: minEdge }))
+  const acuteAngles = outlineAngles(points).filter((angle) => angle.degrees < 35)
+  if (acuteAngles.length) issues.push(issue('WARNING', 'OUTLINE_ACUTE_CORNERS', 'Board outline has sharp acute corners; consider radius/fillets for manufacturing.', { count: acuteAngles.length, minDegrees: Math.min(...acuteAngles.map((angle) => angle.degrees)) }))
   for (const hole of board.mountingHoles || []) {
     const radius = hole.diameterMm / 2
     if (!pointInPolygon(hole, points)) issues.push(issue('ERROR', 'MOUNTING_HOLE_OUTSIDE_BOARD', `${hole.id} is outside the board outline.`, { hole }))
@@ -24,6 +31,18 @@ export function validateBoardOutline(board, profile) {
     if (nearestEdge < required) issues.push(issue('ERROR', 'MOUNTING_HOLE_EDGE_CLEARANCE', `${hole.id} is too close to the board edge.`, { nearestEdge, required }))
   }
   return issues
+}
+
+function outlineAngles(points) {
+  return points.map((point, index) => {
+    const prev = points[(index - 1 + points.length) % points.length]
+    const next = points[(index + 1) % points.length]
+    const a = Math.atan2(prev.y - point.y, prev.x - point.x)
+    const b = Math.atan2(next.y - point.y, next.x - point.x)
+    let degrees = Math.abs((a - b) * 180 / Math.PI)
+    if (degrees > 180) degrees = 360 - degrees
+    return { index, degrees }
+  })
 }
 
 export function nearestDistanceToPolygonEdge(point, polygon) {

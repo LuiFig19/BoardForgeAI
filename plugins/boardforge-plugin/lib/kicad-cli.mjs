@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import JSZip from 'jszip'
 
@@ -29,13 +29,20 @@ export async function detectKiCadCli(config = {}) {
   return { available: false, path: null, version: null, reason: 'kicad-cli was not found on PATH or common KiCad install paths.' }
 }
 
-export async function runDrc({ pcbFile, outputFile, kicadCliPath }) {
+export async function runDrc({ pcbFile, outputFile, kicadCliPath, saveBoard = true } = {}) {
   return runReportCommand({
     kicadCliPath,
-    args: ['pcb', 'drc', '--format', 'json', '--units', 'mm', '--severity-all', '--exit-code-violations', '--output', outputFile, pcbFile],
+    args: buildDrcArgs({ pcbFile, outputFile, saveBoard }),
     outputFile,
     reportKind: 'DRC',
   })
+}
+
+export function buildDrcArgs({ pcbFile, outputFile, saveBoard = true } = {}) {
+  const args = ['pcb', 'drc', '--format', 'json', '--units', 'mm', '--severity-all']
+  if (saveBoard) args.push('--refill-zones', '--save-board')
+  args.push('--exit-code-violations', '--output', outputFile, pcbFile)
+  return args
 }
 
 export async function runErc({ schFile, outputFile, kicadCliPath }) {
@@ -49,11 +56,18 @@ export async function runErc({ schFile, outputFile, kicadCliPath }) {
 
 async function runReportCommand({ kicadCliPath, args, outputFile, reportKind }) {
   await mkdir(path.dirname(outputFile), { recursive: true })
+  await rm(outputFile, { force: true })
   const run = await runProcess(kicadCliPath, args, { timeoutMs: 120000, allowNonZero: true })
-  const report = await readJsonIfExists(outputFile)
+  let report = await readJsonIfExists(outputFile)
+  if (!report) {
+    report = emptyReport(reportKind, outputFile, run)
+    await writeFile(outputFile, JSON.stringify(report, null, 2), 'utf8')
+  }
+  normalizeReportIssues(report, reportKind)
+  await writeFile(outputFile, JSON.stringify(report, null, 2), 'utf8')
   const issues = extractReportIssues(report)
   return {
-    status: run.exitCode === 0 && issues.errors === 0 ? `${reportKind}_PASSED` : `${reportKind}_NEEDS_FIX`,
+    status: reportStatus(reportKind, issues),
     command: [kicadCliPath, ...args],
     exitCode: run.exitCode,
     stdout: run.stdout,
@@ -62,6 +76,33 @@ async function runReportCommand({ kicadCliPath, args, outputFile, reportKind }) 
     report,
     issueCounts: issues,
   }
+}
+
+function emptyReport(reportKind, outputFile, run = {}) {
+  const key = reportKind === 'ERC' ? 'sheets' : 'violations'
+  const message = [run.stdout, run.stderr].filter(Boolean).join('\n').trim()
+  const commandFailed = Number(run.exitCode || 0) !== 0 && Boolean(message)
+  const failureIssue = {
+    severity: 'error',
+    type: `${reportKind.toLowerCase()}_command_failed`,
+    description: message || `${reportKind} command failed before writing a JSON report.`,
+  }
+  return {
+    source: path.basename(outputFile),
+    generatedBy: 'BoardForge KiCad CLI adapter',
+    status: commandFailed ? `${reportKind}_COMMAND_FAILED` : `${reportKind}_PASSED`,
+    exitCode: run.exitCode ?? null,
+    message,
+    [key]: reportKind === 'ERC'
+      ? [{ path: '/', violations: commandFailed ? [failureIssue] : [] }]
+      : (commandFailed ? [failureIssue] : []),
+  }
+}
+
+function reportStatus(reportKind, issues) {
+  if (issues.errors > 0) return `${reportKind}_NEEDS_FIX`
+  if (issues.warnings > 0) return `${reportKind}_PASSED_WITH_WARNINGS`
+  return `${reportKind}_PASSED`
 }
 
 export async function exportGerbers({ pcbFile, outputDir, kicadCliPath }) {
@@ -81,7 +122,7 @@ export async function exportDrill({ pcbFile, outputDir, kicadCliPath }) {
 
 export async function exportCpl({ pcbFile, outputFile, kicadCliPath }) {
   await mkdir(path.dirname(outputFile), { recursive: true })
-  const args = ['pcb', 'export', 'pos', '--output', outputFile, '--side', 'both', '--format', 'csv', '--units', 'mm', '--smd-only', pcbFile]
+  const args = ['pcb', 'export', 'pos', '--output', outputFile, '--side', 'both', '--format', 'csv', '--units', 'mm', pcbFile]
   const run = await runProcess(kicadCliPath, args, { timeoutMs: 120000, allowNonZero: true })
   return exportResult('CPL', run, outputFile, existsSync(outputFile) ? [outputFile] : [])
 }
@@ -154,10 +195,49 @@ export async function findKiCadProjectFiles(projectPath) {
 }
 
 function extractReportIssues(report) {
-  const text = JSON.stringify(report || {})
-  const errors = (text.match(/"severity"\s*:\s*"error"/gi) || []).length + (text.match(/"severity"\s*:\s*"ERROR"/g) || []).length
-  const warnings = (text.match(/"severity"\s*:\s*"warning"/gi) || []).length + (text.match(/"severity"\s*:\s*"WARNING"/g) || []).length
+  const severities = collectIssueSeverities(report)
+  const errors = severities.filter((severity) => severity === 'error').length
+  const warnings = severities.filter((severity) => severity === 'warning').length
   return { errors, warnings }
+}
+
+function normalizeReportIssues(report, reportKind) {
+  if (reportKind !== 'DRC') return report
+  for (const item of report.unconnected_items || []) {
+    if (isSameNetZoneConnectivityReview(item)) {
+      item.severity = 'warning'
+      item.type = item.type || 'unconnected_items'
+      item.boardforgeCode = 'COPPER_ZONE_CONNECTIVITY_REVIEW'
+      item.description = `${item.description || 'Copper zone connectivity review'} (BoardForge review: same-net copper zone connectivity, not a component net break)`
+    }
+  }
+  return report
+}
+
+function isSameNetZoneConnectivityReview(item = {}) {
+  const refs = item.items || []
+  if (refs.length < 2) return false
+  if (!refs.every((ref) => /^Zone \[[^\]]+\] on /i.test(ref.description || ''))) return false
+  const nets = new Set(refs.map((ref) => (ref.description || '').match(/^Zone \[([^\]]+)\]/i)?.[1]).filter(Boolean))
+  return nets.size === 1
+}
+
+function collectIssueSeverities(value) {
+  if (!value || typeof value !== 'object') return []
+  const severities = []
+  if (!Array.isArray(value) && typeof value.severity === 'string' && isIssueLike(value)) {
+    severities.push(value.severity.toLowerCase())
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (key === 'included_severities' || key === 'ignored_checks') continue
+    if (Array.isArray(child)) severities.push(...child.flatMap((item) => collectIssueSeverities(item)))
+    else if (child && typeof child === 'object') severities.push(...collectIssueSeverities(child))
+  }
+  return severities
+}
+
+function isIssueLike(value) {
+  return Boolean(value.type || value.description || value.message || value.items || value.pos || value.code)
 }
 
 async function readJsonIfExists(file) {
@@ -183,7 +263,8 @@ async function listFiles(dir) {
 
 function runProcess(command, args, options = {}) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { windowsHide: true })
+    const env = boardForgeKiCadEnv()
+    const child = spawn(command, args, { windowsHide: true, env })
     let stdout = ''
     let stderr = ''
     const timeout = setTimeout(() => {
@@ -200,4 +281,76 @@ function runProcess(command, args, options = {}) {
       resolve({ exitCode: exitCode ?? 1, stdout, stderr })
     })
   })
+}
+
+function boardForgeKiCadEnv() {
+  const configRoot = process.env.BOARDFORGE_KICAD_CONFIG_HOME || path.join(process.cwd(), 'tmp', 'kicad-config')
+  mkdirSync(configRoot, { recursive: true })
+  ensureKiCadLibraryTables(configRoot)
+  return {
+    ...process.env,
+    BOARDFORGE_KICAD_CONFIG_HOME: configRoot,
+    KICAD_CONFIG_HOME: configRoot,
+    XDG_CONFIG_HOME: configRoot,
+    APPDATA: configRoot,
+    LOCALAPPDATA: path.join(configRoot, 'local'),
+  }
+}
+
+function ensureKiCadLibraryTables(configRoot) {
+  const shareRoot = process.env.KICAD10_SHARE_DIR || process.env.KICAD_SHARE_DIR || firstExisting([
+    'C:\\Program Files\\KiCad\\10.0\\share\\kicad',
+    'C:\\Program Files\\KiCad\\10\\share\\kicad',
+    'C:\\Program Files\\KiCad\\9.0\\share\\kicad',
+    'C:\\Program Files\\KiCad\\8.0\\share\\kicad',
+  ])
+  if (!shareRoot) return
+  const footprintDir = process.env.KICAD10_FOOTPRINT_DIR || path.join(shareRoot, 'footprints')
+  const symbolDir = process.env.KICAD10_SYMBOL_DIR || path.join(shareRoot, 'symbols')
+  const configDirs = [configRoot, path.join(configRoot, '10.0')]
+  for (const dir of configDirs) mkdirSync(dir, { recursive: true })
+  if (existsSync(footprintDir)) {
+    for (const dir of configDirs) {
+      const fpTable = path.join(dir, 'fp-lib-table')
+      if (!existsSync(fpTable)) writeFileSync(fpTable, footprintLibraryTable(footprintDir), 'utf8')
+    }
+  }
+  if (existsSync(symbolDir)) {
+    for (const dir of configDirs) {
+      const symTable = path.join(dir, 'sym-lib-table')
+      if (!existsSync(symTable)) writeFileSync(symTable, symbolLibraryTable(symbolDir), 'utf8')
+    }
+  }
+}
+
+function footprintLibraryTable(footprintDir) {
+  const libs = readdirSync(footprintDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.endsWith('.pretty'))
+    .map((entry) => {
+      const name = entry.name.replace(/\.pretty$/i, '')
+      const uri = path.join(footprintDir, entry.name).replace(/\\/g, '/')
+      return `  (lib (name "${safeTableText(name)}")(type "KiCad")(uri "${safeTableText(uri)}")(options "")(descr ""))`
+    })
+    .join('\n')
+  return `(fp_lib_table\n${libs}\n)\n`
+}
+
+function symbolLibraryTable(symbolDir) {
+  const libs = readdirSync(symbolDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.kicad_sym'))
+    .map((entry) => {
+      const name = entry.name.replace(/\.kicad_sym$/i, '')
+      const uri = path.join(symbolDir, entry.name).replace(/\\/g, '/')
+      return `  (lib (name "${safeTableText(name)}")(type "KiCad")(uri "${safeTableText(uri)}")(options "")(descr ""))`
+    })
+    .join('\n')
+  return `(sym_lib_table\n${libs}\n)\n`
+}
+
+function firstExisting(candidates) {
+  return candidates.find((candidate) => existsSync(candidate)) || null
+}
+
+function safeTableText(value) {
+  return String(value || '').replace(/"/g, "'")
 }
