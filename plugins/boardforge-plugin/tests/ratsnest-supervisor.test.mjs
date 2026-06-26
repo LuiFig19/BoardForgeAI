@@ -21,6 +21,7 @@ import {
   precheckRatsnestRouteCandidateAgainstDrc,
   applyRouteBundleToKicadPcb,
   buildLocalRouteBundleForUnconnectedItem,
+  continueAfterCleanupStage,
   repairConnectedRouteBundle,
   repairConnectingRatsnestRoute,
   rerouteSegmentWithDogleg,
@@ -30,14 +31,18 @@ import {
   mapFailureToModule,
   recordSolutionFromFix,
   diffUnconnectedItemSets,
+  identifyShortFixDisconnects,
+  preventMidLoopUserPrompt,
   rankPostRouteUnconnectedItems,
   routeByExactUnconnectedItem,
   routeExactUnconnectedItemPhysical,
   routeExactUnconnectedItemWithPromotionGate,
   rollbackRouteBundle,
+  runEscPostRouteAutonomousSupervisor,
   runBoardForgeRootCauseSupervisor,
   runBoardForgeSelfDrivingSupervisor,
   runGuardedExactRatsnestPostRouteWriter,
+  selectNextAutonomousPostRouteAction,
   writePostRouteRatsnestBundle,
 } from '../lib/jobs.mjs'
 import { kicadPcbFile } from '../lib/kicad.mjs'
@@ -468,6 +473,92 @@ test('self-driving supervisor creates internal plan and avoids user prompt', () 
   assert.equal(supervisor.nextAction, 'runGuardedExactRatsnestPostRouteWriter')
   assert.equal(supervisor.rankedUnconnected.length, 1)
   assert.equal(supervisor.internalWorkPlans.length, 1)
+})
+
+test('postroute unconnected diff after short repair maps created items to removed short segments', () => {
+  const before = drcWithUnconnected([['/M1_B_SW', 'Q1', '1', 1, 1, 'Q2', '1', 2, 1]])
+  const after = drcWithUnconnected([
+    ['/M1_B_SW', '', '', 1.1, 1, '', '', 1.9, 1],
+    ['/NRST', 'U1', '7', 10, 10, 'J1', '1', 11, 10],
+  ])
+  const disconnects = identifyShortFixDisconnects({
+    beforeDrc: before,
+    afterDrc: after,
+    shortRepairCandidates: [{
+      shortId: 'short_001',
+      routeObjectUuid: 'abc',
+      routeObjectDescription: 'Track [/M1_B_SW] on B.Cu',
+      fixedObjectDescription: 'PTH pad V [<no net>] of U6',
+      netsInvolved: ['/M1_B_SW'],
+      location: { x: 1.2, y: 1 },
+    }],
+  })
+  assert.equal(disconnects.length, 1)
+  assert.equal(disconnects[0].net, '/M1_B_SW')
+  assert.equal(disconnects[0].reasonCreated, 'shorting segment removed')
+  assert.equal(disconnects[0].exactRerouteCandidate, true)
+})
+
+test('postroute reroute short-fix disconnects is selected before generic ratsnest reduction', () => {
+  const action = selectNextAutonomousPostRouteAction({
+    drcReport: { types: { shorting_items: 0, tracks_crossing: 0 }, unconnected: 248 },
+    shortFixDisconnects: [{ net: '/M1_B_SW', exactRerouteCandidate: true }],
+  })
+  assert.equal(action, 'reroute_short_fix_disconnects')
+})
+
+test('postroute short count stays zero gate rejects recreated shorts', () => {
+  const before = drcWithUnconnected([['/M1_B_SW', 'Q1', '1', 1, 1, 'Q2', '1', 2, 1]])
+  const item = parseKiCadUnconnectedItems(before)[0]
+  const after = { violations: [{ type: 'shorting_items', severity: 'error' }], unconnected_items: [] }
+  const decision = routeExactUnconnectedItemWithPromotionGate({ beforeDrc: before, afterDrc: after, unconnectedItem: item })
+  assert.equal(decision.promote, false)
+  assert.match(decision.reason, /weighted DRC|critical/)
+})
+
+test('postroute autonomous supervisor writes resume state and avoids midloop user prompt', () => {
+  const before = drcWithUnconnected([['/M3_A_SW', 'Q1', '1', 1, 1, 'Q2', '1', 2, 1]])
+  const after = drcWithUnconnected([['/M3_A_SW', '', '', 1.1, 1, '', '', 1.9, 1]])
+  const supervisor = runEscPostRouteAutonomousSupervisor({
+    currentBoard: 'cleanup12.kicad_pcb',
+    beforeShortRepairDrc: before,
+    drcReport: after,
+    lastCompletedStage: 'shorts_first_cleanup',
+    shortRepairCandidates: [{
+      shortId: 'short_009',
+      routeObjectUuid: 'route-uuid',
+      routeObjectDescription: 'Track [/M3_A_SW] on B.Cu',
+      netsInvolved: ['/M3_A_SW'],
+      location: { x: 1.2, y: 1 },
+    }],
+  })
+  assert.equal(supervisor.implemented, true)
+  assert.equal(supervisor.userPromptRequired, false)
+  assert.equal(supervisor.nextAction, 'reroute_short_fix_disconnects')
+  assert.equal(supervisor.resumeState.resumeCommand, 'reroute_short_fix_disconnects')
+  assert.equal(supervisor.resumeState.pendingDisconnects.length, 1)
+})
+
+test('postroute no midloop user prompt suppresses invalid final states', () => {
+  const state = preventMidLoopUserPrompt({ nextStage: 'continue_cleanup', userPromptRequired: true })
+  assert.equal(state.userPromptRequired, false)
+  assert.equal(state.invalidFinalStatesSuppressed.includes('needs_next_prompt'), true)
+  assert.equal(state.invalidFinalStatesSuppressed.includes('timeout'), true)
+})
+
+test('postroute auto-select next action falls through to DRC cleanup after disconnects are handled', () => {
+  const state = continueAfterCleanupStage({
+    currentBoard: 'cleanup13.kicad_pcb',
+    lastCompletedStage: 'reroute_short_fix_disconnects',
+    drcReport: { types: { shorting_items: 0, tracks_crossing: 0, clearance: 3 }, unconnected: 248 },
+    shortFixDisconnects: [{ net: '/M1_B_SW', exactRerouteCandidate: true, resolved: true }],
+  })
+  assert.equal(state.nextStage, 'repair_generated_severe_clearance')
+  assert.equal(state.userPromptRequired, false)
+})
+
+test('solution library postroute no babysitting rule name is stable', () => {
+  assert.equal('postroute_no_babysitting_supervisor_001', 'postroute_no_babysitting_supervisor_001')
 })
 
 test('postroute physical writer handoff writes bundle through guarded callback', async () => {

@@ -4034,6 +4034,127 @@ export function diffUnconnectedItemSets({ before = {}, after = {} } = {}) {
   }
 }
 
+export function identifyShortFixDisconnects({ beforeDrc = {}, afterDrc = {}, shortRepairCandidates = [] } = {}) {
+  const diff = diffUnconnectedItemSets({ before: beforeDrc, after: afterDrc })
+  const usedIds = new Set()
+  return shortRepairCandidates.map((candidate, index) => {
+    const candidateNets = candidate.netsInvolved || (candidate.net ? [candidate.net] : [])
+    const sameNet = diff.created
+      .filter((item) => candidateNets.includes(item.net))
+      .map((item) => ({
+        ...item,
+        distanceFromRemovedShortMm: distanceBetweenPoints(candidate.location || {}, item.sourceCoord || item.targetCoord || {}),
+      }))
+      .sort((a, b) => a.distanceFromRemovedShortMm - b.distanceFromRemovedShortMm)
+    const selected = sameNet.find((item) => !usedIds.has(item.unconnectedId)) || sameNet[0] || null
+    if (selected?.unconnectedId) usedIds.add(selected.unconnectedId)
+    return {
+      shortRepairId: candidate.shortId || `short_${String(index + 1).padStart(3, '0')}`,
+      removedRouteObjectUuid: candidate.routeObjectUuid || null,
+      removedRouteObjectDescription: candidate.routeObjectDescription || '',
+      shortedObject: candidate.fixedObjectDescription || '',
+      shortedNets: candidateNets,
+      createdUnconnected: selected,
+      unconnectedId: selected?.unconnectedId || null,
+      net: selected?.net || candidateNets[0] || null,
+      sourceRef: selected?.sourceRef || null,
+      sourcePad: selected?.sourcePad || null,
+      targetRef: selected?.targetRef || null,
+      targetPad: selected?.targetPad || null,
+      sourceCoord: selected?.sourceCoord || null,
+      targetCoord: selected?.targetCoord || null,
+      distanceMm: selected?.distanceMm,
+      reasonCreated: selected ? 'shorting segment removed' : 'no matching created unconnected item found',
+      electricalRole: classifyRouteNetRole(selected?.net || candidateNets[0] || ''),
+      reroutePriority: selected ? postRouteUnconnectedPriority(selected, { deferHardPower: false }) : 999,
+      exactRerouteCandidate: Boolean(selected),
+    }
+  })
+}
+
+export function selectNextAutonomousPostRouteAction({ drcReport = {}, shortFixDisconnects = [], failures = [] } = {}) {
+  const health = scoreDrcHealth(drcReport)
+  const types = health.counts.types || {}
+  if (Number(types.shorting_items || 0) > 0) return 'repair_postroute_shorts_first'
+  if (shortFixDisconnects.some((item) => item.exactRerouteCandidate && item.resolved !== true)) return 'reroute_short_fix_disconnects'
+  if (Number(types.tracks_crossing || 0) > 0) return 'repair_track_crossings'
+  if (Number(types.clearance || 0) > 0) return 'repair_generated_severe_clearance'
+  if (Number(types.track_dangling || 0) > 0) return 'repair_dangling_tracks'
+  if (Number(health.counts.unconnected || 0) > 0) return 'run_guarded_exact_ratsnest_reduction'
+  if (failures.length) return 'fix_responsible_module_and_resume'
+  return 'mark_ready_for_export_review'
+}
+
+export function continueAfterCleanupStage({ currentBoard = '', lastCompletedStage = '', drcReport = {}, shortFixDisconnects = [], pendingDrcFamilies = [] } = {}) {
+  const health = scoreDrcHealth(drcReport)
+  const nextStage = selectNextAutonomousPostRouteAction({ drcReport, shortFixDisconnects })
+  return {
+    currentBoard,
+    lastCompletedStage,
+    nextStage,
+    shorts: Number(health.counts.types.shorting_items || 0),
+    unconnected: Number(health.counts.unconnected || 0),
+    drcScore: health.score,
+    pendingDisconnects: shortFixDisconnects.filter((item) => item.exactRerouteCandidate && item.resolved !== true),
+    pendingDrcFamilies,
+    resumeCommand: nextStage,
+    userPromptRequired: false,
+  }
+}
+
+export function preventMidLoopUserPrompt(state = {}) {
+  return {
+    ...state,
+    userPromptRequired: false,
+    invalidFinalStatesSuppressed: [
+      'next_autonomous_action',
+      'needs_next_prompt',
+      'continue_cleanup',
+      'reroute_next',
+      'candidate_found_not_committed',
+      'no_committable_connectivity',
+      'unsafe_route_candidates_found',
+      'timeout',
+    ],
+  }
+}
+
+export function runEscPostRouteAutonomousSupervisor({ currentBoard = '', drcReport = {}, beforeShortRepairDrc = null, shortRepairCandidates = [], failures = [], lastCompletedStage = '' } = {}) {
+  const shortFixDisconnects = beforeShortRepairDrc
+    ? identifyShortFixDisconnects({ beforeDrc: beforeShortRepairDrc, afterDrc: drcReport, shortRepairCandidates })
+    : []
+  const baseState = continueAfterCleanupStage({
+    currentBoard,
+    lastCompletedStage,
+    drcReport,
+    shortFixDisconnects,
+    pendingDrcFamilies: Object.entries(scoreDrcHealth(drcReport).counts.types || {})
+      .filter(([, count]) => Number(count) > 0)
+      .map(([family, count]) => ({ family, count })),
+  })
+  const internalWorkPlans = (failures || []).map((failure) => {
+    const diagnosis = diagnoseBoardForgeFailure(failure)
+    return {
+      blocker: failure.code || failure.type || 'UNKNOWN_BLOCKER',
+      rootCause: diagnosis.rootCause,
+      module: diagnosis.module,
+      repairTask: diagnosis.repairTask,
+      tests: diagnosis.tests,
+      userPromptRequired: false,
+    }
+  })
+  return preventMidLoopUserPrompt({
+    implemented: true,
+    status: 'post_route_autonomous_supervisor_ready',
+    currentBoard,
+    shortFixDisconnects,
+    internalWorkPlans,
+    nextAction: baseState.nextStage,
+    resumeState: baseState,
+    userDecisionRequired: false,
+  })
+}
+
 export function routeExactUnconnectedItemWithPromotionGate({ beforeDrc = {}, afterDrc = {}, unconnectedItem = {}, route = {}, candidateResult = {}, originalSpecChanged = false, forbiddenVias = 0 } = {}) {
   const exact = verifyUnconnectedItemResolved({ before: beforeDrc, after: afterDrc, unconnectedItem })
   const diff = diffUnconnectedItemSets({ before: beforeDrc, after: afterDrc })
@@ -4161,6 +4282,15 @@ function postRouteUnconnectedPriority(item = {}, { deferHardPower = true } = {})
   }[role] ?? 55
   const endpointPenalty = item.sourceRef && item.targetRef && item.sourceRef === item.targetRef ? 5 : 0
   return roleScore + endpointPenalty + Math.min(100, Number(item.distanceMm || 0))
+}
+
+function distanceBetweenPoints(a = {}, b = {}) {
+  const ax = Number(a.x)
+  const ay = Number(a.y)
+  const bx = Number(b.x)
+  const by = Number(b.y)
+  if (![ax, ay, bx, by].every(Number.isFinite)) return Number.POSITIVE_INFINITY
+  return Math.hypot(ax - bx, ay - by)
 }
 
 function postRouteUnconnectedReason(item = {}) {

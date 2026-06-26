@@ -3446,5 +3446,102 @@
     },
     "status": "active",
     "confidence": "medium"
+  },
+  {
+    "id": "postroute_no_babysitting_supervisor_001",
+    "createdAt": "2026-06-26T23:48:00.000Z",
+    "updatedAt": "2026-06-26T23:48:00.000Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC / motor-controller / dense-mixed-signal",
+    "problemType": "workflow supervisor",
+    "problemSignature": {
+      "errorCode": "POSTROUTE_MIDLOOP_USER_PROMPT_DEPENDENCY",
+      "symptoms": [
+        "BoardForge completed one cleanup stage and returned a next action instead of continuing",
+        "Short cleanup created reconnect work that should be scheduled internally"
+      ]
+    },
+    "rootCause": "Post-route cleanup lacked a persistent state machine that moves from shorts cleanup to short-fix disconnect reroute, DRC cleanup, exact-ratsnest reduction, ERC repair, and export review without user babysitting.",
+    "fixSummary": "Add a post-route autonomous supervisor state machine that selects the next allowed action, writes resume state, suppresses mid-loop prompt states, and asks the user only when a forbidden design change is required.",
+    "implementation": {
+      "filesChanged": [
+        "lib/jobs.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [
+        "identifyShortFixDisconnects",
+        "selectNextAutonomousPostRouteAction",
+        "continueAfterCleanupStage",
+        "preventMidLoopUserPrompt",
+        "runEscPostRouteAutonomousSupervisor"
+      ],
+      "testsAdded": [
+        "test:postroute-unconnected-diff-after-short-repair",
+        "test:postroute-reroute-short-fix-disconnects",
+        "test:postroute-short-count-stays-zero",
+        "test:postroute-no-recreate-short",
+        "test:postroute-autonomous-supervisor",
+        "test:postroute-no-midloop-user-prompt",
+        "test:postroute-auto-select-next-action",
+        "test:postroute-resume-state",
+        "test:solution-library-postroute-no-babysitting"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "MOTOR_PHASE",
+        "SWITCHING_NODE",
+        "CONTROL_SIGNAL",
+        "REGULATED_RAIL",
+        "GATE_DRIVE",
+        "BOOTSTRAP"
+      ],
+      "conditions": [
+        "post-FreeRouting cleanup",
+        "remaining DRC/ERC issues",
+        "remaining exact KiCad unconnected items",
+        "no forbidden design decision required"
+      ]
+    },
+    "recipe": [
+      "Scan current DRC/ERC and unconnected state.",
+      "If shorts exist, run shorts-first cleanup.",
+      "If short cleanup created disconnects, reroute those exact disconnects before generic ratsnest work.",
+      "If severe generated DRC remains, run guarded local DRC cleanup.",
+      "If exact unconnected items remain and critical families are stable, run guarded exact-ratsnest reduction.",
+      "Write supervisor resume state after every stage.",
+      "Suppress mid-loop user prompt final states unless a forbidden change is required."
+    ],
+    "safetyRules": [
+      "Do not ask the user for internal next actions",
+      "Do not reintroduce shorts or track crossings",
+      "Do not use forbidden vias",
+      "Do not change board outline, mounting holes, parts, footprints, packages, pads, or nets",
+      "Do not push board artifacts to Git"
+    ],
+    "evidence": {
+      "before": {
+        "cleanup12": "shorts fixed, next action required short-fix disconnect reroute"
+      },
+      "after": {
+        "supervisorStateMachine": true,
+        "userPromptRequired": false
+      },
+      "tests": [
+        "test:postroute-autonomous-supervisor",
+        "test:postroute-no-midloop-user-prompt",
+        "test:postroute-auto-select-next-action",
+        "test:postroute-resume-state"
+      ]
+    },
+    "status": "active",
+    "confidence": "medium"
   }
 ]
