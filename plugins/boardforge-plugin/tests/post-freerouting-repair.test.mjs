@@ -284,6 +284,23 @@ test('post-FreeRouting multi-family DRC score weighs critical families heavily',
   assert.equal(dangerous.score > healthy.score, true);
 });
 
+test('post-FreeRouting DRC score counts top-level KiCad unconnected items', () => {
+  const health = scoreDrcHealth({
+    violations: [
+      { type: 'clearance', severity: 'error' },
+      { type: 'track_dangling', description: 'Track is unconnected at one end', severity: 'error' },
+    ],
+    unconnected_items: [
+      { type: 'unconnected_items', severity: 'error' },
+      { type: 'unconnected_items', severity: 'error' },
+    ],
+  });
+  assert.equal(health.counts.types.clearance, 1);
+  assert.equal(health.counts.types.track_dangling, 1);
+  assert.equal(health.counts.unconnected, 2);
+  assert.equal(health.score, 3250);
+});
+
 test('post-FreeRouting collateral damage guard rejects critical-family regression', () => {
   const before = { types: { hole_clearance: 125, shorting_items: 9, tracks_crossing: 0 }, unconnected: 239 };
   const after = { types: { hole_clearance: 112, shorting_items: 14, tracks_crossing: 2 }, unconnected: 239 };

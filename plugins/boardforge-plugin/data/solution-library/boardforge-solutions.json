@@ -3107,5 +3107,160 @@
     },
     "status": "active",
     "confidence": "medium"
+  },
+  {
+    "id": "postroute_guarded_exact_ratsnest_writer_001",
+    "createdAt": "2026-06-26T20:45:00.000Z",
+    "updatedAt": "2026-06-26T20:45:00.000Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC / motor-controller / dense-mixed-signal",
+    "problemType": "post-route unconnected reduction",
+    "problemSignature": {
+      "errorCode": "POSTROUTE_RATSNEST_WRITER_NEEDS_PROMOTION_GATE",
+      "symptoms": [
+        "FreeRouting leaves exact KiCad unconnected items after DRC repair",
+        "New routes must not trade connectivity for shorts or crossings"
+      ]
+    },
+    "rootCause": "Remaining post-route ratsnest work needs the same multi-family promotion guard as DRC cleanup.",
+    "fixSummary": "Rank exact KiCad unconnected items and commit route candidates only when exact connectivity improves without weighted DRC or critical-family regression.",
+    "implementation": {
+      "filesChanged": [
+        "lib/jobs.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json"
+      ],
+      "functionsAdded": [
+        "runGuardedExactRatsnestPostRouteWriter",
+        "rankPostRouteUnconnectedItems",
+        "routeExactUnconnectedItemWithPromotionGate",
+        "diffUnconnectedItemSets"
+      ],
+      "testsAdded": [
+        "test:postroute-guarded-ratsnest-writer",
+        "test:postroute-unconnected-item-ranking",
+        "test:postroute-unconnected-set-diff-gate",
+        "test:postroute-ratsnest-route-promotion-gate"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "CONTROL_SIGNAL",
+        "REGULATED_RAIL",
+        "GATE_DRIVE",
+        "BOOTSTRAP"
+      ],
+      "conditions": [
+        "post-FreeRouting cleanup",
+        "remaining KiCad unconnected items",
+        "critical DRC families stable"
+      ]
+    },
+    "recipe": [
+      "Parse exact KiCad unconnected items",
+      "Rank easy signal, rail, gate, and bootstrap pairs first",
+      "Write candidate route transactionally",
+      "Diff unconnected item sets",
+      "Promote only when exact connectivity improves and weighted DRC does not worsen"
+    ],
+    "safetyRules": [
+      "Do not commit routes without exact KiCad connectivity proof",
+      "Do not worsen shorting, crossings, or unconnected count",
+      "Do not introduce forbidden vias",
+      "Do not change original spec"
+    ],
+    "evidence": {
+      "before": {
+        "unconnected": 239,
+        "weightedDrcScore": 483694
+      },
+      "after": {
+        "writerImplemented": true
+      },
+      "tests": [
+        "test:postroute-guarded-ratsnest-writer",
+        "test:postroute-ratsnest-route-promotion-gate"
+      ]
+    },
+    "status": "active",
+    "confidence": "medium"
+  },
+  {
+    "id": "self_driving_board_trace_supervisor_001",
+    "createdAt": "2026-06-26T20:45:00.000Z",
+    "updatedAt": "2026-06-26T20:45:00.000Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "all",
+    "problemType": "workflow supervisor",
+    "problemSignature": {
+      "errorCode": "MIDLOOP_USER_PROMPT_DEPENDENCY",
+      "symptoms": [
+        "BoardForge reported internal next actions instead of diagnosing, fixing, testing, and resuming"
+      ]
+    },
+    "rootCause": "Routing and repair tools existed, but no persistent supervisor converted blockers into internal work plans.",
+    "fixSummary": "Add a self-driving supervisor facade that diagnoses blockers, ranks next autonomous work, avoids user prompts, and resumes exact-ratsnest or guarded DRC repair.",
+    "implementation": {
+      "filesChanged": [
+        "lib/jobs.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json"
+      ],
+      "functionsAdded": [
+        "runBoardForgeSelfDrivingSupervisor"
+      ],
+      "testsAdded": [
+        "test:self-driving-supervisor"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "flight-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [],
+      "conditions": [
+        "autonomous board trace",
+        "post-route repair",
+        "remaining blockers"
+      ]
+    },
+    "recipe": [
+      "Scan current DRC/ERC/unconnected state",
+      "Load applicable solutions",
+      "Diagnose blockers into module-level work plans",
+      "Run the next safe autonomous action",
+      "Ask user only for forbidden design decisions"
+    ],
+    "safetyRules": [
+      "Never ask for another prompt for internal engineering work",
+      "Keep original board protected",
+      "Require explicit user approval for forbidden changes"
+    ],
+    "evidence": {
+      "before": {
+        "invalidFinalStates": [
+          "needs_next_prompt",
+          "classification_only",
+          "low_yield_stop"
+        ]
+      },
+      "after": {
+        "userPromptRequired": false,
+        "nextAction": "runGuardedExactRatsnestPostRouteWriter"
+      },
+      "tests": [
+        "test:self-driving-supervisor"
+      ]
+    },
+    "status": "active",
+    "confidence": "medium"
   }
 ]

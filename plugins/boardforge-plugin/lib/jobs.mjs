@@ -89,7 +89,8 @@ import {
 import { productionReadinessJobTypes, runProductionReadinessJob } from './production-readiness-suite.mjs'
 import { advancedBoardJobTypes, runAdvancedBoardJob } from './advanced-board-suite.mjs'
 import { autotracerJobTypes, finalizeAutotraceWithDrc, runAutotracerPlanning } from './autotracer-engine.mjs'
-import { buildNetConnectivityGraph, commitOnlyConnectivityProgress, diffKiCadUnconnectedItems, extractRatsnestEndpointPairs, verifyUnconnectedItemResolved } from './esc-routelet-success.mjs'
+import { buildNetConnectivityGraph, commitOnlyConnectivityProgress, diffKiCadUnconnectedItems, extractRatsnestEndpointPairs, parseKiCadUnconnectedItems, verifyUnconnectedItemResolved } from './esc-routelet-success.mjs'
+import { compareDrcHealthBeforeAfter, scoreDrcHealth } from './external-routing/post-freerouting-repair.mjs'
 import { recordSolution } from './solution-library/solution-store.mjs'
 import { buildHighDensityRoutePolicy, classifyGeneratedDrcRegression, highDensityEscRouter, mutateRouteAfterDrcFailure as mutateHighDensityRouteAfterDrcFailure } from './high-density-esc-router.mjs'
 import {
@@ -3890,6 +3891,189 @@ export async function consumeRatsnestQueueWithPhysicalRouter({ queuedItems = [],
     })
   }
   return { summary, results }
+}
+
+export function rankPostRouteUnconnectedItems(input = {}, options = {}) {
+  const maxItems = options.maxItems ?? Infinity
+  const items = Array.isArray(input)
+    ? input
+    : parseKiCadUnconnectedItems(input.report || input.drcReport || input)
+  const deferHardPower = options.deferHardPower !== false
+  return [...items]
+    .map((item) => ({
+      ...item,
+      postRoutePriority: postRouteUnconnectedPriority(item, { deferHardPower }),
+      postRouteReason: postRouteUnconnectedReason(item),
+    }))
+    .sort((a, b) => a.postRoutePriority - b.postRoutePriority || Number(a.distanceMm || 0) - Number(b.distanceMm || 0))
+    .slice(0, maxItems)
+}
+
+export function diffUnconnectedItemSets({ before = {}, after = {} } = {}) {
+  const diff = diffKiCadUnconnectedItems({ before, after })
+  return {
+    ...diff,
+    resolvedCount: diff.resolved.length,
+    createdCount: diff.created.length,
+    unchangedCount: diff.unchanged.length,
+    replacementUnconnectedCreated: diff.created.length > 0 && diff.afterCount >= diff.beforeCount,
+  }
+}
+
+export function routeExactUnconnectedItemWithPromotionGate({ beforeDrc = {}, afterDrc = {}, unconnectedItem = {}, route = {}, candidateResult = {}, originalSpecChanged = false, forbiddenVias = 0 } = {}) {
+  const exact = verifyUnconnectedItemResolved({ before: beforeDrc, after: afterDrc, unconnectedItem })
+  const diff = diffUnconnectedItemSets({ before: beforeDrc, after: afterDrc })
+  const health = compareDrcHealthBeforeAfter(beforeDrc, afterDrc)
+  const scoreDidNotWorsen = health.scoreDelta <= 0
+  const criticalFamilies = ['shorting_items', 'tracks_crossing', 'unconnected_items', 'forbidden_via', 'board_outline_change', 'mounting_hole_move', 'part_footprint_package_change']
+  const worsenedCriticalFamilies = criticalFamilies.filter((family) => (health.delta[family] || 0) > 0)
+  const targetNetReduced = Number(exact.targetNetUnconnectedAfter) < Number(exact.targetNetUnconnectedBefore)
+  const islandReduced = Number.isFinite(Number(candidateResult.netIslandsBefore))
+    && Number.isFinite(Number(candidateResult.netIslandsAfter))
+    && Number(candidateResult.netIslandsAfter) < Number(candidateResult.netIslandsBefore)
+  const connectivityProgress = exact.resolved || targetNetReduced || islandReduced || candidateResult.kicadConnected === true
+  const promote = Boolean(connectivityProgress && scoreDidNotWorsen && worsenedCriticalFamilies.length === 0 && Number(forbiddenVias) === 0 && originalSpecChanged !== true)
+  return {
+    promote,
+    status: promote ? 'COMMITTED_RESOLVED' : 'ROLLBACK_REQUIRED',
+    route,
+    exactUnconnectedItemResolved: exact.resolved,
+    targetNetUnconnectedReduced: targetNetReduced,
+    netIslandsReduced: islandReduced,
+    kicadConnected: candidateResult.kicadConnected === true,
+    scoreDidNotWorsen,
+    weightedScoreBefore: health.before.score,
+    weightedScoreAfter: health.after.score,
+    weightedScoreDelta: health.scoreDelta,
+    worsenedCriticalFamilies,
+    forbiddenVias: Number(forbiddenVias) || 0,
+    originalSpecChanged: originalSpecChanged === true,
+    unconnectedDiff: diff,
+    reason: promote
+      ? 'exact ratsnest connectivity improved without weighted DRC or critical-family regression'
+      : explainRatsnestPromotionRejection({ connectivityProgress, scoreDidNotWorsen, worsenedCriticalFamilies, forbiddenVias, originalSpecChanged }),
+  }
+}
+
+export async function runGuardedExactRatsnestPostRouteWriter({ drcReport = {}, maxItems = 10, writeCandidate = null, beforeDrc = null } = {}) {
+  const baselineDrc = beforeDrc || drcReport
+  const ranked = rankPostRouteUnconnectedItems(drcReport, { maxItems })
+  const guardedWriter = async (route, item) => {
+    if (typeof writeCandidate !== 'function') {
+      return {
+        status: 'TEMP_BLOCKED_WITH_EXACT_REASON',
+        writtenToKiCad: false,
+        reason: 'post_route_physical_writer_not_configured',
+      }
+    }
+    const outcome = await writeCandidate(route, item)
+    if (!outcome?.afterDrc) return outcome
+    const gate = routeExactUnconnectedItemWithPromotionGate({
+      beforeDrc: outcome.beforeDrc || baselineDrc,
+      afterDrc: outcome.afterDrc,
+      unconnectedItem: item,
+      route,
+      candidateResult: outcome,
+      originalSpecChanged: outcome.originalSpecChanged,
+      forbiddenVias: outcome.forbiddenVias,
+    })
+    return {
+      ...outcome,
+      gate,
+      status: gate.promote ? 'COMMITTED_RESOLVED' : (outcome.status || 'ROLLED_BACK_DRC_UNSAFE'),
+      resolvedCount: gate.promote ? 1 : 0,
+    }
+  }
+  const batch = await consumeRatsnestQueueWithPhysicalRouter({
+    queuedItems: ranked,
+    maxItems,
+    writeCandidate: guardedWriter,
+  })
+  return {
+    implemented: true,
+    triggerSafe: isUnconnectedPassSafe(baselineDrc),
+    rankedItems: ranked,
+    ...batch,
+  }
+}
+
+export function runBoardForgeSelfDrivingSupervisor({ drcReport = {}, failures = [], boardContext = {}, solutionLibrary = [], maxUnconnectedItems = 10, writeCandidate = null } = {}) {
+  const blockers = Array.isArray(failures) ? failures : []
+  const internalWorkPlans = blockers.map((failure) => {
+    const diagnosis = diagnoseBoardForgeFailure(failure)
+    return {
+      blocker: failure.code || failure.type || 'UNKNOWN_BLOCKER',
+      rootCause: diagnosis.rootCause,
+      module: diagnosis.module,
+      repairTask: diagnosis.repairTask,
+      tests: diagnosis.tests,
+      userPromptRequired: false,
+    }
+  })
+  const rankedUnconnected = rankPostRouteUnconnectedItems(drcReport, { maxItems: maxUnconnectedItems })
+  const nextAction = rankedUnconnected.length
+    ? 'runGuardedExactRatsnestPostRouteWriter'
+    : blockers.length
+      ? 'fixResponsibleModuleAndResume'
+      : 'continueGuardedPostRouteDrcRepair'
+  return {
+    status: 'self_driving_supervisor_ready',
+    implemented: true,
+    userPromptRequired: false,
+    userDecisionRequired: false,
+    boardType: boardContext.boardType || 'ESC',
+    blockersDiagnosed: internalWorkPlans.length,
+    internalWorkPlans,
+    loadedSolutionRecords: solutionLibrary.length,
+    rankedUnconnected,
+    nextAction,
+    resumeCommand: nextAction,
+    invalidFinalStatesSuppressed: ['needs_next_prompt', 'classification_only', 'no_geometry_mutation', 'low_yield_stop'],
+  }
+}
+
+function postRouteUnconnectedPriority(item = {}, { deferHardPower = true } = {}) {
+  const role = item.netRole || classifyRouteNetRole(item.net)
+  const roleScore = {
+    CONTROL_SIGNAL: 0,
+    LOW_SPEED_SIGNAL: 10,
+    REGULATED_RAIL: 20,
+    GATE_DRIVE: 30,
+    BOOTSTRAP: 35,
+    CURRENT_SENSE: 45,
+    GROUND: deferHardPower ? 80 : 50,
+    HIGH_CURRENT_POWER: deferHardPower ? 120 : 60,
+    SWITCHING_NODE: deferHardPower ? 140 : 70,
+  }[role] ?? 55
+  const endpointPenalty = item.sourceRef && item.targetRef && item.sourceRef === item.targetRef ? 5 : 0
+  return roleScore + endpointPenalty + Math.min(100, Number(item.distanceMm || 0))
+}
+
+function postRouteUnconnectedReason(item = {}) {
+  const role = item.netRole || classifyRouteNetRole(item.net)
+  if (role === 'CONTROL_SIGNAL' || role === 'LOW_SPEED_SIGNAL') return 'short low-risk signal/control ratsnest'
+  if (role === 'REGULATED_RAIL') return 'local regulated rail after FreeRouting import'
+  if (role === 'GATE_DRIVE') return 'local gate-drive route with critical-family guard'
+  if (role === 'BOOTSTRAP') return 'local bootstrap/HB/BST route with short-path guard'
+  if (role === 'CURRENT_SENSE') return 'protected sense route after lower-risk items'
+  return 'deferred or lower-priority post-route ratsnest item'
+}
+
+function isUnconnectedPassSafe(drcReport = {}) {
+  const health = scoreDrcHealth(drcReport)
+  const shorting = Number(health.counts.types.shorting_items || 0)
+  const crossings = Number(health.counts.types.tracks_crossing || 0)
+  const forbidden = Number(health.counts.types.forbidden_via || 0)
+  return forbidden === 0 && crossings === 0 && shorting >= 0
+}
+
+function explainRatsnestPromotionRejection({ connectivityProgress, scoreDidNotWorsen, worsenedCriticalFamilies = [], forbiddenVias = 0, originalSpecChanged = false } = {}) {
+  if (!connectivityProgress) return 'exact KiCad unconnected item did not disappear and no island/connection proof was provided'
+  if (!scoreDidNotWorsen) return 'weighted DRC score worsened after candidate route'
+  if (worsenedCriticalFamilies.length) return `critical families worsened: ${worsenedCriticalFamilies.join(', ')}`
+  if (Number(forbiddenVias) > 0) return 'candidate introduced forbidden via geometry'
+  if (originalSpecChanged) return 'candidate changed protected original board spec'
+  return 'candidate failed guarded exact-ratsnest promotion gate'
 }
 
 export function auditRolledBackRatsnestRoutes(results = []) {

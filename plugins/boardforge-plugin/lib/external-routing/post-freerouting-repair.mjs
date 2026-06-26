@@ -1105,10 +1105,11 @@ function normalizeDrcCounts(drcLike = {}) {
   }
   const violations = Array.isArray(drcLike.violations) ? drcLike.violations : [];
   const types = {};
-  let unconnected = 0;
+  const hasTopLevelUnconnectedItems = Array.isArray(drcLike.unconnected_items);
+  let unconnected = hasTopLevelUnconnectedItems ? drcLike.unconnected_items.length : 0;
   for (const violation of violations) {
     const type = violation.type || violation.code || 'unknown';
-    if (/unconnected/i.test(type) || /unconnected/i.test(violation.description || '')) {
+    if (/unconnected/i.test(type) || (!hasTopLevelUnconnectedItems && /unconnected/i.test(violation.description || ''))) {
       unconnected += 1;
     } else {
       types[type] = (types[type] || 0) + 1;

@@ -24,8 +24,13 @@ import {
   fixFailureAndResume,
   mapFailureToModule,
   recordSolutionFromFix,
+  diffUnconnectedItemSets,
+  rankPostRouteUnconnectedItems,
   routeByExactUnconnectedItem,
+  routeExactUnconnectedItemWithPromotionGate,
   runBoardForgeRootCauseSupervisor,
+  runBoardForgeSelfDrivingSupervisor,
+  runGuardedExactRatsnestPostRouteWriter,
 } from '../lib/jobs.mjs'
 
 function drcWithUnconnected(items = []) {
@@ -383,4 +388,74 @@ test('solution library connected route repair record is generated from superviso
   })
   assert.equal(updated[0].id, 'esc_connected_route_drc_repair_engine_001')
   assert.match(updated[0].fixSummary, /repair connected ratsnest/i)
+})
+
+test('postroute unconnected item ranking prioritizes easy control and rail items', () => {
+  const report = drcWithUnconnected([
+    ['/M2_C_SW', 'Q14', '13', 100, 100, 'J5', '3', 130, 100],
+    ['/NRST', 'U1', '7', 10, 10, 'J3', '5', 12, 10],
+    ['/VREG5', 'U4', '4', 20, 20, 'C84', '1', 23, 20],
+  ])
+  const ranked = rankPostRouteUnconnectedItems(report, { maxItems: 3 })
+  assert.equal(ranked[0].net, '/NRST')
+  assert.equal(ranked[1].net, '/VREG5')
+  assert.equal(ranked[2].net, '/M2_C_SW')
+})
+
+test('postroute unconnected set diff gate detects replacement unconnected items', () => {
+  const before = drcWithUnconnected([['/NRST', 'U1', '7', 10, 10, 'J3', '5', 12, 10]])
+  const after = drcWithUnconnected([['/NRST', 'J3', '5', 12, 10, 'R1', '1', 13, 10]])
+  const diff = diffUnconnectedItemSets({ before, after })
+  assert.equal(diff.resolvedCount, 1)
+  assert.equal(diff.createdCount, 1)
+  assert.equal(diff.replacementUnconnectedCreated, true)
+})
+
+test('postroute ratsnest route promotion gate requires exact connectivity and no DRC regression', () => {
+  const before = {
+    ...drcWithUnconnected([['/NRST', 'U1', '7', 10, 10, 'J3', '5', 12, 10]]),
+    violations: [{ type: 'clearance', severity: 'error' }],
+  }
+  const item = parseKiCadUnconnectedItems(before)[0]
+  const cleanAfter = { issueCounts: { errors: 1, warnings: 0 }, violations: [{ type: 'clearance', severity: 'error' }], unconnected_items: [] }
+  const accepted = routeExactUnconnectedItemWithPromotionGate({ beforeDrc: before, afterDrc: cleanAfter, unconnectedItem: item })
+  assert.equal(accepted.promote, true)
+  assert.equal(accepted.exactUnconnectedItemResolved, true)
+
+  const regressedAfter = {
+    issueCounts: { errors: 2, warnings: 0 },
+    violations: [{ type: 'clearance', severity: 'error' }, { type: 'shorting_items', severity: 'error' }],
+    unconnected_items: [],
+  }
+  const rejected = routeExactUnconnectedItemWithPromotionGate({ beforeDrc: before, afterDrc: regressedAfter, unconnectedItem: item })
+  assert.equal(rejected.promote, false)
+  assert.match(rejected.reason, /weighted DRC|critical/)
+})
+
+test('postroute guarded ratsnest writer attempts exact items and blocks without a physical writer', async () => {
+  const report = drcWithUnconnected([
+    ['/NRST', 'U1', '7', 10, 10, 'J3', '5', 12, 10],
+    ['/VREG5', 'U4', '4', 20, 20, 'C84', '1', 23, 20],
+  ])
+  const batch = await runGuardedExactRatsnestPostRouteWriter({ drcReport: report, maxItems: 2 })
+  assert.equal(batch.implemented, true)
+  assert.equal(batch.summary.queued, 2)
+  assert.equal(batch.summary.physicallyAttempted, 2)
+  assert.equal(batch.summary.blocked, 2)
+  assert.equal(batch.results[0].status, 'TEMP_BLOCKED_WITH_EXACT_REASON')
+  assert.notEqual(batch.results[0].status, 'QUEUED_NOT_ATTEMPTED')
+})
+
+test('self-driving supervisor creates internal plan and avoids user prompt', () => {
+  const report = drcWithUnconnected([['/BOOT_SEL_ESC', 'U1', '1', 1, 1, 'R3', '2', 2, 1]])
+  const supervisor = runBoardForgeSelfDrivingSupervisor({
+    drcReport: report,
+    failures: [{ code: 'LOW_YIELD_STOP', family: 'hole_clearance' }],
+    solutionLibrary: [{ id: 'postroute_prescore_candidate_filter_001' }],
+  })
+  assert.equal(supervisor.implemented, true)
+  assert.equal(supervisor.userPromptRequired, false)
+  assert.equal(supervisor.nextAction, 'runGuardedExactRatsnestPostRouteWriter')
+  assert.equal(supervisor.rankedUnconnected.length, 1)
+  assert.equal(supervisor.internalWorkPlans.length, 1)
 })
