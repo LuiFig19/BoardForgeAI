@@ -380,6 +380,7 @@
     "test:post-freerouting-multi-family-drc-score": "node --test --test-name-pattern \"post-FreeRouting multi-family DRC score\" ./tests/*.test.mjs",
     "test:post-freerouting-collateral-damage-guard": "node --test --test-name-pattern \"post-FreeRouting collateral damage guard\" ./tests/*.test.mjs",
     "test:post-freerouting-repair-promotion-gate": "node --test --test-name-pattern \"post-FreeRouting repair promotion gate\" ./tests/*.test.mjs",
+    "test:post-freerouting-rollback-collateral-damage": "node --test --test-name-pattern \"post-FreeRouting rollback collateral damage\" ./tests/*.test.mjs",
     "test:original-spec-preserved-after-postroute-repair": "node --test --test-name-pattern \"repair imported track widths\" ./tests/*.test.mjs",
     "test:freerouting-postroute-solution-library": "node --test --test-name-pattern \"freerouting postroute solution library\" ./tests/*.test.mjs"
   },

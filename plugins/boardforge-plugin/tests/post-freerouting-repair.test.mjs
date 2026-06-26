@@ -12,6 +12,7 @@ import {
   relocateImportedViaToLegalSite,
   rerouteSegmentThroughLegalWaypoints,
   repairImportedRouteDimensions,
+  rollbackCollateralDamage,
   scoreDrcHealth,
   shouldPromotePostRouteRepair,
 } from '../lib/external-routing/post-freerouting-repair.mjs';
@@ -300,4 +301,14 @@ test('post-FreeRouting cleanup4 via relocation audit flags collateral damage', (
   });
   assert.equal(audit.promoted, false);
   assert.equal(audit.status, 'cleanup4_via_relocations_rejected_for_collateral_damage');
+});
+
+test('post-FreeRouting rollback collateral damage returns rollback decision', () => {
+  const rollback = rollbackCollateralDamage({
+    candidateAccepted: true,
+    beforeDrc: { types: { hole_clearance: 125, shorting_items: 9, tracks_crossing: 0 }, unconnected: 239 },
+    afterDrc: { types: { hole_clearance: 112, shorting_items: 14, tracks_crossing: 2 }, unconnected: 239 },
+  });
+  assert.equal(rollback.rolledBack, true);
+  assert.equal(rollback.decision.promote, false);
 });

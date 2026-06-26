@@ -2572,5 +2572,82 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "post_freerouting_guarded_family_rotation_001",
+    "createdAt": "2026-06-26T15:06:32.050Z",
+    "updatedAt": "2026-06-26T15:06:32.050Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC / motor-controller",
+    "problemType": "DRC/post-route repair",
+    "problemSignature": {
+      "errorCode": "POST_FREEROUTING_REPAIR_SCHEDULER_STUCK_ON_EDGE",
+      "drcFamily": "copper_edge_clearance/hole_clearance/clearance",
+      "symptoms": [
+        "guarded repair batch spends all candidates on copper edge clusters",
+        "no repairs committed despite legal-site engine",
+        "other DRC families never attempted"
+      ]
+    },
+    "rootCause": "Post-route repair scheduler selected the first prioritized family repeatedly, starving hole-clearance and clearance clusters that had promotable legal-site candidates.",
+    "fixSummary": "Rotate repair families under the collateral-damage promotion gate so copper-edge, hole-clearance, clearance, solder-mask, and dangling-track clusters all get candidate budgets.",
+    "implementation": {
+      "filesChanged": [
+        "tests/post-freerouting-repair.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [],
+      "testsAdded": [
+        "test:post-freerouting-rollback-collateral-damage"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "conditions": [
+        "post-FreeRouting cleanup",
+        "guarded local repair",
+        "multiple DRC families remain"
+      ]
+    },
+    "recipe": [
+      "Run family-rotated candidate selection instead of exhausting one family",
+      "Score every candidate with shouldPromotePostRouteRepair",
+      "Commit only weighted-score improvements with no critical regression",
+      "Continue to next family when all candidates are rejected"
+    ],
+    "safetyRules": [
+      "Do not trade hole clearance for shorts/crossings",
+      "Do not change locked board spec",
+      "Do not commit generated PCB artifacts"
+    ],
+    "evidence": {
+      "before": {
+        "violations": 1268,
+        "weightedScore": 487499,
+        "hole_clearance": 125,
+        "clearance": 500,
+        "shorting_items": 9
+      },
+      "after": {
+        "violations": 1259,
+        "weightedScore": 486124,
+        "hole_clearance": 118,
+        "clearance": 499,
+        "shorting_items": 9
+      },
+      "candidateRejections": {
+        "collateralDamagePrevented": 40
+      },
+      "tests": [
+        "post-freerouting-rollback-collateral-damage"
+      ]
+    },
+    "status": "active",
+    "confidence": "medium"
   }
 ]
