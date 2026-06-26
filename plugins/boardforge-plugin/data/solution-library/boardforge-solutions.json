@@ -2485,5 +2485,92 @@
     },
     "status": "active",
     "confidence": "medium"
+  },
+  {
+    "id": "post_freerouting_collateral_damage_guard_001",
+    "createdAt": "2026-06-26T13:24:13.398Z",
+    "updatedAt": "2026-06-26T13:24:13.398Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC / motor-controller",
+    "problemType": "DRC/post-route repair",
+    "problemSignature": {
+      "errorCode": "POST_FREEROUTING_COLLATERAL_DRC_REGRESSION",
+      "drcFamily": "multi-family DRC",
+      "symptoms": [
+        "hole clearance improves while shorting worsens",
+        "track crossing appears after via relocation",
+        "solder mask bridge count increases after local repair"
+      ]
+    },
+    "rootCause": "Post-FreeRouting repair promotion accepted target-family reductions without a weighted multi-family DRC score or critical-family regression guard.",
+    "fixSummary": "Add weighted DRC health scoring, before/after comparison, critical-family collateral damage detection, and rollback of repairs that worsen shorts, crossings, unconnected, forbidden vias, outline, mounting holes, or part/footprint/package state.",
+    "implementation": {
+      "filesChanged": [
+        "lib/external-routing/post-freerouting-repair.mjs",
+        "tests/post-freerouting-repair.test.mjs",
+        "package.json"
+      ],
+      "functionsAdded": [
+        "scoreDrcHealth",
+        "compareDrcHealthBeforeAfter",
+        "shouldPromotePostRouteRepair",
+        "rollbackCollateralDamage",
+        "auditCleanup4ViaRelocations"
+      ],
+      "testsAdded": [
+        "test:post-freerouting-multi-family-drc-score",
+        "test:post-freerouting-collateral-damage-guard",
+        "test:post-freerouting-repair-promotion-gate"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "conditions": [
+        "post-FreeRouting cleanup",
+        "local geometry mutation",
+        "through-via-only policy"
+      ]
+    },
+    "recipe": [
+      "Score DRC before and after every candidate repair",
+      "Reject any candidate that worsens shorting, track crossing, unconnected, forbidden via, outline, mounting holes, or part/footprint/package families",
+      "Promote only weighted-score improvements with no critical-family regression",
+      "Rollback candidate geometry when collateral damage appears"
+    ],
+    "safetyRules": [
+      "Do not promote target-family-only improvements",
+      "Do not allow shorting or track crossing regression",
+      "Do not fake DRC pass",
+      "Do not modify locked board spec"
+    ],
+    "evidence": {
+      "before": {
+        "hole_clearance": 125,
+        "shorting_items": 9,
+        "tracks_crossing": 0,
+        "totalViolations": 1267
+      },
+      "candidateAfter": {
+        "hole_clearance": 112,
+        "shorting_items": 14,
+        "tracks_crossing": 2,
+        "totalViolations": 1264
+      },
+      "guardedAfter": {
+        "totalViolations": 1266,
+        "unconnected": 239
+      },
+      "tests": [
+        "post-freerouting-multi-family-drc-score",
+        "post-freerouting-collateral-damage-guard",
+        "post-freerouting-repair-promotion-gate"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]

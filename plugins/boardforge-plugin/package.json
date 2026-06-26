@@ -377,6 +377,9 @@
     "test:post-freerouting-via-relocation-connectivity": "node --test --test-name-pattern \"post-FreeRouting legal via-site search relocates via\" ./tests/*.test.mjs",
     "test:post-freerouting-legal-waypoint-search": "node --test --test-name-pattern \"post-FreeRouting legal waypoint search\" ./tests/*.test.mjs",
     "test:post-freerouting-scored-cluster-mutation": "node --test --test-name-pattern \"post-FreeRouting scored cluster mutation\" ./tests/*.test.mjs",
+    "test:post-freerouting-multi-family-drc-score": "node --test --test-name-pattern \"post-FreeRouting multi-family DRC score\" ./tests/*.test.mjs",
+    "test:post-freerouting-collateral-damage-guard": "node --test --test-name-pattern \"post-FreeRouting collateral damage guard\" ./tests/*.test.mjs",
+    "test:post-freerouting-repair-promotion-gate": "node --test --test-name-pattern \"post-FreeRouting repair promotion gate\" ./tests/*.test.mjs",
     "test:original-spec-preserved-after-postroute-repair": "node --test --test-name-pattern \"repair imported track widths\" ./tests/*.test.mjs",
     "test:freerouting-postroute-solution-library": "node --test --test-name-pattern \"freerouting postroute solution library\" ./tests/*.test.mjs"
   },

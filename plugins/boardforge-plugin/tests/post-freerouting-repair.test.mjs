@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildLegalSiteMapForPostRouteRepair,
+  auditCleanup4ViaRelocations,
   classifyPostFreeRoutingDrc,
+  compareDrcHealthBeforeAfter,
   clusterPostFreeRoutingDrc,
   findLegalDoglegWaypoints,
   findNearestLegalThroughViaSite,
@@ -10,6 +12,8 @@ import {
   relocateImportedViaToLegalSite,
   rerouteSegmentThroughLegalWaypoints,
   repairImportedRouteDimensions,
+  scoreDrcHealth,
+  shouldPromotePostRouteRepair,
 } from '../lib/external-routing/post-freerouting-repair.mjs';
 
 const SAMPLE_ROUTED = `
@@ -257,4 +261,43 @@ test('post-FreeRouting scored cluster mutation reroutes through legal waypoint',
   assert.equal(result.rerouted, true);
   assert.equal((result.pcbText.match(/\(segment/g) || []).length, 2);
   assert.match(result.pcbText, /\(net "\/SIG"\)/);
+});
+
+test('post-FreeRouting multi-family DRC score weighs critical families heavily', () => {
+  const healthy = scoreDrcHealth({ types: { clearance: 10, hole_clearance: 5, shorting_items: 0 }, unconnected: 0 });
+  const dangerous = scoreDrcHealth({ types: { clearance: 9, hole_clearance: 4, shorting_items: 1 }, unconnected: 0 });
+  assert.equal(dangerous.score > healthy.score, true);
+});
+
+test('post-FreeRouting collateral damage guard rejects critical-family regression', () => {
+  const before = { types: { hole_clearance: 125, shorting_items: 9, tracks_crossing: 0 }, unconnected: 239 };
+  const after = { types: { hole_clearance: 112, shorting_items: 14, tracks_crossing: 2 }, unconnected: 239 };
+  const decision = shouldPromotePostRouteRepair(before, after);
+  assert.equal(decision.promote, false);
+  assert.deepEqual(decision.worsenedCriticalFamilies, ['shorting_items', 'tracks_crossing']);
+});
+
+test('post-FreeRouting repair promotion gate accepts clean weighted improvement', () => {
+  const before = { types: { hole_clearance: 125, shorting_items: 9, tracks_crossing: 0 }, unconnected: 239 };
+  const after = { types: { hole_clearance: 112, shorting_items: 9, tracks_crossing: 0 }, unconnected: 239 };
+  const decision = shouldPromotePostRouteRepair(before, after);
+  assert.equal(decision.promote, true);
+});
+
+test('post-FreeRouting DRC health comparison reports family deltas', () => {
+  const comparison = compareDrcHealthBeforeAfter(
+    { types: { copper_edge_clearance: 73, clearance: 500 }, unconnected: 239 },
+    { types: { copper_edge_clearance: 70, clearance: 501 }, unconnected: 239 },
+  );
+  assert.equal(comparison.delta.copper_edge_clearance, -3);
+  assert.equal(comparison.delta.clearance, 1);
+});
+
+test('post-FreeRouting cleanup4 via relocation audit flags collateral damage', () => {
+  const audit = auditCleanup4ViaRelocations({
+    beforeDrc: { types: { hole_clearance: 125, shorting_items: 9, tracks_crossing: 0 }, unconnected: 239 },
+    afterDrc: { types: { hole_clearance: 112, shorting_items: 14, tracks_crossing: 2 }, unconnected: 239 },
+  });
+  assert.equal(audit.promoted, false);
+  assert.equal(audit.status, 'cleanup4_via_relocations_rejected_for_collateral_damage');
 });

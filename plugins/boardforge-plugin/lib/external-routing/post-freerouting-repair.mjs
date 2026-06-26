@@ -401,6 +401,111 @@ export function rankSegmentRepairCandidates({ pcbText, uuid, obstacle, options =
   return result.candidates || [];
 }
 
+export function scoreDrcHealth(drcLike, options = {}) {
+  const weights = {
+    forbidden_via: 100000,
+    board_outline_change: 100000,
+    mounting_hole_move: 100000,
+    part_footprint_package_change: 100000,
+    shorting_items: 2500,
+    tracks_crossing: 2000,
+    unconnected_items: 1500,
+    clearance: 100,
+    hole_clearance: 180,
+    copper_edge_clearance: 250,
+    solder_mask_bridge: 120,
+    drill_out_of_range: 150,
+    track_dangling: 150,
+    malformed_courtyard: 15,
+    courtyards_overlap: 15,
+    silk_edge_clearance: 5,
+    silk_overlap: 3,
+    silk_over_copper: 3,
+    lib_footprint_mismatch: 2,
+    text_height: 1,
+    text_thickness: 1,
+    ...(options.weights || {}),
+  };
+  const counts = normalizeDrcCounts(drcLike);
+  let score = 0;
+  for (const [family, count] of Object.entries(counts.types)) {
+    score += count * (weights[family] ?? 50);
+  }
+  score += (counts.unconnected || 0) * weights.unconnected_items;
+  return {
+    score,
+    counts,
+    weights,
+  };
+}
+
+export function compareDrcHealthBeforeAfter(before, after, options = {}) {
+  const beforeHealth = scoreDrcHealth(before, options);
+  const afterHealth = scoreDrcHealth(after, options);
+  const families = new Set([...Object.keys(beforeHealth.counts.types), ...Object.keys(afterHealth.counts.types), 'unconnected_items']);
+  const delta = {};
+  for (const family of families) {
+    const beforeCount = family === 'unconnected_items' ? beforeHealth.counts.unconnected : beforeHealth.counts.types[family] || 0;
+    const afterCount = family === 'unconnected_items' ? afterHealth.counts.unconnected : afterHealth.counts.types[family] || 0;
+    delta[family] = afterCount - beforeCount;
+  }
+  return {
+    before: beforeHealth,
+    after: afterHealth,
+    delta,
+    scoreDelta: afterHealth.score - beforeHealth.score,
+    improved: afterHealth.score < beforeHealth.score,
+  };
+}
+
+export function shouldPromotePostRouteRepair(before, after, options = {}) {
+  const criticalFamilies = options.criticalFamilies || [
+    'shorting_items',
+    'tracks_crossing',
+    'unconnected_items',
+    'forbidden_via',
+    'board_outline_change',
+    'mounting_hole_move',
+    'part_footprint_package_change',
+  ];
+  const comparison = compareDrcHealthBeforeAfter(before, after, options);
+  const worsenedCriticalFamilies = criticalFamilies.filter((family) => (comparison.delta[family] || 0) > 0);
+  const forbiddenViolation = criticalFamilies
+    .filter((family) => /forbidden|outline|mounting|part_footprint/.test(family))
+    .some((family) => (comparison.after.counts.types[family] || 0) > (comparison.before.counts.types[family] || 0));
+  const promote = comparison.improved && worsenedCriticalFamilies.length === 0 && !forbiddenViolation;
+  return {
+    promote,
+    comparison,
+    worsenedCriticalFamilies,
+    reason: promote
+      ? 'weighted DRC score improved with no critical-family regression'
+      : explainPromotionRejection(comparison, worsenedCriticalFamilies, forbiddenViolation),
+  };
+}
+
+export function rollbackCollateralDamage({ candidateAccepted = false, beforePath, candidatePath, outputPath, beforeDrc, afterDrc, options = {} } = {}) {
+  const decision = shouldPromotePostRouteRepair(beforeDrc, afterDrc, options);
+  if (candidateAccepted && decision.promote) {
+    if (candidatePath && outputPath) fs.copyFileSync(candidatePath, outputPath);
+    return { rolledBack: false, decision };
+  }
+  if (beforePath && outputPath) fs.copyFileSync(beforePath, outputPath);
+  return { rolledBack: true, decision };
+}
+
+export function auditCleanup4ViaRelocations({ beforeDrc, afterDrc } = {}) {
+  const decision = shouldPromotePostRouteRepair(beforeDrc, afterDrc);
+  return {
+    status: decision.promote ? 'cleanup4_via_relocations_promotable' : 'cleanup4_via_relocations_rejected_for_collateral_damage',
+    promoted: decision.promote,
+    reason: decision.reason,
+    scoreDelta: decision.comparison.scoreDelta,
+    worsenedCriticalFamilies: decision.worsenedCriticalFamilies,
+    delta: decision.comparison.delta,
+  };
+}
+
 export function clusterPostFreeRoutingDrc(drcReport, options = {}) {
   const gridMm = options.gridMm ?? 3;
   const violations = Array.isArray(drcReport?.violations) ? drcReport.violations : [];
@@ -800,6 +905,34 @@ function finalizeCluster(cluster) {
     nets: [...cluster.nets].sort(),
     objects: [...cluster.objects].sort(),
   };
+}
+
+function normalizeDrcCounts(drcLike = {}) {
+  if (drcLike.types || Number.isFinite(drcLike.unconnected)) {
+    return {
+      types: { ...(drcLike.types || {}) },
+      unconnected: Number(drcLike.unconnected || drcLike.kiCadStdoutUnconnected || 0),
+    };
+  }
+  const violations = Array.isArray(drcLike.violations) ? drcLike.violations : [];
+  const types = {};
+  let unconnected = 0;
+  for (const violation of violations) {
+    const type = violation.type || violation.code || 'unknown';
+    if (/unconnected/i.test(type) || /unconnected/i.test(violation.description || '')) {
+      unconnected += 1;
+    } else {
+      types[type] = (types[type] || 0) + 1;
+    }
+  }
+  return { types, unconnected };
+}
+
+function explainPromotionRejection(comparison, worsenedCriticalFamilies, forbiddenViolation) {
+  if (forbiddenViolation) return 'forbidden board/spec/via family regressed';
+  if (worsenedCriticalFamilies.length) return `critical family worsened: ${worsenedCriticalFamilies.join(', ')}`;
+  if (!comparison.improved) return 'weighted DRC score did not improve';
+  return 'post-route repair promotion guard rejected candidate';
 }
 
 function averagePosition(positions) {
