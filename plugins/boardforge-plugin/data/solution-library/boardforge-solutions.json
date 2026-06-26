@@ -2718,5 +2718,223 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "postroute_prescore_candidate_filter_001",
+    "createdAt": "2026-06-26T19:44:43.142Z",
+    "updatedAt": "2026-06-26T19:44:43.142Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC / motor-controller / dense-mixed-signal",
+    "problemType": "DRC/post-route repair throughput",
+    "problemSignature": {
+      "errorCode": "POSTROUTE_PRESCORE_CANDIDATE_FILTER_001",
+      "symptoms": [
+        "post-route repair candidate yield was too low and full KiCad DRC was spent on low-probability candidates"
+      ]
+    },
+    "rootCause": "BoardForge generated legal-looking route mutations without predicting collateral or target-family improvement before expensive DRC.",
+    "fixSummary": "Add preScorePostRouteRepairCandidate and predicted DRC deltas to reject bad candidates before full KiCad DRC.",
+    "implementation": {
+      "filesChanged": [
+        "lib/external-routing/post-freerouting-repair.mjs",
+        "tests/post-freerouting-repair.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [
+        "preScorePostRouteRepairCandidate",
+        "predictCandidateDrcDeltas",
+        "predictCriticalFamilyRegression"
+      ],
+      "testsAdded": [
+        "test:post-freerouting-candidate-prescore",
+        "test:post-freerouting-critical-regression-prediction"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "conditions": [
+        "post-FreeRouting cleanup",
+        "guarded local repair",
+        "high DRC candidate rejection rate"
+      ]
+    },
+    "recipe": [
+      "Rank clusters by repairability",
+      "Generate candidate mutations",
+      "Pre-score target-family improvement and collateral risk",
+      "Run full KiCad DRC only for pre-score-approved candidates",
+      "Promote only through the multi-family DRC gate"
+    ],
+    "safetyRules": [
+      "Do not replace full KiCad DRC with pre-score",
+      "Do not permit shorts/crossings/unconnected regressions",
+      "Do not modify locked board spec"
+    ],
+    "evidence": {
+      "before": {
+        "cleanup7CandidatesTested": 119,
+        "cleanup7RepairsCommitted": 1
+      },
+      "after": {
+        "cleanup8bCandidatesSentToFullDrc": 10,
+        "cleanup8bRepairsCommitted": 2,
+        "drc": "1261 -> 1255",
+        "weightedScore": "486289 -> 485869"
+      },
+      "tests": [
+        "test:post-freerouting-candidate-prescore",
+        "test:post-freerouting-critical-regression-prediction"
+      ]
+    },
+    "status": "active",
+    "confidence": "medium"
+  },
+  {
+    "id": "postroute_high_yield_cluster_selection_001",
+    "createdAt": "2026-06-26T19:44:43.142Z",
+    "updatedAt": "2026-06-26T19:44:43.142Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC / motor-controller / dense-mixed-signal",
+    "problemType": "DRC/post-route repair throughput",
+    "problemSignature": {
+      "errorCode": "POSTROUTE_HIGH_YIELD_CLUSTER_SELECTION_001",
+      "symptoms": [
+        "guarded repair batches spent candidate budget on low-yield/review-only clusters"
+      ]
+    },
+    "rootCause": "Cluster selection did not rank route-generated clusters by expected safe repairability.",
+    "fixSummary": "Add high-yield cluster selection that prefers safe route-generated hole, clearance, and copper-edge clusters and defers review-only clusters.",
+    "implementation": {
+      "filesChanged": [
+        "lib/external-routing/post-freerouting-repair.mjs",
+        "tests/post-freerouting-repair.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [
+        "selectHighYieldClusters",
+        "deferLowYieldClustersWithReason"
+      ],
+      "testsAdded": [
+        "test:post-freerouting-high-yield-cluster-selection"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "conditions": [
+        "post-FreeRouting cleanup",
+        "guarded local repair",
+        "high DRC candidate rejection rate"
+      ]
+    },
+    "recipe": [
+      "Rank clusters by repairability",
+      "Generate candidate mutations",
+      "Pre-score target-family improvement and collateral risk",
+      "Run full KiCad DRC only for pre-score-approved candidates",
+      "Promote only through the multi-family DRC gate"
+    ],
+    "safetyRules": [
+      "Do not replace full KiCad DRC with pre-score",
+      "Do not permit shorts/crossings/unconnected regressions",
+      "Do not modify locked board spec"
+    ],
+    "evidence": {
+      "before": {
+        "cleanup7CandidatesTested": 119,
+        "cleanup7RepairsCommitted": 1
+      },
+      "after": {
+        "cleanup8bCandidatesSentToFullDrc": 10,
+        "cleanup8bRepairsCommitted": 2,
+        "drc": "1261 -> 1255",
+        "weightedScore": "486289 -> 485869"
+      },
+      "tests": [
+        "test:post-freerouting-high-yield-cluster-selection"
+      ]
+    },
+    "status": "active",
+    "confidence": "medium"
+  },
+  {
+    "id": "postroute_repairability_ranking_001",
+    "createdAt": "2026-06-26T19:44:43.142Z",
+    "updatedAt": "2026-06-26T19:44:43.142Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC / motor-controller / dense-mixed-signal",
+    "problemType": "DRC/post-route repair throughput",
+    "problemSignature": {
+      "errorCode": "POSTROUTE_REPAIRABILITY_RANKING_001",
+      "symptoms": [
+        "repair scheduler needed a reusable score for selecting clusters before mutation"
+      ]
+    },
+    "rootCause": "Clusters were processed mostly by family order instead of repairability evidence.",
+    "fixSummary": "Rank clusters using family priority, auto-repair safety, density penalty, and review-only penalty before candidate generation.",
+    "implementation": {
+      "filesChanged": [
+        "lib/external-routing/post-freerouting-repair.mjs",
+        "tests/post-freerouting-repair.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [
+        "rankPostRouteClustersByRepairability"
+      ],
+      "testsAdded": [
+        "test:post-freerouting-repairability-ranking"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "conditions": [
+        "post-FreeRouting cleanup",
+        "guarded local repair",
+        "high DRC candidate rejection rate"
+      ]
+    },
+    "recipe": [
+      "Rank clusters by repairability",
+      "Generate candidate mutations",
+      "Pre-score target-family improvement and collateral risk",
+      "Run full KiCad DRC only for pre-score-approved candidates",
+      "Promote only through the multi-family DRC gate"
+    ],
+    "safetyRules": [
+      "Do not replace full KiCad DRC with pre-score",
+      "Do not permit shorts/crossings/unconnected regressions",
+      "Do not modify locked board spec"
+    ],
+    "evidence": {
+      "before": {
+        "cleanup7CandidatesTested": 119,
+        "cleanup7RepairsCommitted": 1
+      },
+      "after": {
+        "cleanup8bCandidatesSentToFullDrc": 10,
+        "cleanup8bRepairsCommitted": 2,
+        "drc": "1261 -> 1255",
+        "weightedScore": "486289 -> 485869"
+      },
+      "tests": [
+        "test:post-freerouting-repairability-ranking"
+      ]
+    },
+    "status": "active",
+    "confidence": "medium"
   }
 ]

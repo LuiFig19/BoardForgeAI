@@ -429,6 +429,167 @@ export function rankSegmentRepairCandidates({ pcbText, uuid, obstacle, options =
   return result.candidates || [];
 }
 
+export function preScorePostRouteRepairCandidate({ beforePcbText = '', candidatePcbText = '', cluster = {}, candidate = {}, baselineDrc = {}, options = {} } = {}) {
+  const repairType = candidate.repairType || candidate.type || 'unknown';
+  const targetFamily = cluster.family || candidate.targetFamily || 'unknown';
+  const beforeObjects = parseRouteObjects(beforePcbText);
+  const candidateObjects = parseRouteObjects(candidatePcbText);
+  const candidateMap = buildLegalSiteMapForPostRouteRepair(candidatePcbText, options);
+  const forbiddenVias = scanForbiddenViasInPcbText(candidatePcbText);
+  const predictedCollateral = predictCandidateDrcDeltas({
+    beforeObjects,
+    candidateObjects,
+    candidateMap,
+    forbiddenVias,
+    candidate,
+    targetFamily,
+    options,
+  });
+  const predictedTargetFamilyDelta = estimateTargetFamilyDelta({ targetFamily, candidate, candidateMap });
+  const beforeScore = scoreDrcHealth(baselineDrc).score;
+  const baselineCounts = normalizeDrcCounts(baselineDrc);
+  const predictedTypes = { ...(baselineCounts.types || {}) };
+  const familyDeltaMap = {
+    shorting_items: predictedCollateral.shorting,
+    tracks_crossing: predictedCollateral.tracks_crossing,
+    clearance: predictedCollateral.clearance,
+    solder_mask_bridge: predictedCollateral.solder_mask_bridge,
+    copper_edge_clearance: predictedCollateral.copper_edge,
+    hole_clearance: predictedCollateral.hole_clearance,
+    forbidden_via: predictedCollateral.forbidden_via,
+  };
+  familyDeltaMap[targetFamily] = (familyDeltaMap[targetFamily] || 0) + predictedTargetFamilyDelta;
+  for (const [family, delta] of Object.entries(familyDeltaMap)) {
+    predictedTypes[family] = Math.max(0, (predictedTypes[family] || 0) + Number(delta || 0));
+  }
+  const predictedAfter = {
+    types: predictedTypes,
+    unconnected: (baselineCounts.unconnected || 0) + predictedCollateral.unconnected,
+  };
+  const predictedWeightedScoreDelta = scoreDrcHealth(predictedAfter).score - beforeScore;
+  const rejection = firstPreScoreRejection(predictedCollateral, predictedWeightedScoreDelta, options);
+  return {
+    candidateId: candidate.candidateId || candidate.uuid || '',
+    clusterId: cluster.clusterId || '',
+    repairType,
+    targetFamily,
+    predictedTargetFamilyDelta,
+    predictedCollateral,
+    predictedWeightedScoreDelta,
+    preScoreDecision: rejection ? 'reject_before_drc' : 'send_to_drc',
+    reason: rejection || 'predicted weighted score improves with no critical collateral risk',
+  };
+}
+
+export function predictCandidateDrcDeltas({ beforeObjects = {}, candidateObjects = {}, candidateMap = null, forbiddenVias = [], candidate = {}, targetFamily = '', options = {} } = {}) {
+  const routeCountDelta = (candidateObjects.segments?.length || 0) + (candidateObjects.vias?.length || 0)
+    - (beforeObjects.segments?.length || 0) - (beforeObjects.vias?.length || 0);
+  const risk = {
+    shorting: estimateShortingRisk({ candidateMap, candidate, options }),
+    tracks_crossing: estimateTrackCrossingRisk({ routeCountDelta, candidate, options }),
+    clearance: estimateLocalClearanceRisk({ candidateMap, candidate, options }),
+    solder_mask_bridge: estimateSolderMaskRisk({ candidateMap, candidate, options }),
+    copper_edge: estimateCopperEdgeRisk({ candidateMap, candidate, targetFamily, options }),
+    hole_clearance: estimateHoleClearanceRisk({ candidateMap, candidate, targetFamily, options }),
+    unconnected: candidate.breaksConnectivity ? 1 : 0,
+    forbidden_via: forbiddenVias.length,
+  };
+  return risk;
+}
+
+export function predictCriticalFamilyRegression(preScore = {}) {
+  const collateral = preScore.predictedCollateral || preScore;
+  return ['shorting', 'tracks_crossing', 'unconnected', 'forbidden_via']
+    .filter((family) => Number(collateral[family] || 0) > 0);
+}
+
+export function estimateLocalClearanceRisk({ candidateMap = null, candidate = {}, options = {} } = {}) {
+  const margin = candidate.site?.clearanceMarginMm ?? candidate.clearanceMarginMm;
+  const minMargin = options.minPredictedClearanceMarginMm ?? 0.02;
+  if (Number.isFinite(margin) && margin < minMargin) return 1;
+  if (candidate.reasonIfIllegal && /clearance/i.test(candidate.reasonIfIllegal)) return 1;
+  if (candidateMap && candidate.site) {
+    const site = candidateMap.evaluateSite(candidate.site, { net: candidate.net, layer: candidate.site.layer || candidate.layer, ignoreUuids: [candidate.uuid].filter(Boolean) });
+    if (!site.legal) return 1;
+  }
+  return 0;
+}
+
+export function estimateShortingRisk({ candidateMap = null, candidate = {}, options = {} } = {}) {
+  const margin = candidate.site?.clearanceMarginMm ?? candidate.clearanceMarginMm;
+  if (Number.isFinite(margin) && margin < (options.shortRiskMarginMm ?? -0.02)) return 1;
+  if (candidate.reasonIfIllegal && /short|same location|overlap/i.test(candidate.reasonIfIllegal)) return 1;
+  return 0;
+}
+
+export function estimateTrackCrossingRisk({ routeCountDelta = 0, candidate = {}, options = {} } = {}) {
+  if (candidate.crossingRisk) return 1;
+  if (/dogleg|reroute/i.test(candidate.repairType || candidate.type || '') && routeCountDelta > (options.maxRouteObjectDeltaBeforeCrossingRisk ?? 3)) return 1;
+  return 0;
+}
+
+export function estimateSolderMaskRisk({ candidate = {} } = {}) {
+  if (candidate.nearPadMask || /mask/i.test(candidate.reasonIfIllegal || '')) return 1;
+  return 0;
+}
+
+export function estimateCopperEdgeRisk({ candidateMap = null, candidate = {}, targetFamily = '', options = {} } = {}) {
+  const point = candidate.site || candidate.waypoint || candidate;
+  const bounds = candidateMap?.boardBounds;
+  if (!bounds || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return 0;
+  const edgeMargin = Math.min(point.x - bounds.minX, bounds.maxX - point.x, point.y - bounds.minY, bounds.maxY - point.y);
+  const minEdge = options.minEdgeMarginMm ?? 0.5;
+  if (edgeMargin < minEdge && targetFamily !== 'copper_edge_clearance') return 1;
+  return 0;
+}
+
+export function estimateHoleClearanceRisk({ candidate = {}, targetFamily = '' } = {}) {
+  if (targetFamily === 'hole_clearance') return 0;
+  if (/hole|PTH|mounting/i.test(candidate.nearestObstacle || candidate.reasonIfIllegal || '')) return 1;
+  return 0;
+}
+
+export function rankPostRouteClustersByRepairability(clusters = [], options = {}) {
+  const familyWeight = {
+    hole_clearance: 100,
+    copper_edge_clearance: 90,
+    clearance: 80,
+    solder_mask_bridge: 40,
+    track_dangling: 30,
+    ...(options.familyWeight || {}),
+  };
+  return [...clusters].map((cluster) => {
+    const reviewPenalty = cluster.reviewOnly ? 1000 : 0;
+    const autoBonus = cluster.autoRepairSafe ? 50 : 0;
+    const densityPenalty = Math.max(0, (cluster.objects?.length || 0) - 6) * 4;
+    const score = (familyWeight[cluster.family] || 10) + autoBonus + Math.min(cluster.violationCount || 0, 20) - densityPenalty - reviewPenalty;
+    return { ...cluster, repairabilityScore: score };
+  }).sort((a, b) => b.repairabilityScore - a.repairabilityScore || (b.violationCount || 0) - (a.violationCount || 0));
+}
+
+export function selectHighYieldClusters(clusters = [], options = {}) {
+  const limit = options.limit ?? 50;
+  return rankPostRouteClustersByRepairability(clusters, options)
+    .filter((cluster) => cluster.autoRepairSafe && !cluster.reviewOnly && (cluster.repairabilityScore || 0) > 0)
+    .slice(0, limit);
+}
+
+export function deferLowYieldClustersWithReason(clusters = [], options = {}) {
+  const selected = new Set(selectHighYieldClusters(clusters, options).map((cluster) => cluster.clusterId));
+  return rankPostRouteClustersByRepairability(clusters, options)
+    .filter((cluster) => !selected.has(cluster.clusterId))
+    .map((cluster) => ({
+      clusterId: cluster.clusterId,
+      family: cluster.family,
+      reason: cluster.reviewOnly
+        ? 'review-only footprint/library cluster'
+        : !cluster.autoRepairSafe
+          ? 'not marked safe for automatic post-route mutation'
+          : 'lower repairability score than selected candidates',
+      repairabilityScore: cluster.repairabilityScore,
+    }));
+}
+
 export function scoreDrcHealth(drcLike, options = {}) {
   const weights = {
     forbidden_via: 100000,
@@ -954,6 +1115,27 @@ function normalizeDrcCounts(drcLike = {}) {
     }
   }
   return { types, unconnected };
+}
+
+function estimateTargetFamilyDelta({ targetFamily = '', candidate = {}, candidateMap = null } = {}) {
+  if (candidate.predictedTargetFamilyDelta !== undefined) return Number(candidate.predictedTargetFamilyDelta);
+  if (candidateMap && candidate.site) {
+    const site = candidateMap.evaluateSite(candidate.site, { net: candidate.net, layer: candidate.site.layer || candidate.layer, ignoreUuids: [candidate.uuid].filter(Boolean) });
+    if (site.legal && ['hole_clearance', 'copper_edge_clearance', 'clearance'].includes(targetFamily)) return -1;
+  }
+  if (/dogleg|reroute|via_relocation|segment_nudge/i.test(candidate.repairType || candidate.type || '')) return -1;
+  return 0;
+}
+
+function firstPreScoreRejection(predictedCollateral = {}, predictedWeightedScoreDelta = 0, options = {}) {
+  if ((predictedCollateral.forbidden_via || 0) > 0) return 'predicted forbidden via risk';
+  if ((predictedCollateral.shorting || 0) > 0) return 'predicted shorting regression';
+  if ((predictedCollateral.tracks_crossing || 0) > 0) return 'predicted track-crossing regression';
+  if ((predictedCollateral.unconnected || 0) > 0) return 'predicted unconnected regression';
+  if ((predictedCollateral.copper_edge || 0) > 0 && options.allowEdgeRisk !== true) return 'predicted copper-edge regression';
+  if ((predictedCollateral.hole_clearance || 0) > 0 && options.allowHoleRisk !== true) return 'predicted hole-clearance regression';
+  if (predictedWeightedScoreDelta >= 0 && options.allowNeutralPreScore !== true) return 'predicted weighted DRC score does not improve';
+  return '';
 }
 
 function explainPromotionRejection(comparison, worsenedCriticalFamilies, forbiddenViolation) {

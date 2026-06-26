@@ -9,11 +9,15 @@ import {
   findLegalDoglegWaypoints,
   findNearestLegalThroughViaSite,
   mutateSegmentDoglegByUuid,
+  preScorePostRouteRepairCandidate,
+  predictCriticalFamilyRegression,
+  rankPostRouteClustersByRepairability,
   relocateImportedViaToLegalSite,
   rerouteSegmentThroughLegalWaypoints,
   repairImportedRouteDimensions,
   rollbackCollateralDamage,
   scanForbiddenViasInPcbText,
+  selectHighYieldClusters,
   scoreDrcHealth,
   shouldPromotePostRouteRepair,
 } from '../lib/external-routing/post-freerouting-repair.mjs';
@@ -302,6 +306,54 @@ test('post-FreeRouting DRC health comparison reports family deltas', () => {
   );
   assert.equal(comparison.delta.copper_edge_clearance, -3);
   assert.equal(comparison.delta.clearance, 1);
+});
+
+test('post-FreeRouting candidate prescore rejects obvious critical regression before DRC', () => {
+  const prescore = preScorePostRouteRepairCandidate({
+    beforePcbText: SAMPLE_ROUTED,
+    candidatePcbText: `${SAMPLE_ROUTED}\n(via blind (at 4 4) (size 0.5) (drill 0.3) (layers "F.Cu" "In1.Cu"))`,
+    cluster: { clusterId: 'c1', family: 'hole_clearance' },
+    candidate: { repairType: 'via_relocation', uuid: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' },
+    baselineDrc: { types: { hole_clearance: 10, shorting_items: 0, tracks_crossing: 0 }, unconnected: 0 },
+  });
+  assert.equal(prescore.preScoreDecision, 'reject_before_drc');
+  assert.match(prescore.reason, /forbidden via/);
+});
+
+test('post-FreeRouting candidate prescore sends predicted target-family improvement to DRC', () => {
+  const prescore = preScorePostRouteRepairCandidate({
+    beforePcbText: SAMPLE_ROUTED,
+    candidatePcbText: SAMPLE_ROUTED,
+    cluster: { clusterId: 'hole-1', family: 'hole_clearance' },
+    candidate: { repairType: 'via_relocation', predictedTargetFamilyDelta: -1 },
+    baselineDrc: { types: { hole_clearance: 10, shorting_items: 0, tracks_crossing: 0 }, unconnected: 0 },
+  });
+  assert.equal(prescore.preScoreDecision, 'send_to_drc');
+  assert.equal(prescore.predictedTargetFamilyDelta, -1);
+  assert.equal(prescore.predictedWeightedScoreDelta < 0, true);
+});
+
+test('post-FreeRouting critical regression prediction names unsafe families', () => {
+  const families = predictCriticalFamilyRegression({ shorting: 1, tracks_crossing: 1, clearance: 2 });
+  assert.deepEqual(families, ['shorting', 'tracks_crossing']);
+});
+
+test('post-FreeRouting repairability ranking prioritizes safe route-generated clusters', () => {
+  const ranked = rankPostRouteClustersByRepairability([
+    { clusterId: 'review', family: 'solder_mask_bridge', autoRepairSafe: false, reviewOnly: true, violationCount: 50, objects: [] },
+    { clusterId: 'hole', family: 'hole_clearance', autoRepairSafe: true, violationCount: 5, objects: ['via'] },
+    { clusterId: 'clearance', family: 'clearance', autoRepairSafe: true, violationCount: 20, objects: Array.from({ length: 20 }, (_, index) => `o${index}`) },
+  ]);
+  assert.equal(ranked[0].clusterId, 'hole');
+  assert.equal(ranked.at(-1).clusterId, 'review');
+});
+
+test('post-FreeRouting high-yield cluster selection excludes review-only clusters', () => {
+  const selected = selectHighYieldClusters([
+    { clusterId: 'review', family: 'solder_mask_bridge', autoRepairSafe: false, reviewOnly: true, violationCount: 50, objects: [] },
+    { clusterId: 'edge', family: 'copper_edge_clearance', autoRepairSafe: true, violationCount: 3, objects: ['track'] },
+  ]);
+  assert.deepEqual(selected.map((cluster) => cluster.clusterId), ['edge']);
 });
 
 test('post-FreeRouting cleanup4 via relocation audit flags collateral damage', () => {
