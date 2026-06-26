@@ -3351,5 +3351,100 @@
     },
     "status": "active",
     "confidence": "medium"
+  },
+  {
+    "id": "post_freerouting_cleanup_shorts_before_ratsnest_001",
+    "createdAt": "2026-06-26T21:48:00.000Z",
+    "updatedAt": "2026-06-26T21:48:00.000Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC / motor-controller / dense-mixed-signal",
+    "problemType": "post-route DRC cleanup",
+    "problemSignature": {
+      "errorCode": "POSTROUTE_SHORTS_BLOCK_SAFE_RATSNEST_WRITES",
+      "drcFamily": "shorting_items",
+      "symptoms": [
+        "Exact ratsnest writer can transiently resolve items but creates shorting or track-crossing collateral",
+        "Post-FreeRouting board has existing shorting_items that make new route promotion unsafe"
+      ]
+    },
+    "rootCause": "Remaining FreeRouting-imported shorts made the post-route board too unstable for additional exact-ratsnest writes; the supervisor needed to prioritize route-generated short cleanup first.",
+    "fixSummary": "Pause exact-ratsnest writes while shorts remain, extract route-owned short candidates, remove or reroute only the exact offending generated route object transactionally, and promote only if shorts or weighted DRC improve without critical-family regression.",
+    "implementation": {
+      "filesChanged": [
+        "lib/external-routing/post-freerouting-repair.mjs",
+        "tests/post-freerouting-repair.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [
+        "planPostFreeRoutingCleanupPriority",
+        "extractPostRouteShortRepairCandidates",
+        "removeRouteObjectByUuid",
+        "shouldPromotePostRouteShortCleanup"
+      ],
+      "testsAdded": [
+        "test:post-freerouting-cleanup-priority",
+        "test:postroute-shorts-before-ratsnest",
+        "test:postroute-transactional-drc-cleanup",
+        "test:postroute-preserve-freerouting-copper",
+        "test:postroute-no-new-shorts",
+        "test:solution-library-postroute-cleanup"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "MOTOR_PHASE",
+        "SWITCHING_NODE",
+        "CONTROL_SIGNAL",
+        "REGULATED_RAIL"
+      ],
+      "conditions": [
+        "post-FreeRouting cleanup",
+        "remaining shorting_items",
+        "remaining exact KiCad unconnected items",
+        "imported route copper must be preserved transactionally"
+      ]
+    },
+    "recipe": [
+      "Run KiCad DRC and count shorting_items before attempting new ratsnest writes.",
+      "Pause exact-ratsnest writer while route-generated shorts remain.",
+      "Extract shorting_items whose offending object is an imported segment or via with a UUID.",
+      "Apply one transactional mutation to the exact route object only.",
+      "Run KiCad DRC on the candidate board.",
+      "Promote only if shorts decrease or weighted DRC improves and no critical family worsens.",
+      "Rollback the single candidate if the promotion gate fails."
+    ],
+    "safetyRules": [
+      "Do not remove unrelated FreeRouting copper",
+      "Do not keep mutations that increase shorts, track crossings, forbidden vias, or unconnected count beyond the configured bound",
+      "Do not change board outline, mounting holes, parts, footprints, packages, pads, or nets",
+      "Do not push candidate board files to Git"
+    ],
+    "evidence": {
+      "before": {
+        "inputBoard": "FN-ESC1_boardforge_routed_postroute_cleanup10_ratsnest_guarded.kicad_pcb",
+        "shorting_items": 9,
+        "tracks_crossing": 0,
+        "unconnected": 239
+      },
+      "after": {
+        "mode": "shorts-first cleanup enabled before new ratsnest writes"
+      },
+      "tests": [
+        "test:post-freerouting-cleanup-priority",
+        "test:postroute-shorts-before-ratsnest",
+        "test:postroute-transactional-drc-cleanup",
+        "test:postroute-preserve-freerouting-copper",
+        "test:postroute-no-new-shorts",
+        "test:solution-library-postroute-cleanup"
+      ]
+    },
+    "status": "active",
+    "confidence": "medium"
   }
 ]

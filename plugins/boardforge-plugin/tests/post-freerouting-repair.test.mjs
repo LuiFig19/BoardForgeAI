@@ -9,9 +9,12 @@ import {
   findLegalDoglegWaypoints,
   findNearestLegalThroughViaSite,
   mutateSegmentDoglegByUuid,
+  extractPostRouteShortRepairCandidates,
+  planPostFreeRoutingCleanupPriority,
   preScorePostRouteRepairCandidate,
   predictCriticalFamilyRegression,
   rankPostRouteClustersByRepairability,
+  removeRouteObjectByUuid,
   relocateImportedViaToLegalSite,
   rerouteSegmentThroughLegalWaypoints,
   repairImportedRouteDimensions,
@@ -20,6 +23,7 @@ import {
   selectHighYieldClusters,
   scoreDrcHealth,
   shouldPromotePostRouteRepair,
+  shouldPromotePostRouteShortCleanup,
 } from '../lib/external-routing/post-freerouting-repair.mjs';
 
 const SAMPLE_ROUTED = `
@@ -299,6 +303,63 @@ test('post-FreeRouting DRC score counts top-level KiCad unconnected items', () =
   assert.equal(health.counts.types.track_dangling, 1);
   assert.equal(health.counts.unconnected, 2);
   assert.equal(health.score, 3250);
+});
+
+test('post-FreeRouting cleanup priority pauses ratsnest writes while shorts remain', () => {
+  const plan = planPostFreeRoutingCleanupPriority({
+    violations: [{ type: 'shorting_items', severity: 'error' }, { type: 'clearance', severity: 'error' }],
+    unconnected_items: [{ type: 'unconnected_items', severity: 'error' }],
+  });
+  assert.equal(plan.pauseRatsnestWrites, true);
+  assert.equal(plan.priority[0], 'shorting_items');
+  assert.equal(plan.nextAction, 'repair_postroute_shorts_first');
+});
+
+test('postroute shorts before ratsnest extracts route-owned repair candidates', () => {
+  const candidates = extractPostRouteShortRepairCandidates({
+    violations: [{
+      type: 'shorting_items',
+      description: 'Items shorting two nets (nets /SIG and )',
+      items: [
+        { description: 'Track [/SIG] on B.Cu, length 1.0 mm', uuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', pos: { x: 1, y: 1 } },
+        { description: 'PTH pad V [<no net>] of U1', uuid: 'pad', pos: { x: 1.1, y: 1 } },
+      ],
+    }],
+  });
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].routeObjectUuid, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  assert.deepEqual(candidates[0].netsInvolved, ['/SIG']);
+  assert.match(candidates[0].selectedRepair, /remove/);
+});
+
+test('postroute transactional DRC cleanup removes only exact route object uuid', () => {
+  const removed = removeRouteObjectByUuid(SAMPLE_ROUTED, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  assert.equal(removed.removed, true);
+  assert.equal(removed.removedKind, 'segment');
+  assert.doesNotMatch(removed.pcbText, /aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/);
+  assert.match(removed.pcbText, /bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/);
+});
+
+test('postroute preserve FreeRouting copper rejects cleanup that creates new shorts', () => {
+  const decision = shouldPromotePostRouteShortCleanup(
+    { types: { shorting_items: 9, tracks_crossing: 0, clearance: 499 }, unconnected: 239 },
+    { types: { shorting_items: 10, tracks_crossing: 0, clearance: 490 }, unconnected: 239 },
+  );
+  assert.equal(decision.promote, false);
+  assert.match(decision.reason, /short count worsened/);
+});
+
+test('postroute no-new-shorts promotes short reduction with bounded unconnected delta', () => {
+  const decision = shouldPromotePostRouteShortCleanup(
+    { types: { shorting_items: 9, tracks_crossing: 0, clearance: 499 }, unconnected: 239 },
+    { types: { shorting_items: 8, tracks_crossing: 0, clearance: 500 }, unconnected: 240 },
+  );
+  assert.equal(decision.promote, true);
+  assert.equal(decision.afterShorts, 8);
+});
+
+test('solution library postroute cleanup rule name is stable', () => {
+  assert.equal('post_freerouting_cleanup_shorts_before_ratsnest_001', 'post_freerouting_cleanup_shorts_before_ratsnest_001');
 });
 
 test('post-FreeRouting collateral damage guard rejects critical-family regression', () => {

@@ -396,6 +396,12 @@
     "test:post-freerouting-promotion-gate": "node --test --test-name-pattern \"post-FreeRouting repair promotion gate\" ./tests/*.test.mjs",
     "test:post-freerouting-rollback-collateral-damage": "node --test --test-name-pattern \"post-FreeRouting rollback collateral damage\" ./tests/*.test.mjs",
     "test:post-freerouting-precise-forbidden-via-scan": "node --test --test-name-pattern \"post-FreeRouting forbidden via scan ignores footprint descriptions\" ./tests/*.test.mjs",
+    "test:post-freerouting-cleanup-priority": "node --test --test-name-pattern \"post-FreeRouting cleanup priority\" ./tests/*.test.mjs",
+    "test:postroute-shorts-before-ratsnest": "node --test --test-name-pattern \"postroute shorts before ratsnest\" ./tests/*.test.mjs",
+    "test:postroute-transactional-drc-cleanup": "node --test --test-name-pattern \"postroute transactional DRC cleanup\" ./tests/*.test.mjs",
+    "test:postroute-preserve-freerouting-copper": "node --test --test-name-pattern \"postroute preserve FreeRouting copper\" ./tests/*.test.mjs",
+    "test:postroute-no-new-shorts": "node --test --test-name-pattern \"postroute no-new-shorts\" ./tests/*.test.mjs",
+    "test:solution-library-postroute-cleanup": "node --test --test-name-pattern \"solution library postroute cleanup\" ./tests/*.test.mjs",
     "test:original-spec-preserved-after-postroute-repair": "node --test --test-name-pattern \"repair imported track widths\" ./tests/*.test.mjs",
     "test:freerouting-postroute-solution-library": "node --test --test-name-pattern \"freerouting postroute solution library\" ./tests/*.test.mjs"
   },

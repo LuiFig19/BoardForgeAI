@@ -742,6 +742,126 @@ export function clusterPostFreeRoutingDrc(drcReport, options = {}) {
   return [...clusters.values()].map(finalizeCluster).sort((a, b) => b.violationCount - a.violationCount);
 }
 
+export function planPostFreeRoutingCleanupPriority(drcReport = {}) {
+  const health = scoreDrcHealth(drcReport);
+  const shorts = Number(health.counts.types.shorting_items || 0);
+  const crossings = Number(health.counts.types.tracks_crossing || 0);
+  const clearance = Number(health.counts.types.clearance || 0);
+  const dangling = Number(health.counts.types.track_dangling || 0);
+  return {
+    pauseRatsnestWrites: shorts > 0 || crossings > 0,
+    priority: shorts > 0
+      ? ['shorting_items', 'tracks_crossing', 'clearance', 'track_dangling', 'unconnected_items']
+      : ['clearance', 'tracks_crossing', 'track_dangling', 'unconnected_items'],
+    shorts,
+    crossings,
+    clearance,
+    dangling,
+    weightedScore: health.score,
+    nextAction: shorts > 0 ? 'repair_postroute_shorts_first' : crossings > 0 ? 'repair_track_crossings_before_ratsnest' : 'guarded_drc_cleanup_or_exact_ratsnest',
+  };
+}
+
+export function extractPostRouteShortRepairCandidates(drcReport = {}) {
+  return (drcReport.violations || [])
+    .filter((violation) => String(violation.type || violation.code || '') === 'shorting_items')
+    .map((violation, index) => {
+      const routeItems = (violation.items || []).filter((item) => /\bTrack\b|\bVia\b/i.test(item.description || ''));
+      const fixedItems = (violation.items || []).filter((item) => !routeItems.includes(item));
+      const route = routeItems[0] || null;
+      return {
+        shortId: violation.id || `short_${String(index + 1).padStart(3, '0')}`,
+        netsInvolved: netsFromDrcViolation(violation),
+        location: route?.pos || (violation.items || []).find((item) => item.pos)?.pos || {},
+        objects: (violation.items || []).map((item) => ({
+          uuid: item.uuid || null,
+          description: item.description || '',
+          pos: item.pos || null,
+          routeOwned: /\bTrack\b|\bVia\b/i.test(item.description || ''),
+        })),
+        routeObjectUuid: route?.uuid || null,
+        routeObjectDescription: route?.description || '',
+        fixedObjectDescription: fixedItems.map((item) => item.description || '').filter(Boolean).join(' | '),
+        generatedBy: route ? 'FreeRouting / imported route copper' : 'preexisting_or_footprint_review',
+        repairOptions: [
+          'remove offending generated segment',
+          'reroute segment',
+          'change layer',
+          'move via',
+          'add dogleg',
+          'split route',
+        ],
+        selectedRepair: route?.uuid ? 'remove offending generated segment transactionally' : 'classify for review',
+      };
+    });
+}
+
+export function removeRouteObjectByUuid(pcbText = '', uuid = '') {
+  if (!uuid) return { pcbText, removed: false, uuid, reason: 'missing_uuid' };
+  const lines = String(pcbText).split(/\r?\n/);
+  const out = [];
+  let removed = false;
+  let removedKind = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const match = line.match(ROUTE_BLOCK_RE);
+    if (!match) {
+      out.push(line);
+      continue;
+    }
+    const block = [line];
+    let depth = parenDelta(line);
+    while (index + 1 < lines.length && depth > 0) {
+      index += 1;
+      block.push(lines[index]);
+      depth += parenDelta(lines[index]);
+    }
+    if (!removed && block.some((blockLine) => blockLine.includes(uuid))) {
+      removed = true;
+      removedKind = match[1];
+      continue;
+    }
+    out.push(...block);
+  }
+  return {
+    pcbText: out.join('\n'),
+    removed,
+    uuid,
+    removedKind,
+    reason: removed ? 'route_object_removed_by_uuid' : 'uuid_not_found',
+  };
+}
+
+export function shouldPromotePostRouteShortCleanup(beforeDrc = {}, afterDrc = {}, options = {}) {
+  const beforeHealth = scoreDrcHealth(beforeDrc);
+  const afterHealth = scoreDrcHealth(afterDrc);
+  const beforeShorts = Number(beforeHealth.counts.types.shorting_items || 0);
+  const afterShorts = Number(afterHealth.counts.types.shorting_items || 0);
+  const beforeCrossings = Number(beforeHealth.counts.types.tracks_crossing || 0);
+  const afterCrossings = Number(afterHealth.counts.types.tracks_crossing || 0);
+  const unconnectedDelta = Number(afterHealth.counts.unconnected || 0) - Number(beforeHealth.counts.unconnected || 0);
+  const allowedUnconnectedDelta = Number(options.allowedUnconnectedDelta ?? 2);
+  const shortImproved = afterShorts < beforeShorts;
+  const weightedImproved = afterHealth.score < beforeHealth.score;
+  const promote = (shortImproved || weightedImproved)
+    && afterShorts <= beforeShorts
+    && afterCrossings <= beforeCrossings
+    && unconnectedDelta <= allowedUnconnectedDelta;
+  return {
+    promote,
+    beforeShorts,
+    afterShorts,
+    beforeCrossings,
+    afterCrossings,
+    unconnectedDelta,
+    weightedBefore: beforeHealth.score,
+    weightedAfter: afterHealth.score,
+    reason: promote
+      ? shortImproved ? 'short count decreased without critical collateral damage' : 'weighted DRC score improved without critical collateral damage'
+      : explainShortCleanupRejection({ shortImproved, weightedImproved, beforeShorts, afterShorts, beforeCrossings, afterCrossings, unconnectedDelta, allowedUnconnectedDelta }),
+  };
+}
+
 function repairSegmentBlock(block, minTrackWidth, stats) {
   return block.map((line) => {
     const match = line.match(/^(\s*)\(width\s+([0-9.]+)\)(\s*)$/);
@@ -1144,6 +1264,21 @@ function explainPromotionRejection(comparison, worsenedCriticalFamilies, forbidd
   if (worsenedCriticalFamilies.length) return `critical family worsened: ${worsenedCriticalFamilies.join(', ')}`;
   if (!comparison.improved) return 'weighted DRC score did not improve';
   return 'post-route repair promotion guard rejected candidate';
+}
+
+function explainShortCleanupRejection({ shortImproved, weightedImproved, beforeShorts, afterShorts, beforeCrossings, afterCrossings, unconnectedDelta, allowedUnconnectedDelta } = {}) {
+  if (afterShorts > beforeShorts) return 'short count worsened';
+  if (afterCrossings > beforeCrossings) return 'track crossing count worsened';
+  if (unconnectedDelta > allowedUnconnectedDelta) return `unconnected count increased by ${unconnectedDelta}, above allowed delta ${allowedUnconnectedDelta}`;
+  if (!shortImproved && !weightedImproved) return 'neither short count nor weighted DRC score improved';
+  return 'short cleanup promotion gate rejected candidate';
+}
+
+function netsFromDrcViolation(violation = {}) {
+  const text = `${violation.description || ''} ${(violation.items || []).map((item) => item.description || '').join(' ')}`;
+  return [...new Set((text.match(/\[([^\]]+)\]/g) || [])
+    .map((match) => match.slice(1, -1))
+    .filter((net) => net && net !== '<no net>'))];
 }
 
 function averagePosition(positions) {
