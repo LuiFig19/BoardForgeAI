@@ -3262,5 +3262,94 @@
     },
     "status": "active",
     "confidence": "medium"
+  },
+  {
+    "id": "postroute_physical_writer_handoff_001",
+    "createdAt": "2026-06-26T21:18:00.000Z",
+    "updatedAt": "2026-06-26T21:18:00.000Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC / motor-controller / dense-mixed-signal",
+    "problemType": "post-route unconnected reduction",
+    "problemSignature": {
+      "errorCode": "POSTROUTE_PHYSICAL_WRITER_BACKEND_NOT_ATTACHED",
+      "symptoms": [
+        "Guarded exact-ratsnest writer ranked easy items but blocked before writing copper",
+        "writeCandidate adapter was missing from supervisor handoff"
+      ]
+    },
+    "rootCause": "The guarded ratsnest gate had parser, ranking, and promotion logic, but no physical KiCad writer adapter.",
+    "fixSummary": "Attach a physical post-route route-bundle writer that writes candidate copper to a branch file, runs DRC when available, and promotes only through the exact-ratsnest DRC gate.",
+    "implementation": {
+      "filesChanged": [
+        "lib/jobs.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json"
+      ],
+      "functionsAdded": [
+        "writePostRouteRatsnestBundle",
+        "routeExactUnconnectedItemPhysical",
+        "buildLocalRouteBundleForUnconnectedItem",
+        "applyRouteBundleToKicadPcb",
+        "rollbackRouteBundle"
+      ],
+      "testsAdded": [
+        "test:postroute-physical-writer-handoff",
+        "test:postroute-write-ratsnest-bundle",
+        "test:postroute-ratsnest-writer-commits-only-with-proof",
+        "test:postroute-ratsnest-writer-rolls-back-unsafe-route"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "CONTROL_SIGNAL",
+        "REGULATED_RAIL",
+        "GATE_DRIVE",
+        "BOOTSTRAP"
+      ],
+      "conditions": [
+        "post-FreeRouting cleanup",
+        "remaining exact KiCad unconnected items",
+        "candidate route must be transactional"
+      ]
+    },
+    "recipe": [
+      "Build a local route bundle for the exact source/target pads",
+      "Write the bundle to a candidate board while preserving imported FreeRouting copper",
+      "Run KiCad DRC on the candidate",
+      "Promote only if exact connectivity improves and critical DRC families do not worsen",
+      "Rollback candidate copper when DRC collateral appears"
+    ],
+    "safetyRules": [
+      "Do not retain physical routes that introduce shorts or track crossings",
+      "Do not use forbidden via types",
+      "Do not change board outline, mounting holes, parts, footprints, packages, pads, or nets",
+      "Do not push candidate board files to Git"
+    ],
+    "evidence": {
+      "before": {
+        "physicalRouteAttempts": 0,
+        "reason": "post_route_physical_writer_not_configured"
+      },
+      "after": {
+        "physicalRouteAttempts": 3,
+        "routeBundlesWritten": 3,
+        "routesCommitted": 0,
+        "rollbacks": 3,
+        "reason": "candidate routes resolved exact items transiently but failed collateral DRC guard"
+      },
+      "tests": [
+        "test:postroute-physical-writer-handoff",
+        "test:postroute-write-ratsnest-bundle",
+        "test:postroute-ratsnest-writer-commits-only-with-proof",
+        "test:postroute-ratsnest-writer-rolls-back-unsafe-route"
+      ]
+    },
+    "status": "active",
+    "confidence": "medium"
   }
 ]

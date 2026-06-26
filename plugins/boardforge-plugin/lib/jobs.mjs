@@ -3837,6 +3837,120 @@ export function routeByExactUnconnectedItem(unconnectedItem = {}, options = {}) 
   }
 }
 
+export function buildLocalRouteBundleForUnconnectedItem(unconnectedItem = {}, options = {}) {
+  const source = unconnectedItem.source || { ref: unconnectedItem.sourceRef, pad: unconnectedItem.sourcePad, ...(unconnectedItem.sourceCoord || {}), layer: unconnectedItem.sourceLayer || 'F.Cu' }
+  const target = unconnectedItem.target || { ref: unconnectedItem.targetRef, pad: unconnectedItem.targetPad, ...(unconnectedItem.targetCoord || {}), layer: unconnectedItem.targetLayer || 'F.Cu' }
+  const sourceLayer = source.layer || unconnectedItem.sourceLayer || 'F.Cu'
+  const targetLayer = target.layer || unconnectedItem.targetLayer || sourceLayer
+  const roleWidth = selectEscRouteWidthForNet(unconnectedItem.net || source.net || target.net)
+  const widthMm = options.widthMm || roleWidth.widthMm
+  const routeLayer = options.layer || (sourceLayer === targetLayer ? sourceLayer : preferredPostRouteLayerForRole(roleWidth.role, sourceLayer))
+  const style = options.routeStyle || (sourceLayer === targetLayer ? 'same_layer_dogleg' : 'through_via_layer_change')
+  const elbow = buildPostRouteElbow(source, target, options)
+  const viaNeeded = sourceLayer !== targetLayer || options.forceVia === true
+  const via = viaNeeded ? {
+    x: round(options.via?.x ?? elbow.x),
+    y: round(options.via?.y ?? elbow.y),
+    diameterMm: options.viaDiameterMm || (roleWidth.role === 'HIGH_CURRENT_POWER' || roleWidth.role === 'GROUND' ? 0.7 : 0.5),
+    drillMm: options.viaDrillMm || (roleWidth.role === 'HIGH_CURRENT_POWER' || roleWidth.role === 'GROUND' ? 0.35 : 0.3),
+    layers: ['F.Cu', 'B.Cu'],
+    viaType: 'through',
+    reason: 'post-route exact ratsnest layer change',
+  } : null
+  const waypoints = via
+    ? [source, { x: via.x, y: via.y }, target]
+    : [source, elbow, target]
+  return {
+    status: 'POST_ROUTE_RATSNEST_BUNDLE_READY',
+    unconnectedId: unconnectedItem.unconnectedId,
+    net: unconnectedItem.net,
+    selectedRouteStyle: style,
+    route: {
+      net: unconnectedItem.net,
+      status: 'written_needs_drc',
+      start: { ...source, layer: sourceLayer },
+      end: { ...target, layer: targetLayer },
+      waypoints,
+      layerPreference: [routeLayer],
+      widthMm,
+      endpointContactLayers: { source: sourceLayer, target: targetLayer },
+      viaPlan: { candidates: via ? [via] : [] },
+      routeRole: roleWidth.role,
+      unconnectedId: unconnectedItem.unconnectedId,
+    },
+    expectedAdded: {
+      segments: Math.max(1, waypoints.length - 1),
+      vias: via ? 1 : 0,
+      zones: 0,
+    },
+    forbiddenViaTypes: via?.viaType && via.viaType !== 'through' ? [via.viaType] : [],
+  }
+}
+
+export async function applyRouteBundleToKicadPcb({ pcbFile, candidatePath = pcbFile, routeBundle, board = {}, components = [], pads = [] } = {}) {
+  if (!pcbFile) throw new Error('pcbFile is required for post-route route bundle writing')
+  if (!routeBundle?.route) throw new Error('routeBundle.route is required for post-route route bundle writing')
+  if (candidatePath && path.resolve(candidatePath) !== path.resolve(pcbFile)) await copyFile(pcbFile, candidatePath)
+  const write = await applyRoutingPlanToPcb({
+    pcbFile: candidatePath || pcbFile,
+    board,
+    components,
+    pads,
+    replaceGeneratedCopper: false,
+    routingPlan: {
+      status: 'POST_ROUTE_RATSNEST_WRITER',
+      strictViaConnectivity: false,
+      routes: [routeBundle.route],
+    },
+  })
+  return {
+    ...write,
+    candidatePath: candidatePath || pcbFile,
+    routeBundle,
+    writtenToKiCad: true,
+  }
+}
+
+export async function writePostRouteRatsnestBundle({ pcbFile, candidatePath, unconnectedItem, route = null, beforeDrc = null, kicadCliPath = null, drcOutputFile = null, board = {}, components = [], pads = [] } = {}) {
+  const routeBundle = route?.routeBundle || buildLocalRouteBundleForUnconnectedItem(unconnectedItem, route?.candidate || {})
+  const write = await applyRouteBundleToKicadPcb({ pcbFile, candidatePath, routeBundle, board, components, pads })
+  let afterDrc = null
+  let drcRun = null
+  if (kicadCliPath && drcOutputFile) {
+    drcRun = await runDrc({ pcbFile: write.candidatePath, outputFile: drcOutputFile, kicadCliPath, saveBoard: true })
+    afterDrc = drcRun.report
+  }
+  return {
+    status: afterDrc ? 'WRITTEN_NEEDS_PROMOTION_GATE' : 'WRITTEN_NEEDS_DRC',
+    writtenToKiCad: true,
+    candidatePath: write.candidatePath,
+    routeBundle,
+    writeProof: write.writeProof,
+    beforeDrc,
+    afterDrc,
+    drcRun,
+    forbiddenVias: routeBundle.forbiddenViaTypes.length,
+    originalSpecChanged: false,
+  }
+}
+
+export async function routeExactUnconnectedItemPhysical(route = {}, unconnectedItem = {}, options = {}) {
+  return writePostRouteRatsnestBundle({
+    ...options,
+    unconnectedItem,
+    route: {
+      ...route,
+      routeBundle: route.routeBundle || buildLocalRouteBundleForUnconnectedItem(unconnectedItem, route.candidate || {}),
+    },
+  })
+}
+
+export async function rollbackRouteBundle({ backupPath, candidatePath } = {}) {
+  if (!backupPath || !candidatePath) return { rolledBack: false, reason: 'missing_backup_or_candidate_path' }
+  await copyFile(backupPath, candidatePath)
+  return { rolledBack: true, candidatePath, restoredFrom: backupPath }
+}
+
 export async function consumeRatsnestQueueWithPhysicalRouter({ queuedItems = [], maxItems = 30, writeCandidate = null } = {}) {
   const selected = queuedItems.slice(0, maxItems)
   const results = []
@@ -4057,6 +4171,32 @@ function postRouteUnconnectedReason(item = {}) {
   if (role === 'BOOTSTRAP') return 'local bootstrap/HB/BST route with short-path guard'
   if (role === 'CURRENT_SENSE') return 'protected sense route after lower-risk items'
   return 'deferred or lower-priority post-route ratsnest item'
+}
+
+function preferredPostRouteLayerForRole(role = '', fallbackLayer = 'F.Cu') {
+  const normalized = String(role || '').toUpperCase()
+  if (normalized === 'CONTROL_SIGNAL' || normalized === 'LOW_SPEED_SIGNAL') return 'In3.Cu'
+  if (normalized === 'CURRENT_SENSE') return 'In5.Cu'
+  if (normalized === 'REGULATED_RAIL') return 'In4.Cu'
+  if (normalized === 'GROUND') return 'In1.Cu'
+  if (normalized === 'HIGH_CURRENT_POWER') return 'In2.Cu'
+  if (normalized === 'GATE_DRIVE' || normalized === 'BOOTSTRAP') return fallbackLayer || 'F.Cu'
+  return fallbackLayer || 'F.Cu'
+}
+
+function buildPostRouteElbow(source = {}, target = {}, options = {}) {
+  if (options.elbow && Number.isFinite(Number(options.elbow.x)) && Number.isFinite(Number(options.elbow.y))) {
+    return { x: round(options.elbow.x), y: round(options.elbow.y) }
+  }
+  const sx = Number(source.x)
+  const sy = Number(source.y)
+  const tx = Number(target.x)
+  const ty = Number(target.y)
+  if (!Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(tx) || !Number.isFinite(ty)) return { x: 0, y: 0 }
+  const horizontalFirst = Math.abs(tx - sx) >= Math.abs(ty - sy)
+  return horizontalFirst
+    ? { x: round(tx), y: round(sy) }
+    : { x: round(sx), y: round(ty) }
 }
 
 function isUnconnectedPassSafe(drcReport = {}) {

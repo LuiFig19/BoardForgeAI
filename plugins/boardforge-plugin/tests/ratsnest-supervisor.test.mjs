@@ -1,5 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import { tmpdir } from 'node:os'
 import {
   commitOnlyConnectivityProgress,
   countUnconnectedItemsByNet,
@@ -16,6 +19,8 @@ import {
   diagnoseBoardForgeFailure,
   identifyGeneratedCopperBlockingRoute,
   precheckRatsnestRouteCandidateAgainstDrc,
+  applyRouteBundleToKicadPcb,
+  buildLocalRouteBundleForUnconnectedItem,
   repairConnectedRouteBundle,
   repairConnectingRatsnestRoute,
   rerouteSegmentWithDogleg,
@@ -27,11 +32,16 @@ import {
   diffUnconnectedItemSets,
   rankPostRouteUnconnectedItems,
   routeByExactUnconnectedItem,
+  routeExactUnconnectedItemPhysical,
   routeExactUnconnectedItemWithPromotionGate,
+  rollbackRouteBundle,
   runBoardForgeRootCauseSupervisor,
   runBoardForgeSelfDrivingSupervisor,
   runGuardedExactRatsnestPostRouteWriter,
+  writePostRouteRatsnestBundle,
 } from '../lib/jobs.mjs'
+import { kicadPcbFile } from '../lib/kicad.mjs'
+import { scanKicadCopperAfterWrite } from '../lib/copper-writer.mjs'
 
 function drcWithUnconnected(items = []) {
   return {
@@ -458,4 +468,88 @@ test('self-driving supervisor creates internal plan and avoids user prompt', () 
   assert.equal(supervisor.nextAction, 'runGuardedExactRatsnestPostRouteWriter')
   assert.equal(supervisor.rankedUnconnected.length, 1)
   assert.equal(supervisor.internalWorkPlans.length, 1)
+})
+
+test('postroute physical writer handoff writes bundle through guarded callback', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-postroute-writer-'))
+  try {
+    const pcbFile = path.join(workspace, 'postroute.kicad_pcb')
+    const candidatePath = path.join(workspace, 'candidate.kicad_pcb')
+    await writeFile(pcbFile, kicadPcbFile({ widthMm: 20, heightMm: 20, outline: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }] }, { nets: [{ name: '/NRST' }] }), 'utf8')
+    const report = drcWithUnconnected([['/NRST', 'U1', '7', 2, 2, 'J3', '5', 5, 2]])
+    const batch = await runGuardedExactRatsnestPostRouteWriter({
+      drcReport: report,
+      maxItems: 1,
+      writeCandidate: (route, item) => routeExactUnconnectedItemPhysical(route, item, { pcbFile, candidatePath }),
+    })
+    assert.equal(batch.summary.physicallyAttempted, 1)
+    assert.equal(batch.summary.writtenToKiCad, 1)
+    const copper = await scanKicadCopperAfterWrite(candidatePath)
+    assert.equal(copper.segments >= 1, true)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('postroute write ratsnest bundle preserves existing copper and writes local route', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-ratsnest-bundle-'))
+  try {
+    const pcbFile = path.join(workspace, 'bundle.kicad_pcb')
+    const candidatePath = path.join(workspace, 'bundle-candidate.kicad_pcb')
+    await writeFile(pcbFile, kicadPcbFile({ widthMm: 20, heightMm: 20, outline: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }] }, { nets: [{ name: '/VREG5' }] }), 'utf8')
+    const item = parseKiCadUnconnectedItems(drcWithUnconnected([['/VREG5', 'U4', '4', 2, 2, 'C84', '1', 5, 2]]))[0]
+    const result = await writePostRouteRatsnestBundle({ pcbFile, candidatePath, unconnectedItem: item })
+    assert.equal(result.writtenToKiCad, true)
+    assert.equal(result.routeBundle.net, '/VREG5')
+    assert.equal(result.routeBundle.forbiddenViaTypes.length, 0)
+    const pcb = await readFile(candidatePath, 'utf8')
+    assert.match(pcb, /\(segment/)
+    assert.match(pcb, /\(net "\/VREG5"\)/)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('postroute ratsnest writer commits only with proof from promotion gate', async () => {
+  const before = drcWithUnconnected([['/SS_U2', 'C18', '1', 1, 1, 'U2', '7', 2, 1]])
+  const item = parseKiCadUnconnectedItems(before)[0]
+  const after = { violations: [], unconnected_items: [] }
+  const batch = await runGuardedExactRatsnestPostRouteWriter({
+    drcReport: before,
+    maxItems: 1,
+    writeCandidate: async () => ({ writtenToKiCad: true, beforeDrc: before, afterDrc: after }),
+  })
+  assert.equal(batch.summary.committed, 1)
+  assert.equal(batch.results[0].gate.promote, true)
+  assert.equal(batch.results[0].gate.exactUnconnectedItemResolved, true)
+  assert.equal(item.net, '/SS_U2')
+})
+
+test('postroute ratsnest writer rolls back unsafe route after physical write', async () => {
+  const before = drcWithUnconnected([['/SS_U2', 'C18', '1', 1, 1, 'U2', '7', 2, 1]])
+  const after = { violations: [{ type: 'shorting_items', severity: 'error' }], unconnected_items: [] }
+  const batch = await runGuardedExactRatsnestPostRouteWriter({
+    drcReport: before,
+    maxItems: 1,
+    writeCandidate: async () => ({ writtenToKiCad: true, beforeDrc: before, afterDrc: after, status: 'ROLLED_BACK_DRC_UNSAFE' }),
+  })
+  assert.equal(batch.summary.writtenToKiCad, 1)
+  assert.equal(batch.summary.committed, 0)
+  assert.equal(batch.summary.rolledBack, 1)
+  assert.equal(batch.results[0].gate.promote, false)
+})
+
+test('postroute rollback route bundle restores candidate file from backup', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-ratsnest-rollback-'))
+  try {
+    const backupPath = path.join(workspace, 'backup.kicad_pcb')
+    const candidatePath = path.join(workspace, 'candidate.kicad_pcb')
+    await writeFile(backupPath, '(kicad_pcb (version 20240101))\n', 'utf8')
+    await writeFile(candidatePath, '(kicad_pcb (version 20240101) (segment))\n', 'utf8')
+    const rollback = await rollbackRouteBundle({ backupPath, candidatePath })
+    assert.equal(rollback.rolledBack, true)
+    assert.equal(await readFile(candidatePath, 'utf8'), await readFile(backupPath, 'utf8'))
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
 })
