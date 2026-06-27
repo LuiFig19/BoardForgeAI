@@ -4150,6 +4150,23 @@ export function isZeroCommitStageResult(result = {}) {
   return attempted > 0 && committed === 0 && drcNotBetter && unconnectedNotBetter && !retained
 }
 
+export function isProductivePostRouteStageResult(result = {}) {
+  const committed = Number(result.committed ?? result.repairsCommitted ?? result.routesCommitted ?? 0)
+  const beforeScore = result.weightedDrcBefore ?? result.before?.weightedDrc
+  const afterScore = result.weightedDrcAfter ?? result.after?.weightedDrc
+  const beforeFamily = result.targetFamilyBefore ?? result.before?.targetFamilyCount
+  const afterFamily = result.targetFamilyAfter ?? result.after?.targetFamilyCount
+  const retained = Boolean(result.validRepairRetained || result.routeRetained || result.repairRetained || committed > 0)
+  const scoreImproved = beforeScore != null && afterScore != null && Number(afterScore) < Number(beforeScore)
+  const familyImproved = beforeFamily != null && afterFamily != null && Number(afterFamily) < Number(beforeFamily)
+  return retained && committed > 0 && (scoreImproved || familyImproved || result.forceContinueProductiveStage === true)
+}
+
+export function selectNextStageAfterProductiveCommit({ stage = '', state = {}, result = {} } = {}) {
+  if (isProductivePostRouteStageResult(result) && stage && result.stageComplete !== true) return stage
+  return state.nextStage || stage || ''
+}
+
 export function hasActualRuntimeBudgetRemaining({ startedAt = 0, now = () => Date.now(), runtimeBudgetMs = 300000, reserveMs = 15000 } = {}) {
   const effectiveReserveMs = Math.min(Math.max(0, reserveMs), Math.max(0, runtimeBudgetMs * 0.1))
   return (now() - startedAt) < Math.max(0, runtimeBudgetMs - effectiveReserveMs)
@@ -4316,6 +4333,8 @@ export async function runEscPostRouteDaemonSupervisor({
         shortFixDisconnects: nextState.shortFixDisconnects || state.shortFixDisconnects || [],
         failures: nextState.failures || state.failures || [],
       })
+    } else if (isProductivePostRouteStageResult(stageResult || {})) {
+      nextState.nextStage = selectNextStageAfterProductiveCommit({ stage: nextStage, state: nextState, result: stageResult })
     }
     nextState.resumeCommand = buildPostRouteSupervisorResumeCommand({ board: nextState.currentBoard || nextState.latestBoard || nextState.board || '', cwd: nextState.pluginCwd || '' })
     state = nextState

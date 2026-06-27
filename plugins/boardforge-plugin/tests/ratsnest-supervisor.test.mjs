@@ -37,6 +37,7 @@ import {
   buildPostRouteSupervisorResumeCommand,
   executeNextStageIfBudgetAvailable,
   hasActualRuntimeBudgetRemaining,
+  isProductivePostRouteStageResult,
   routeByExactUnconnectedItem,
   routeExactUnconnectedItemPhysical,
   routeExactUnconnectedItemWithPromotionGate,
@@ -52,6 +53,7 @@ import {
   isValidEscPostRouteFinalState,
   shouldStopForRuntimeLimit,
   selectNextAutonomousPostRouteAction,
+  selectNextStageAfterProductiveCommit,
   shouldSkipExhaustedStageThisRun,
   writePostRouteRatsnestBundle,
 } from '../lib/jobs.mjs'
@@ -720,6 +722,44 @@ test('solution library stage exhaustion skip rule name is stable', () => {
 
 test('postroute hole clearance repair keeps shorts zero rule is stable', () => {
   assert.equal('repair_generated_hole_clearance', 'repair_generated_hole_clearance')
+})
+
+test('postroute continue productive stage repeats copper edge while commits improve score', () => {
+  const result = {
+    committed: 3,
+    weightedDrcBefore: 456164,
+    weightedDrcAfter: 456094,
+    targetFamilyBefore: 55,
+    targetFamilyAfter: 54,
+  }
+  assert.equal(isProductivePostRouteStageResult(result), true)
+  assert.equal(selectNextStageAfterProductiveCommit({ stage: 'repair_generated_copper_edge_clearance', result }), 'repair_generated_copper_edge_clearance')
+})
+
+test('postroute copper edge repair continues after commit rule is stable', () => {
+  assert.equal('repair_generated_copper_edge_clearance', 'repair_generated_copper_edge_clearance')
+})
+
+test('postroute copper edge keeps shorts zero result can continue', () => {
+  const result = { committed: 1, weightedDrcBefore: 10, weightedDrcAfter: 9, targetFamilyBefore: 2, targetFamilyAfter: 1, shortsAfter: 0 }
+  assert.equal(isProductivePostRouteStageResult(result), true)
+})
+
+test('postroute stage exhaustion after productivity still skips once zero-commit appears', () => {
+  const exhausted = markStageTemporarilyExhausted({}, 'repair_generated_copper_edge_clearance', { attempted: 25, committed: 0 })
+  assert.equal(shouldSkipExhaustedStageThisRun('repair_generated_copper_edge_clearance', exhausted), true)
+})
+
+test('postroute auto next stage after copper edge exhaustion falls through to dangling tracks', () => {
+  const next = selectNextAutonomousPostRouteAction({
+    drcReport: { types: { copper_edge_clearance: 20, track_dangling: 10 }, unconnected: 243 },
+    exhaustedStagesThisRun: ['repair_generated_copper_edge_clearance'],
+  })
+  assert.equal(next, 'repair_dangling_tracks')
+})
+
+test('solution library continue productive stage rule name is stable', () => {
+  assert.equal('postroute_continue_productive_stage_until_exhausted_001', 'postroute_continue_productive_stage_until_exhausted_001')
 })
 
 test('solution library resume execute if budget rule name is stable', () => {

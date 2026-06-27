@@ -3903,5 +3903,87 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "postroute_continue_productive_stage_until_exhausted_001",
+    "createdAt": "2026-06-27T02:45:00-04:00",
+    "updatedAt": "2026-06-27T02:45:00-04:00",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "postroute_daemon_under_runs_productive_stage",
+    "problemSignature": {
+      "stage": "repair_generated_copper_edge_clearance",
+      "committed": 3,
+      "weightedDrcBefore": 456164,
+      "weightedDrcAfter": 456094,
+      "stageStoppedDespiteSafeCommits": true
+    },
+    "rootCause": "BoardForge stopped after a productive post-route cleanup stage committed only a few safe fixes instead of continuing that same productive stage until exhausted, complete, or preempted by a higher-priority issue.",
+    "fixSummary": "Detect productive stage results and keep the same stage selected when it safely commits improvements, so the daemon continues bounded batches until the stage stops producing progress.",
+    "implementation": {
+      "filesChanged": [
+        "lib/jobs.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [
+        "isProductivePostRouteStageResult",
+        "selectNextStageAfterProductiveCommit"
+      ],
+      "testsAdded": [
+        "test:postroute-continue-productive-stage",
+        "test:postroute-copper-edge-repair-continues-after-commit",
+        "test:postroute-copper-edge-keeps-shorts-zero",
+        "test:postroute-stage-exhaustion-after-productivity",
+        "test:postroute-auto-next-stage-after-copper-edge",
+        "test:solution-library-continue-productive-stage"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "dense-routed-board",
+        "post-freerouting-cleanup"
+      ],
+      "netRoles": [
+        "all"
+      ],
+      "conditions": [
+        "post-route cleanup stage committed safe repairs",
+        "weighted DRC or target DRC family improved",
+        "critical families did not worsen",
+        "runtime budget remains"
+      ]
+    },
+    "recipe": [
+      "After each stage, check committed repairs and target-family/weighted-score deltas",
+      "If the stage safely improved the board and stageComplete is not true, repeat the same stage",
+      "Continue bounded batches until no safe commits are found",
+      "Only then mark the stage exhausted and select the next allowed stage"
+    ],
+    "safetyRules": [
+      "Do not continue a productive stage if shorts, forbidden vias, outline, holes, parts, footprints, packages, pads, or nets regress",
+      "Do not treat segment count as progress",
+      "Rollback individual candidates that fail the promotion gate"
+    ],
+    "evidence": {
+      "before": {
+        "stage": "repair_generated_copper_edge_clearance",
+        "committed": 3,
+        "nextStageReturnedToUser": true
+      },
+      "after": {
+        "sameStageRepeatedWhenProductive": true,
+        "nextStage": "repair_generated_copper_edge_clearance"
+      },
+      "tests": [
+        "npm run test:postroute-continue-productive-stage",
+        "npm run test:postroute-copper-edge-repair-continues-after-commit",
+        "npm run test:postroute-copper-edge-keeps-shorts-zero"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]
