@@ -4306,5 +4306,82 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "exact_ratsnest_auto_resume_until_exhausted_001",
+    "createdAt": "2026-06-27T19:10:00-04:00",
+    "updatedAt": "2026-06-27T19:10:00-04:00",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "postroute_exact_ratsnest_productive_runtime_resume",
+    "problemSignature": {
+      "previousBatch": {
+        "itemsAttempted": 99,
+        "routesCommitted": 1,
+        "unconnectedBefore": 237,
+        "unconnectedAfter": 236,
+        "shortsAfter": 0,
+        "forbiddenVias": 0,
+        "runtimeLimit": "real_stage_runtime_reached"
+      },
+      "unconnectedRemaining": 236
+    },
+    "rootCause": "The supervisor remembered only the exact PRODUCTIVE_STAGE_COMMITTED status, so a productive batch that also reached a real stage runtime limit was not automatically resumed as productive work.",
+    "fixSummary": "Treat PRODUCTIVE_STAGE_COMMITTED status prefixes as productive exact-ratsnest results, including productive runtime checkpoints, so resume continues exact-ratsnest batches until exhausted or final.",
+    "implementation": {
+      "filesChanged": [
+        "bin/boardforge-postroute-supervisor.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [],
+      "testsAdded": [
+        "test:exact-ratsnest-auto-resume-after-productive-batch"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "dense-routed-board",
+        "post-freerouting-cleanup"
+      ],
+      "netRoles": [
+        "all routeable exact ratsnest items"
+      ],
+      "conditions": [
+        "exact-ratsnest batch committed one or more routes",
+        "stage runtime expired after productive work",
+        "unconnected items remain",
+        "shorts remain zero",
+        "forbidden vias remain zero"
+      ]
+    },
+    "recipe": [
+      "Read prior supervisor state on resume",
+      "If last exact-ratsnest stage status starts with PRODUCTIVE_STAGE_COMMITTED, continue exact-ratsnest first",
+      "Run another real 100-item batch from the latest board",
+      "Stop only on exhaustion, safety regression, final route state, forbidden decision, or true runtime checkpoint"
+    ],
+    "safetyRules": [
+      "Shorts must remain zero",
+      "Forbidden vias must remain zero",
+      "No board outline, mounting hole, part, footprint, package, pad, or net changes",
+      "Rollback unsafe candidates individually"
+    ],
+    "evidence": {
+      "before": {
+        "lastStageResult": "PRODUCTIVE_STAGE_COMMITTED_STAGE_RUNTIME_EXHAUSTED",
+        "autoResumeProductiveStage": false
+      },
+      "after": {
+        "productiveStagePrefixDetected": true,
+        "autoResumeProductiveStage": true
+      },
+      "tests": [
+        "npm run test:exact-ratsnest-auto-resume-after-productive-batch"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]

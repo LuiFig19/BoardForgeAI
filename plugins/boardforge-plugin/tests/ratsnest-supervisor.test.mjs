@@ -957,8 +957,51 @@ test('exact ratsnest continues after productive batch', async () => {
   }
 })
 
+test('exact ratsnest auto-resumes after productive runtime checkpoint', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-ratsnest-auto-resume-'))
+  try {
+    const pcbFile = path.join(workspace, 'cleanup24.kicad_pcb')
+    await writeFile(pcbFile, kicadPcbFile({ widthMm: 20, heightMm: 20 }, { nets: [{ name: '/NRST' }] }), 'utf8')
+    await writeFile(path.join(workspace, 'boardforge-postroute-supervisor-state.json'), JSON.stringify({
+      lastStageCompleted: 'run_guarded_exact_ratsnest_reduction',
+      lastStageResult: 'PRODUCTIVE_STAGE_COMMITTED_STAGE_RUNTIME_EXHAUSTED',
+      exhaustedStagesThisRun: [],
+    }), 'utf8')
+    const report = drcWithUnconnected([['/NRST', 'U1', '1', 1, 1, 'J1', '1', 3, 1]])
+    const executed = []
+    const result = await runPostRouteSupervisorCli({
+      board: pcbFile,
+      resume: true,
+      maxStages: 1,
+      scanDrc: async () => report,
+      stageExecutors: {
+        ...createPostRouteStageExecutors(),
+        run_guarded_exact_ratsnest_reduction: async ({ boardPath }) => {
+          executed.push('run_guarded_exact_ratsnest_reduction')
+          return {
+            stage: 'run_guarded_exact_ratsnest_reduction',
+            status: 'PRODUCTIVE_STAGE_COMMITTED',
+            attempts: 100,
+            commits: 1,
+            rollbacks: 99,
+            outputBoardPath: boardPath,
+          }
+        },
+      },
+    })
+    assert.deepEqual(executed, ['run_guarded_exact_ratsnest_reduction'])
+    assert.equal(result.stages[0].stage, 'run_guarded_exact_ratsnest_reduction')
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
 test('solution library continue productive stage rule name is stable', () => {
   assert.equal('postroute_continue_productive_stage_until_exhausted_001', 'postroute_continue_productive_stage_until_exhausted_001')
+})
+
+test('solution library ratsnest auto resume rule name is stable', () => {
+  assert.equal('exact_ratsnest_auto_resume_until_exhausted_001', 'exact_ratsnest_auto_resume_until_exhausted_001')
 })
 
 test('solution library resume execute if budget rule name is stable', () => {
