@@ -63,6 +63,7 @@ import {
   buildRemainingBlockerManifest,
   categorizeExactRatsnestFailures,
   createPostRouteStageExecutors,
+  identifyGeneratedCopperBlockingRatsnest,
   runPostRouteSupervisorCli,
 } from '../bin/boardforge-postroute-supervisor.mjs'
 
@@ -1008,6 +1009,35 @@ test('solution library ratsnest auto resume rule name is stable', () => {
 
 test('solution library remaining blocker manifest rule name is stable', () => {
   assert.equal('remaining_blockers_require_manifest_and_strategy_001', 'remaining_blockers_require_manifest_and_strategy_001')
+})
+
+test('solution library transactional generated copper rule name is stable', () => {
+  assert.equal('transactional_reroute_blocking_generated_copper_001', 'transactional_reroute_blocking_generated_copper_001')
+})
+
+test('blocking generated copper identification finds nearby non-target routed segment', () => {
+  const boardText = `
+  (net 1 "/SS_U2")
+  (net 2 "/OTHER")
+  (segment (start 1 1) (end 3 1) (width 0.2) (layer "F.Cu") (net 2) (uuid "a"))
+  (segment (start 10 10) (end 12 10) (width 0.2) (layer "F.Cu") (net 1) (uuid "b"))
+`
+  const blockers = identifyGeneratedCopperBlockingRatsnest({
+    boardText,
+    blocker: {
+      net: '/SS_U2',
+      sourceCoord: { x: 1, y: 1 },
+      targetCoord: { x: 3, y: 1 },
+    },
+  })
+  assert.equal(blockers.length, 1)
+  assert.equal(blockers[0].net, '/OTHER')
+  assert.equal(blockers[0].canReroute, true)
+})
+
+test('transactional generated copper executor is wired into postroute stage map', () => {
+  const executors = createPostRouteStageExecutors()
+  assert.equal(typeof executors.transactional_reroute_of_blocking_generated_copper, 'function')
 })
 
 test('remaining blocker manifest is required for exact blocker final state', async () => {

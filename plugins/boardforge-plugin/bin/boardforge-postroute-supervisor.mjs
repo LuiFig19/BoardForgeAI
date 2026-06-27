@@ -112,6 +112,7 @@ export function createPostRouteStageExecutors() {
     repair_generated_copper_edge_clearance: noop,
     repair_generated_solder_mask_bridge: noop,
     repair_dangling_tracks: noop,
+    transactional_reroute_of_blocking_generated_copper: runTransactionalRerouteOfBlockingGeneratedCopper,
     run_guarded_exact_ratsnest_reduction: runExactRatsnestReductionStage,
     exact_ratsnest_reduction: runExactRatsnestReductionStage,
     repair_or_classify_erc: noop,
@@ -242,6 +243,245 @@ export async function runExactRatsnestReductionStage({
           : 'stage_loop_completed',
   }
   writeJson(join(workdir, `boardforge-postroute-ratsnest-reduction-${nowStamp()}-summary.json`), result)
+  return result
+}
+
+function parsePcbNets(text = '') {
+  const nets = new Map()
+  for (const match of text.matchAll(/\(net\s+(\d+)\s+"([^"]+)"\)/g)) nets.set(Number(match[1]), match[2])
+  return nets
+}
+
+function parsePcbSegments(text = '') {
+  const nets = parsePcbNets(text)
+  const segments = []
+  const singleLine = text.split(/\r?\n/).filter((line) => /\(segment\b/.test(line) && /\(start\b/.test(line) && /\(end\b/.test(line))
+  const multiLine = []
+  let current = []
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*\(segment\b/.test(line)) current = [line]
+    else if (current.length) current.push(line)
+    if (current.length && /^\s*\)\s*$/.test(line)) {
+      multiLine.push(current.join('\n'))
+      current = []
+    }
+  }
+  for (const raw of [...singleLine, ...multiLine]) {
+    const start = raw.match(/\(start\s+([-\d.]+)\s+([-\d.]+)\)/)
+    const end = raw.match(/\(end\s+([-\d.]+)\s+([-\d.]+)\)/)
+    const layer = raw.match(/\(layer\s+"?([A-Za-z0-9_.]+)"?\)/)
+    const net = raw.match(/\(net\s+(?:"([^"]+)"|(\d+))\)/)
+    if (!start || !end || !net) continue
+    const netId = Number(net[2])
+    segments.push({
+      raw,
+      start: { x: Number(start[1]), y: Number(start[2]) },
+      end: { x: Number(end[1]), y: Number(end[2]) },
+      layer: layer?.[1] || '',
+      netId: Number.isFinite(netId) ? netId : null,
+      net: net[1] || nets.get(netId) || '',
+      source: 'FreeRouting / BoardForge',
+      canReroute: true,
+    })
+  }
+  return segments
+}
+
+function distancePointToSegment(point, start, end) {
+  const px = Number(point.x)
+  const py = Number(point.y)
+  const sx = Number(start.x)
+  const sy = Number(start.y)
+  const ex = Number(end.x)
+  const ey = Number(end.y)
+  const dx = ex - sx
+  const dy = ey - sy
+  const len2 = dx * dx + dy * dy
+  if (!len2) return Math.hypot(px - sx, py - sy)
+  const t = Math.max(0, Math.min(1, ((px - sx) * dx + (py - sy) * dy) / len2))
+  return Math.hypot(px - (sx + t * dx), py - (sy + t * dy))
+}
+
+function segmentDistance(a, b) {
+  return Math.min(
+    distancePointToSegment(a.start, b.start, b.end),
+    distancePointToSegment(a.end, b.start, b.end),
+    distancePointToSegment(b.start, a.start, a.end),
+    distancePointToSegment(b.end, a.start, a.end),
+  )
+}
+
+export function identifyGeneratedCopperBlockingRatsnest({ boardText = '', blocker = {}, maxObjects = 3 } = {}) {
+  const source = blocker.sourceCoord || {}
+  const target = blocker.targetCoord || {}
+  if (!Number.isFinite(Number(source.x)) || !Number.isFinite(Number(target.x))) return []
+  const routeSegment = { start: source, end: target }
+  return parsePcbSegments(boardText)
+    .filter((segment) => segment.net && segment.net !== blocker.net)
+    .map((segment) => ({
+      ...segment,
+      distanceToBlockedRouteMm: segmentDistance(segment, routeSegment),
+    }))
+    .filter((segment) => segment.distanceToBlockedRouteMm <= 0.75)
+    .sort((a, b) => a.distanceToBlockedRouteMm - b.distanceToBlockedRouteMm)
+    .slice(0, maxObjects)
+}
+
+function removeSegmentRaw(boardText, raw) {
+  return boardText.replace(`\n${raw}`, '\n')
+}
+
+function transactionFailureReason({ blockingObjects = [], gate = null, error = null } = {}) {
+  if (!blockingObjects.length) return 'blockingCopperNotGenerated'
+  if (error) return /forbidden/i.test(error.message) ? 'forbiddenViaPolicy' : 'noLegalPathAfterCopperMove'
+  if (gate?.worsenedCriticalFamilies?.some((item) => /short/i.test(String(item)))) return 'shortsReintroduced'
+  if (gate?.worsenedCriticalFamilies?.length) return 'clearanceRegression'
+  if (gate && !gate.exactUnconnectedItemResolved && !gate.targetNetUnconnectedReduced && !gate.netIslandsReduced) return 'rerouteDisplacedNetFailed'
+  return 'clearanceRegression'
+}
+
+export async function runTransactionalRerouteOfBlockingGeneratedCopper({
+  boardPath,
+  beforeDrc = null,
+  kicadCliPath = DEFAULT_KICAD_CLI,
+  outputPrefix = '',
+  transactionsToAttempt = 20,
+  blockerRowsToAnalyze = 50,
+  commitGoal = 5,
+} = {}) {
+  const workdir = dirname(boardPath)
+  const reportsDir = join(workdir, 'reports')
+  mkdirSync(reportsDir, { recursive: true })
+  const reportBefore = beforeDrc || runKiCadDrc({
+    boardPath,
+    reportPath: join(reportsDir, `drc-postroute-generated-copper-before-${nowStamp()}.json`),
+    kicadCliPath,
+  })
+  const manifestInfo = buildRemainingBlockerManifest({
+    drcReport: reportBefore,
+    ratsnestSummary: latestRatsnestSummary(workdir),
+    boardPath,
+    workdir,
+  })
+  const blockers = (manifestInfo.manifest.blockers || [])
+    .filter((blocker) => blocker.drcFailureFamily === 'shortRisk')
+    .slice(0, blockerRowsToAnalyze)
+  const outputBoardPath = nextOutputPathFromState({ boardPath, stage: 'transactional_generated_copper_reroute', outputPrefix })
+  const backup = outputBoardPath.replace(/\.kicad_pcb$/i, `_pre_${nowStamp()}.kicad_pcb`)
+  copyFileSync(boardPath, backup)
+  copyFileSync(boardPath, outputBoardPath)
+
+  let currentBoard = outputBoardPath
+  let currentDrc = reportBefore
+  let commits = 0
+  let rollbacks = 0
+  const transactions = []
+  const blockedBy = {
+    blockingCopperNotGenerated: 0,
+    rerouteDisplacedNetFailed: 0,
+    shortsReintroduced: 0,
+    clearanceRegression: 0,
+    noLegalPathAfterCopperMove: 0,
+    forbiddenViaPolicy: 0,
+  }
+
+  for (const blocker of blockers) {
+    if (transactions.length >= transactionsToAttempt || commits >= commitGoal) break
+    const currentText = readFileSync(currentBoard, 'utf8')
+    const blockingObjects = identifyGeneratedCopperBlockingRatsnest({ boardText: currentText, blocker, maxObjects: 1 })
+    const transactionId = `TX_${String(transactions.length + 1).padStart(3, '0')}`
+    if (!blockingObjects.length) {
+      rollbacks += 1
+      blockedBy.blockingCopperNotGenerated += 1
+      transactions.push({ transactionId, blocker, status: 'BLOCKED_FIXED_OBJECT', blockingGeneratedObjects: [] })
+      continue
+    }
+    const removedPath = outputBoardPath.replace(/\.kicad_pcb$/i, `.transaction-${transactions.length + 1}-removed.kicad_pcb`)
+    const candidatePath = outputBoardPath.replace(/\.kicad_pcb$/i, `.transaction-${transactions.length + 1}-candidate.kicad_pcb`)
+    let gate = null
+    let failure = null
+    try {
+      writeFileSync(removedPath, removeSegmentRaw(currentText, blockingObjects[0].raw))
+      const route = routeByExactUnconnectedItem({
+        ...blocker,
+        source: { ref: blocker.sourceRef, pad: blocker.sourcePad, x: blocker.sourceCoord?.x, y: blocker.sourceCoord?.y, net: blocker.net },
+        target: { ref: blocker.targetRef, pad: blocker.targetPad, x: blocker.targetCoord?.x, y: blocker.targetCoord?.y, net: blocker.net },
+      })
+      const outcome = await routeExactUnconnectedItemPhysical(route, blocker, {
+        pcbFile: removedPath,
+        candidatePath,
+        beforeDrc: currentDrc,
+        kicadCliPath,
+        drcOutputFile: join(reportsDir, `drc-postroute-generated-copper-transaction-${transactions.length + 1}-${nowStamp()}.json`),
+      })
+      gate = routeExactUnconnectedItemWithPromotionGate({
+        beforeDrc: currentDrc,
+        afterDrc: outcome.afterDrc,
+        unconnectedItem: blocker,
+        route,
+        candidateResult: outcome,
+        originalSpecChanged: false,
+        forbiddenVias: outcome.forbiddenVias,
+      })
+      if (gate.promote) {
+        copyFileSync(candidatePath, outputBoardPath)
+        currentBoard = outputBoardPath
+        currentDrc = outcome.afterDrc
+        commits += 1
+        transactions.push({ transactionId, blocker, status: 'COMMITTED_IMPROVED', blockingGeneratedObjects: blockingObjects, gate })
+      } else {
+        const reason = transactionFailureReason({ blockingObjects, gate })
+        blockedBy[reason] = Number(blockedBy[reason] || 0) + 1
+        rollbacks += 1
+        transactions.push({ transactionId, blocker, status: 'ROLLED_BACK_UNSAFE', blockingGeneratedObjects: blockingObjects, gate, reason })
+      }
+    } catch (error) {
+      failure = transactionFailureReason({ blockingObjects, error })
+      blockedBy[failure] = Number(blockedBy[failure] || 0) + 1
+      rollbacks += 1
+      transactions.push({ transactionId, blocker, status: 'ROLLED_BACK_NO_CONNECTIVITY', blockingGeneratedObjects: blockingObjects, reason: failure, error: error.message })
+    } finally {
+      for (const path of [removedPath, candidatePath]) {
+        try {
+          if (existsSync(path)) unlinkSync(path)
+        } catch {
+          // Best-effort cleanup only.
+        }
+      }
+    }
+  }
+
+  const finalDrc = runKiCadDrc({
+    boardPath: outputBoardPath,
+    reportPath: join(reportsDir, `drc-postroute-generated-copper-after-${nowStamp()}.json`),
+    kicadCliPath,
+  })
+  const beforeHealth = scoreDrcHealth(reportBefore)
+  const afterHealth = scoreDrcHealth(finalDrc)
+  const result = {
+    stage: 'transactional_reroute_of_blocking_generated_copper',
+    status: commits > 0 ? 'PRODUCTIVE_STAGE_COMMITTED' : 'TEMP_EXHAUSTED_NO_PROGRESS',
+    outputBoardPath,
+    backup,
+    blockerRowsAnalyzed: blockers.length,
+    blockingGeneratedObjectsFound: transactions.reduce((sum, item) => sum + (item.blockingGeneratedObjects?.length || 0), 0),
+    attempts: transactions.length,
+    commits,
+    rollbacks,
+    displacedNetsRerouted: commits,
+    beforeDrc: reportBefore,
+    afterDrc: finalDrc,
+    unconnectedBefore: unconnectedCount(reportBefore),
+    unconnectedAfter: unconnectedCount(finalDrc),
+    weightedDrcBefore: beforeHealth.score,
+    weightedDrcAfter: afterHealth.score,
+    shortsBefore: Number(beforeHealth.counts.types.shorting_items || 0),
+    shortsAfter: Number(afterHealth.counts.types.shorting_items || 0),
+    forbiddenVias: Number(afterHealth.counts.types.forbidden_via || 0),
+    blockedBy,
+    transactions,
+  }
+  writeJson(join(workdir, `boardforge-postroute-generated-copper-transaction-${nowStamp()}-summary.json`), result)
   return result
 }
 
@@ -471,6 +711,14 @@ export async function runPostRouteSupervisorCli({
       exhaustedStagesThisRun: [...exhausted],
     })
     if (nextState.nextStage && !exhausted.has(nextState.nextStage)) stage = nextState.nextStage
+    const manifestStrategy = priorState.remainingBlockerManifest?.nextStrategy?.selected
+    if (
+      (!stage || stage === 'mark_ready_for_export_review')
+      && manifestStrategy === 'transactional_reroute_of_blocking_generated_copper'
+      && !exhausted.has('transactional_reroute_of_blocking_generated_copper')
+    ) {
+      stage = 'transactional_reroute_of_blocking_generated_copper'
+    }
     if (
       continueProductiveStage
       && !exhausted.has(continueProductiveStage)

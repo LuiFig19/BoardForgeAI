@@ -4465,5 +4465,92 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "transactional_reroute_blocking_generated_copper_001",
+    "createdAt": "2026-06-27T21:20:00-04:00",
+    "updatedAt": "2026-06-27T21:20:00-04:00",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "short_risk_blockers_require_generated_copper_displacement",
+    "problemSignature": {
+      "remainingUnconnected": 236,
+      "failedExactRatsnestAttempts": 72,
+      "failureFamily": "shortRisk",
+      "selectedStrategy": "transactional_reroute_of_blocking_generated_copper"
+    },
+    "rootCause": "Remaining exact-ratsnest routes failed because candidate routes would cross or short against existing generated FreeRouting/BoardForge copper, but the supervisor did not have a mutating executor for the selected displacement strategy.",
+    "fixSummary": "Add a transactional generated-copper reroute executor that identifies non-target-net routed segments near the blocked ratsnest corridor, temporarily removes the blocking segment, attempts the blocked exact route, runs KiCad DRC, and commits only if shorts remain zero and connectivity/DRC improves.",
+    "implementation": {
+      "filesChanged": [
+        "bin/boardforge-postroute-supervisor.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [
+        "runTransactionalRerouteOfBlockingGeneratedCopper",
+        "identifyGeneratedCopperBlockingRatsnest"
+      ],
+      "testsAdded": [
+        "test:transactional-reroute-generated-copper",
+        "test:blocking-generated-copper-identification",
+        "test:solution-library-transactional-generated-copper"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "dense-routed-board",
+        "post-freerouting-cleanup"
+      ],
+      "netRoles": [
+        "signal",
+        "control",
+        "gate-drive",
+        "bootstrap",
+        "telemetry",
+        "reset"
+      ],
+      "conditions": [
+        "remaining exact ratsnest attempts fail with shortRisk",
+        "short count is currently zero",
+        "forbidden vias are zero",
+        "existing generated copper is near the blocked corridor"
+      ]
+    },
+    "recipe": [
+      "Load blocker manifest",
+      "Pick shortRisk blockers on easier signal/control nets first",
+      "Find nearby non-target-net generated routed segments",
+      "Transactionally remove or displace one generated object",
+      "Attempt the blocked exact ratsnest route",
+      "Run KiCad DRC",
+      "Commit only if shorts stay zero and exact connectivity/DRC improves",
+      "Rollback local transaction otherwise"
+    ],
+    "safetyRules": [
+      "Do not globally delete FreeRouting copper",
+      "Only touch specific generated copper tied to a blocker row",
+      "Shorts must remain zero",
+      "Forbidden vias must remain zero",
+      "No board outline, mounting hole, part, footprint, package, pad, or net changes"
+    ],
+    "evidence": {
+      "before": {
+        "executorWired": false,
+        "selectedStrategy": "transactional_reroute_of_blocking_generated_copper"
+      },
+      "after": {
+        "executorWired": true,
+        "transactionalRollbackOnUnsafe": true
+      },
+      "tests": [
+        "npm run test:transactional-reroute-generated-copper",
+        "npm run test:blocking-generated-copper-identification"
+      ]
+    },
+    "status": "active",
+    "confidence": "medium"
   }
 ]
