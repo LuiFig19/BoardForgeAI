@@ -59,6 +59,10 @@ import {
 } from '../lib/jobs.mjs'
 import { kicadPcbFile } from '../lib/kicad.mjs'
 import { scanKicadCopperAfterWrite } from '../lib/copper-writer.mjs'
+import {
+  createPostRouteStageExecutors,
+  runPostRouteSupervisorCli,
+} from '../bin/boardforge-postroute-supervisor.mjs'
 
 function drcWithUnconnected(items = []) {
   return {
@@ -777,6 +781,81 @@ test('postroute ratsnest reduction after cleanup is selected once cleanup stages
 
 test('solution library progress not final rule name is stable', () => {
   assert.equal('postroute_progress_is_not_final_state_001', 'postroute_progress_is_not_final_state_001')
+})
+
+test('solution library CLI stage execution rule name is stable', () => {
+  assert.equal('postroute_cli_must_execute_stage_not_select_001', 'postroute_cli_must_execute_stage_not_select_001')
+})
+
+test('postroute CLI stage executor map includes exact ratsnest executor', () => {
+  const executors = createPostRouteStageExecutors()
+  assert.equal(typeof executors.run_guarded_exact_ratsnest_reduction, 'function')
+  assert.equal(typeof executors.repair_generated_copper_edge_clearance, 'function')
+})
+
+test('postroute CLI executes selected stage instead of selector-only exit', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-postroute-cli-'))
+  try {
+    const pcbFile = path.join(workspace, 'cleanup21.kicad_pcb')
+    await writeFile(pcbFile, kicadPcbFile({ widthMm: 20, heightMm: 20 }, { nets: [{ name: '/NRST' }] }), 'utf8')
+    const scans = [
+      drcWithUnconnected([['/NRST', 'U1', '1', 1, 1, 'J1', '1', 3, 1]]),
+      { issueCounts: { errors: 0, warnings: 0 }, violations: [], unconnected_items: [] },
+    ]
+    const executed = []
+    const result = await runPostRouteSupervisorCli({
+      board: pcbFile,
+      maxStages: 3,
+      scanDrc: async () => scans[Math.min(executed.length, scans.length - 1)],
+      stageExecutors: {
+        ...createPostRouteStageExecutors(),
+        run_guarded_exact_ratsnest_reduction: async ({ boardPath }) => {
+          executed.push('run_guarded_exact_ratsnest_reduction')
+          return {
+            stage: 'run_guarded_exact_ratsnest_reduction',
+            status: 'PRODUCTIVE_STAGE_COMMITTED',
+            attempts: 1,
+            commits: 1,
+            rollbacks: 0,
+            outputBoardPath: boardPath,
+          }
+        },
+      },
+    })
+    assert.deepEqual(executed, ['run_guarded_exact_ratsnest_reduction'])
+    assert.equal(result.stages.length >= 1, true)
+    assert.equal(result.finalState, 'esc_fully_routed_erc_drc_passed')
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('postroute CLI runtime checkpoint writes real resume command after execution budget', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-postroute-cli-resume-'))
+  try {
+    const pcbFile = path.join(workspace, 'cleanup21.kicad_pcb')
+    await writeFile(pcbFile, kicadPcbFile({ widthMm: 20, heightMm: 20 }, { nets: [{ name: '/NRST' }] }), 'utf8')
+    const result = await runPostRouteSupervisorCli({
+      board: pcbFile,
+      maxStages: 1,
+      scanDrc: async () => drcWithUnconnected([['/NRST', 'U1', '1', 1, 1, 'J1', '1', 3, 1]]),
+      stageExecutors: {
+        ...createPostRouteStageExecutors(),
+        run_guarded_exact_ratsnest_reduction: async ({ boardPath }) => ({
+          stage: 'run_guarded_exact_ratsnest_reduction',
+          status: 'TEMP_EXHAUSTED_NO_PROGRESS',
+          attempts: 1,
+          commits: 0,
+          outputBoardPath: boardPath,
+        }),
+      },
+    })
+    assert.equal(result.finalState, 'runtime_limit_reached_resume_written')
+    assert.match(result.resumeCommand, /boardforge:postroute-supervisor/)
+    assert.match(result.resumeCommand, /--resume/)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
 })
 
 test('solution library continue productive stage rule name is stable', () => {

@@ -4056,5 +4056,87 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "postroute_cli_must_execute_stage_not_select_001",
+    "createdAt": "2026-06-27T04:00:00-04:00",
+    "updatedAt": "2026-06-27T04:00:00-04:00",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "postroute_supervisor_cli_selector_only",
+    "problemSignature": {
+      "cli": "bin/boardforge-postroute-supervisor.mjs",
+      "selectedNextStage": "run_guarded_exact_ratsnest_reduction",
+      "stageExecuted": false,
+      "resumeStateWritten": true
+    },
+    "rootCause": "The post-route supervisor CLI selected the next stage and wrote resume state, but did not call stage executors, so autonomous cleanup still required user babysitting.",
+    "fixSummary": "Add a daemon CLI loop with a stage executor map. The CLI now scans DRC, selects a stage, executes the mapped worker, checkpoints, and repeats until a valid final state or true runtime checkpoint.",
+    "implementation": {
+      "filesChanged": [
+        "bin/boardforge-postroute-supervisor.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [
+        "createPostRouteStageExecutors",
+        "runExactRatsnestReductionStage",
+        "runPostRouteSupervisorCli"
+      ],
+      "testsAdded": [
+        "test:postroute-cli-executes-selected-stage",
+        "test:postroute-cli-stage-executor-map",
+        "test:postroute-cli-daemon-loop",
+        "test:postroute-cli-no-selector-only-exit",
+        "test:postroute-cli-exact-ratsnest-stage-executes",
+        "test:postroute-cli-runtime-checkpoint-real-command",
+        "test:solution-library-cli-stage-execution"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "post-freerouting-cleanup",
+        "dense-routed-board"
+      ],
+      "netRoles": [
+        "all"
+      ],
+      "conditions": [
+        "post-route supervisor has selected an internal stage",
+        "no forbidden user decision is required",
+        "CLI resume command is invoked"
+      ]
+    },
+    "recipe": [
+      "Run KiCad DRC on latest board",
+      "Select the next post-route stage",
+      "Dispatch to a stage executor instead of returning",
+      "Write checkpoint after execution",
+      "Continue until valid final state or true runtime budget checkpoint"
+    ],
+    "safetyRules": [
+      "Do not commit board files to plugin repo",
+      "Do not promote candidates that introduce shorts, forbidden vias, or original-spec changes",
+      "Do not use selector-only resume as a final state"
+    ],
+    "evidence": {
+      "before": {
+        "cliBehavior": "select/write state only",
+        "nextStage": "run_guarded_exact_ratsnest_reduction"
+      },
+      "after": {
+        "cliBehavior": "stage executor daemon loop",
+        "executorMap": true,
+        "exactRatsnestExecutor": true
+      },
+      "tests": [
+        "npm run test:postroute-cli-executes-selected-stage",
+        "npm run test:postroute-cli-runtime-checkpoint-real-command"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]
