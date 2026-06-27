@@ -4223,5 +4223,88 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "exact_ratsnest_continue_productive_batches_001",
+    "createdAt": "2026-06-27T18:10:00-04:00",
+    "updatedAt": "2026-06-27T18:10:00-04:00",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "postroute_exact_ratsnest_productive_batch_stop",
+    "problemSignature": {
+      "previousBatch": {
+        "itemsAttempted": 100,
+        "routesCommitted": 6,
+        "unconnectedBefore": 243,
+        "unconnectedAfter": 237,
+        "shortsAfter": 0,
+        "forbiddenVias": 0
+      },
+      "runtimeExpired": false,
+      "unconnectedRemaining": 237
+    },
+    "rootCause": "BoardForge treated one productive exact-ratsnest batch as a user-facing stop even though unconnected items remained and runtime had not expired.",
+    "fixSummary": "Carry a productive exact-ratsnest stage forward in the daemon loop. If a batch commits routes or reduces unconnected items, immediately run another real batch unless safety issues, exhaustion, final routing, or real runtime limit stops it.",
+    "implementation": {
+      "filesChanged": [
+        "bin/boardforge-postroute-supervisor.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [],
+      "testsAdded": [
+        "test:exact-ratsnest-continues-after-productive-batch",
+        "test:exact-ratsnest-multiple-batches",
+        "test:exact-ratsnest-stops-only-when-exhausted",
+        "test:solution-library-ratsnest-continue-productive"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "dense-routed-board",
+        "post-freerouting-cleanup"
+      ],
+      "netRoles": [
+        "all routeable exact ratsnest items"
+      ],
+      "conditions": [
+        "exact-ratsnest batch committed one or more routes",
+        "unconnected items remain",
+        "shorts remain zero",
+        "forbidden vias remain zero",
+        "runtime budget remains"
+      ]
+    },
+    "recipe": [
+      "Detect productive exact-ratsnest result",
+      "Keep selected stage as run_guarded_exact_ratsnest_reduction for the next daemon loop",
+      "Run another 100-item batch",
+      "Stop only on exhaustion, safety regression, no unconnected items, or true runtime limit"
+    ],
+    "safetyRules": [
+      "Shorts must remain zero",
+      "Forbidden vias must remain zero",
+      "No board outline, mounting hole, part, footprint, package, pad, or net changes",
+      "Rollback unsafe candidates individually"
+    ],
+    "evidence": {
+      "before": {
+        "itemsAttempted": 100,
+        "routesCommitted": 6,
+        "unconnectedAfter": 237,
+        "state": "progress returned"
+      },
+      "after": {
+        "productiveStageContinues": true,
+        "testedMultipleBatches": true
+      },
+      "tests": [
+        "npm run test:exact-ratsnest-continues-after-productive-batch"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]

@@ -787,6 +787,10 @@ test('solution library CLI stage execution rule name is stable', () => {
   assert.equal('postroute_cli_must_execute_stage_not_select_001', 'postroute_cli_must_execute_stage_not_select_001')
 })
 
+test('solution library ratsnest continue productive rule name is stable', () => {
+  assert.equal('exact_ratsnest_continue_productive_batches_001', 'exact_ratsnest_continue_productive_batches_001')
+})
+
 test('postroute CLI stage executor map includes exact ratsnest executor', () => {
   const executors = createPostRouteStageExecutors()
   assert.equal(typeof executors.run_guarded_exact_ratsnest_reduction, 'function')
@@ -915,6 +919,39 @@ test('exact ratsnest no three-attempt final checkpoint while runtime remains', a
     })
     assert.notEqual(result.finalState, 'runtime_limit_reached_resume_written')
     assert.equal(result.state.runtime.whyStopped, 'configured_stage_batch_completed_without_final_runtime_exhaustion')
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('exact ratsnest continues after productive batch', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-ratsnest-continue-'))
+  try {
+    const pcbFile = path.join(workspace, 'cleanup23.kicad_pcb')
+    await writeFile(pcbFile, kicadPcbFile({ widthMm: 20, heightMm: 20 }, { nets: [{ name: '/NRST' }] }), 'utf8')
+    const report = drcWithUnconnected([['/NRST', 'U1', '1', 1, 1, 'J1', '1', 3, 1]])
+    const executed = []
+    const result = await runPostRouteSupervisorCli({
+      board: pcbFile,
+      maxStages: 2,
+      scanDrc: async () => report,
+      stageExecutors: {
+        ...createPostRouteStageExecutors(),
+        run_guarded_exact_ratsnest_reduction: async ({ boardPath }) => {
+          executed.push('run_guarded_exact_ratsnest_reduction')
+          return {
+            stage: 'run_guarded_exact_ratsnest_reduction',
+            status: 'PRODUCTIVE_STAGE_COMMITTED',
+            attempts: 100,
+            commits: 1,
+            rollbacks: 99,
+            outputBoardPath: boardPath,
+          }
+        },
+      },
+    })
+    assert.deepEqual(executed, ['run_guarded_exact_ratsnest_reduction', 'run_guarded_exact_ratsnest_reduction'])
+    assert.equal(result.stages.length, 2)
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

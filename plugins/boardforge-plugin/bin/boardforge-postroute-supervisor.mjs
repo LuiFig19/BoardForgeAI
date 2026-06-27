@@ -285,6 +285,10 @@ export async function runPostRouteSupervisorCli({
   const stages = []
   let latestReport = null
   let finalState = ''
+  let continueProductiveStage = priorState.lastStageResult === 'PRODUCTIVE_STAGE_COMMITTED'
+    && priorState.lastStageCompleted === 'run_guarded_exact_ratsnest_reduction'
+    ? 'run_guarded_exact_ratsnest_reduction'
+    : ''
 
   for (let stageIndex = 0; stageIndex < maxStages; stageIndex += 1) {
     if ((Date.now() - started) > maxMinutes * 60 * 1000) {
@@ -310,6 +314,15 @@ export async function runPostRouteSupervisorCli({
       exhaustedStagesThisRun: [...exhausted],
     })
     if (nextState.nextStage && !exhausted.has(nextState.nextStage)) stage = nextState.nextStage
+    if (
+      continueProductiveStage
+      && !exhausted.has(continueProductiveStage)
+      && Number(scoreDrcHealth(latestReport).counts.types.shorting_items || 0) === 0
+      && Number(scoreDrcHealth(latestReport).counts.types.forbidden_via || 0) === 0
+      && unconnectedCount(latestReport) > 0
+    ) {
+      stage = continueProductiveStage
+    }
     if (!stage || stage === 'mark_ready_for_export_review') {
       finalState = unconnectedCount(latestReport) > 0 ? 'esc_routed_with_exact_remaining_blockers' : 'esc_ready_for_export_review'
       break
@@ -342,6 +355,10 @@ export async function runPostRouteSupervisorCli({
     })
     if (result.outputBoardPath && existsSync(result.outputBoardPath)) boardPath = result.outputBoardPath
     if (stageResultIsNoProgress(result)) exhausted.add(stage)
+    continueProductiveStage = result.status === 'PRODUCTIVE_STAGE_COMMITTED'
+      && stage === 'run_guarded_exact_ratsnest_reduction'
+      ? stage
+      : ''
   }
 
   const actualRuntimeElapsedMs = Date.now() - started
