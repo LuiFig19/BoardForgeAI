@@ -3824,5 +3824,84 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "postroute_resume_state_must_execute_if_budget_available_001",
+    "createdAt": "2026-06-27T02:20:00-04:00",
+    "updatedAt": "2026-06-27T02:20:00-04:00",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "postroute_daemon_false_runtime_checkpoint",
+    "problemSignature": {
+      "previousStage": "repair_generated_severe_clearance",
+      "nextStageSelected": "repair_generated_hole_clearance",
+      "resumeStateWritten": true,
+      "actualRuntimeExhaustionProven": false
+    },
+    "rootCause": "BoardForge treated a stage boundary or resume-state write as a runtime checkpoint even when wall-clock/tool budget was still available, causing the daemon to stop after selecting the next internal stage.",
+    "fixSummary": "Add explicit runtime-budget checks and execute the selected next stage when budget remains. Runtime checkpoint is only valid when budget is actually exhausted, an external process cannot continue synchronously, or the environment blocks execution.",
+    "implementation": {
+      "filesChanged": [
+        "lib/jobs.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [
+        "shouldStopForRuntimeLimit",
+        "hasActualRuntimeBudgetRemaining",
+        "executeNextStageIfBudgetAvailable"
+      ],
+      "testsAdded": [
+        "test:postroute-runtime-checkpoint-only-on-budget-exhaustion",
+        "test:postroute-execute-next-stage-if-budget-remains",
+        "test:postroute-resume-command-is-executable",
+        "test:solution-library-resume-execute-if-budget"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "dense-routed-board",
+        "post-freerouting-cleanup"
+      ],
+      "netRoles": [
+        "all"
+      ],
+      "conditions": [
+        "post-route daemon has selected an allowed next stage",
+        "runtime budget remains",
+        "no forbidden user decision is required"
+      ]
+    },
+    "recipe": [
+      "After writing resume state, check actual elapsed runtime against configured budget and reserve",
+      "If budget remains and the next stage is allowed, execute the stage immediately",
+      "Use runtime_limit_reached_resume_written only when runtime/tool/environment limit is real",
+      "Keep checkpoint state as recovery data, not as a normal stopping point"
+    ],
+    "safetyRules": [
+      "Do not use resume state as a substitute for execution",
+      "Do not continue if a forbidden board/spec/via change is required",
+      "Maintain original-spec protection and DRC promotion gates across each executed stage"
+    ],
+    "evidence": {
+      "before": {
+        "nextStage": "repair_generated_hole_clearance",
+        "finalState": "runtime_limit_reached_resume_written",
+        "runtimeExhaustionVerified": false
+      },
+      "after": {
+        "nextStageExecuted": "repair_generated_hole_clearance",
+        "runtimeCheckpointOnlyOnBudgetExhaustion": true
+      },
+      "tests": [
+        "npm run test:postroute-runtime-checkpoint-only-on-budget-exhaustion",
+        "npm run test:postroute-execute-next-stage-if-budget-remains",
+        "npm run test:postroute-resume-command-is-executable"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]

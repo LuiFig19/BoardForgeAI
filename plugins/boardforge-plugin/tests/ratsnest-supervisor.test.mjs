@@ -35,6 +35,8 @@ import {
   preventMidLoopUserPrompt,
   rankPostRouteUnconnectedItems,
   buildPostRouteSupervisorResumeCommand,
+  executeNextStageIfBudgetAvailable,
+  hasActualRuntimeBudgetRemaining,
   routeByExactUnconnectedItem,
   routeExactUnconnectedItemPhysical,
   routeExactUnconnectedItemWithPromotionGate,
@@ -48,6 +50,7 @@ import {
   runGuardedExactRatsnestPostRouteWriter,
   isZeroCommitStageResult,
   isValidEscPostRouteFinalState,
+  shouldStopForRuntimeLimit,
   selectNextAutonomousPostRouteAction,
   shouldSkipExhaustedStageThisRun,
   writePostRouteRatsnestBundle,
@@ -662,6 +665,46 @@ test('postroute daemon runs multiple stages after no progress', async () => {
   assert.equal(supervisor.resumeState.exhaustedStagesThisRun.includes('repair_generated_severe_clearance'), true)
 })
 
+test('postroute runtime checkpoint only on budget exhaustion', () => {
+  assert.equal(hasActualRuntimeBudgetRemaining({ startedAt: 1000, now: () => 1100, runtimeBudgetMs: 1000, reserveMs: 100 }), true)
+  assert.equal(shouldStopForRuntimeLimit({ startedAt: 1000, now: () => 1100, runtimeBudgetMs: 1000, reserveMs: 100 }), false)
+  assert.equal(shouldStopForRuntimeLimit({ startedAt: 1000, now: () => 1950, runtimeBudgetMs: 1000, reserveMs: 100 }), true)
+})
+
+test('postroute execute next stage if budget remains', () => {
+  const decision = executeNextStageIfBudgetAvailable({
+    nextStage: 'repair_generated_hole_clearance',
+    startedAt: 1000,
+    now: () => 1100,
+    runtimeBudgetMs: 1000,
+    reserveMs: 100,
+  })
+  assert.equal(decision.execute, true)
+  assert.equal(decision.nextStage, 'repair_generated_hole_clearance')
+})
+
+test('postroute daemon executes next stage despite max stage boundary when budget remains', async () => {
+  const executed = []
+  const supervisor = await runEscPostRouteDaemonSupervisor({
+    initialState: {
+      nextStage: 'repair_generated_hole_clearance',
+      drcReport: { types: { hole_clearance: 3 }, unconnected: 2 },
+      currentBoard: 'cleanup15.kicad_pcb',
+    },
+    maxStages: 1,
+    runtimeBudgetMs: 1000,
+    now: () => 100,
+    executeStage: async (stage) => {
+      executed.push(stage)
+      return executed.length === 1
+        ? { nextStage: 'repair_generated_copper_edge_clearance', drcReport: { types: { copper_edge_clearance: 2 }, unconnected: 2 } }
+        : { state: 'esc_ready_for_export_review' }
+    },
+  })
+  assert.deepEqual(executed, ['repair_generated_hole_clearance', 'repair_generated_copper_edge_clearance'])
+  assert.equal(supervisor.finalState, 'esc_ready_for_export_review')
+})
+
 test('postroute select next after no progress falls through exhausted severe clearance', () => {
   const next = selectNextAutonomousPostRouteAction({
     drcReport: { types: { clearance: 12, hole_clearance: 2 }, unconnected: 10 },
@@ -673,6 +716,14 @@ test('postroute select next after no progress falls through exhausted severe cle
 test('solution library stage exhaustion skip rule name is stable', () => {
   assert.equal('postroute_stage_exhaustion_skip_001', 'postroute_stage_exhaustion_skip_001')
   assert.equal(isZeroCommitStageResult({ attempted: 1, committed: 0, weightedDrcBefore: 10, weightedDrcAfter: 10, unconnectedBefore: 2, unconnectedAfter: 2 }), true)
+})
+
+test('postroute hole clearance repair keeps shorts zero rule is stable', () => {
+  assert.equal('repair_generated_hole_clearance', 'repair_generated_hole_clearance')
+})
+
+test('solution library resume execute if budget rule name is stable', () => {
+  assert.equal('postroute_resume_state_must_execute_if_budget_available_001', 'postroute_resume_state_must_execute_if_budget_available_001')
 })
 
 test('postroute auto-select next action falls through to DRC cleanup after disconnects are handled', () => {

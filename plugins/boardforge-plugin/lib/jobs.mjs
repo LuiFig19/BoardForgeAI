@@ -4150,6 +4150,24 @@ export function isZeroCommitStageResult(result = {}) {
   return attempted > 0 && committed === 0 && drcNotBetter && unconnectedNotBetter && !retained
 }
 
+export function hasActualRuntimeBudgetRemaining({ startedAt = 0, now = () => Date.now(), runtimeBudgetMs = 300000, reserveMs = 15000 } = {}) {
+  const effectiveReserveMs = Math.min(Math.max(0, reserveMs), Math.max(0, runtimeBudgetMs * 0.1))
+  return (now() - startedAt) < Math.max(0, runtimeBudgetMs - effectiveReserveMs)
+}
+
+export function shouldStopForRuntimeLimit({ startedAt = 0, now = () => Date.now(), runtimeBudgetMs = 300000, reserveMs = 15000, externalProcessRunning = false, environmentBlocked = false } = {}) {
+  if (environmentBlocked || externalProcessRunning) return true
+  return !hasActualRuntimeBudgetRemaining({ startedAt, now, runtimeBudgetMs, reserveMs })
+}
+
+export function executeNextStageIfBudgetAvailable({ nextStage = '', startedAt = 0, now = () => Date.now(), runtimeBudgetMs = 300000, reserveMs = 15000 } = {}) {
+  return {
+    nextStage,
+    execute: Boolean(nextStage) && shouldStopForRuntimeLimit({ startedAt, now, runtimeBudgetMs, reserveMs }) === false,
+    reason: Boolean(nextStage) ? '' : 'no_next_stage_selected',
+  }
+}
+
 export function selectNextAutonomousPostRouteAction({ drcReport = {}, shortFixDisconnects = [], failures = [], exhaustedStagesThisRun = [] } = {}) {
   const health = scoreDrcHealth(drcReport)
   const types = health.counts.types || {}
@@ -4248,7 +4266,7 @@ export async function runEscPostRouteDaemonSupervisor({
       break
     }
     const elapsed = now() - startedAt
-    if (elapsed >= runtimeBudgetMs || stagesExecuted.length >= maxStages) {
+    if (shouldStopForRuntimeLimit({ startedAt, now, runtimeBudgetMs })) {
       runtimeCheckpoint = {
         ...state,
         state: 'runtime_limit_reached_resume_written',
@@ -4276,6 +4294,9 @@ export async function runEscPostRouteDaemonSupervisor({
       if (typeof writeCheckpoint === 'function') await writeCheckpoint(runtimeCheckpoint)
       finalState = 'runtime_limit_reached_resume_written'
       break
+    }
+    if (stagesExecuted.length >= maxStages && hasActualRuntimeBudgetRemaining({ startedAt, now, runtimeBudgetMs })) {
+      maxStages += 1
     }
     const stageResult = await executeStage(nextStage, state)
     stagesExecuted.push({
