@@ -557,6 +557,21 @@ test('postroute auto-select next action falls through to DRC cleanup after disco
   assert.equal(state.userPromptRequired, false)
 })
 
+test('postroute reroute remaining short-fix disconnects blocks exhausted items and continues', () => {
+  const state = continueAfterCleanupStage({
+    currentBoard: 'cleanup14.kicad_pcb',
+    lastCompletedStage: 'reroute_short_fix_disconnects',
+    drcReport: { types: { shorting_items: 0, tracks_crossing: 0, clearance: 3 }, unconnected: 245 },
+    shortFixDisconnects: [
+      { net: '/M4_B_SW', exactRerouteCandidate: true, blocked: true, blockedReason: 'all_short_safe_candidates_failed_promotion_gate' },
+      { net: '/M3_B_SW', exactRerouteCandidate: true, resolved: true },
+    ],
+  })
+  assert.equal(state.nextStage, 'repair_generated_severe_clearance')
+  assert.equal(state.pendingDisconnects.length, 0)
+  assert.equal(state.userPromptRequired, false)
+})
+
 test('solution library postroute no babysitting rule name is stable', () => {
   assert.equal('postroute_no_babysitting_supervisor_001', 'postroute_no_babysitting_supervisor_001')
 })

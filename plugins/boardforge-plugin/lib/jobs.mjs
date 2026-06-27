@@ -4076,7 +4076,7 @@ export function selectNextAutonomousPostRouteAction({ drcReport = {}, shortFixDi
   const health = scoreDrcHealth(drcReport)
   const types = health.counts.types || {}
   if (Number(types.shorting_items || 0) > 0) return 'repair_postroute_shorts_first'
-  if (shortFixDisconnects.some((item) => item.exactRerouteCandidate && item.resolved !== true)) return 'reroute_short_fix_disconnects'
+  if (shortFixDisconnects.some((item) => item.exactRerouteCandidate && item.resolved !== true && item.blocked !== true)) return 'reroute_short_fix_disconnects'
   if (Number(types.tracks_crossing || 0) > 0) return 'repair_track_crossings'
   if (Number(types.clearance || 0) > 0) return 'repair_generated_severe_clearance'
   if (Number(types.track_dangling || 0) > 0) return 'repair_dangling_tracks'
@@ -4095,7 +4095,7 @@ export function continueAfterCleanupStage({ currentBoard = '', lastCompletedStag
     shorts: Number(health.counts.types.shorting_items || 0),
     unconnected: Number(health.counts.unconnected || 0),
     drcScore: health.score,
-    pendingDisconnects: shortFixDisconnects.filter((item) => item.exactRerouteCandidate && item.resolved !== true),
+    pendingDisconnects: shortFixDisconnects.filter((item) => item.exactRerouteCandidate && item.resolved !== true && item.blocked !== true),
     pendingDrcFamilies,
     resumeCommand: nextStage,
     userPromptRequired: false,

@@ -340,6 +340,7 @@
     "test:postroute-ratsnest-route-promotion-gate": "node --test --test-name-pattern \"postroute ratsnest route promotion gate\" ./tests/*.test.mjs",
     "test:postroute-unconnected-diff-after-short-repair": "node --test --test-name-pattern \"postroute unconnected diff after short repair\" ./tests/*.test.mjs",
     "test:postroute-reroute-short-fix-disconnects": "node --test --test-name-pattern \"postroute reroute short-fix disconnects\" ./tests/*.test.mjs",
+    "test:postroute-reroute-remaining-short-fix-disconnects": "node --test --test-name-pattern \"postroute reroute remaining short-fix disconnects\" ./tests/*.test.mjs",
     "test:postroute-short-count-stays-zero": "node --test --test-name-pattern \"postroute short count stays zero\" ./tests/*.test.mjs",
     "test:postroute-no-recreate-short": "node --test --test-name-pattern \"postroute short count stays zero\" ./tests/*.test.mjs",
     "test:postroute-autonomous-supervisor": "node --test --test-name-pattern \"postroute autonomous supervisor\" ./tests/*.test.mjs",

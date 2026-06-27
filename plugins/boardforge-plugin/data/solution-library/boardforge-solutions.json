@@ -3543,5 +3543,99 @@
     },
     "status": "active",
     "confidence": "medium"
+  },
+  {
+    "id": "postroute_remaining_short_fix_disconnects_block_and_continue_001",
+    "createdAt": "2026-06-27T00:46:05.265Z",
+    "updatedAt": "2026-06-27T00:46:05.265Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "routing / DRC / supervisor",
+    "problemSignature": {
+      "errorCode": "SHORT_FIX_DISCONNECTS_CAN_TRAP_SUPERVISOR",
+      "drcFamily": "unconnected_items",
+      "netRole": "SWITCHING_NODE",
+      "symptoms": [
+        "short cleanup removes unsafe segments and creates exact disconnects",
+        "some reconnect candidates reintroduce shorts or fail promotion",
+        "supervisor can loop on exhausted disconnects instead of moving to next safe cleanup stage"
+      ]
+    },
+    "rootCause": "Short-fix disconnect rerouting needed a blocked-with-proof state so exhausted unsafe reconnects do not keep the autonomous post-route supervisor stuck on one stage.",
+    "fixSummary": "Treat resolved or blocked short-fix disconnects as handled, preserve shorts at zero, and continue automatically to generated-route DRC cleanup when remaining reconnects cannot pass the promotion gate.",
+    "implementation": {
+      "filesChanged": [
+        "lib/jobs.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [],
+      "testsAdded": [
+        "test:postroute-reroute-remaining-short-fix-disconnects"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "SWITCHING_NODE",
+        "MOTOR_PHASE",
+        "GATE_DRIVE"
+      ],
+      "conditions": [
+        "post-FreeRouting cleanup",
+        "shorts-first repair",
+        "fixed board outline",
+        "through-via-only policy"
+      ]
+    },
+    "recipe": [
+      "Remove or reroute shorting generated copper first",
+      "Diff unconnected items created by short cleanup",
+      "Attempt exact short-safe reconnects under the promotion gate",
+      "Commit only if shorts remain zero and weighted DRC improves",
+      "Mark exhausted reconnects blocked with exact proof",
+      "Continue to the next autonomous DRC cleanup stage without user prompting"
+    ],
+    "safetyRules": [
+      "Do not reintroduce shorts",
+      "Do not use forbidden vias",
+      "Do not change board outline or mounting holes",
+      "Do not change parts, footprints, packages, pads, or nets",
+      "Do not loop forever on blocked reconnects"
+    ],
+    "evidence": {
+      "before": {
+        "board": "FN-ESC1_boardforge_routed_postroute_cleanup13_reroute_short_fixes.kicad_pcb",
+        "unconnected": 245,
+        "shorts": 0,
+        "weightedDrc": 470059
+      },
+      "after": {
+        "board": "FN-ESC1_boardforge_routed_postroute_cleanup14_continue_supervisor.kicad_pcb",
+        "unconnected": 243,
+        "shorts": 0,
+        "weightedDrc": 456149,
+        "blockedDisconnects": [
+          "/M4_B_SW",
+          "/M4_A_SW",
+          "/M3_C_SW",
+          "/M3_A_SW"
+        ],
+        "nextStage": "repair_generated_severe_clearance"
+      },
+      "tests": [
+        "npm run test:postroute-reroute-remaining-short-fix-disconnects",
+        "npm run test:postroute-short-count-stays-zero",
+        "npm run test:postroute-auto-select-next-action",
+        "npm run test:postroute-no-midloop-user-prompt"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]
