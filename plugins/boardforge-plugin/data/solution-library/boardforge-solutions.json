@@ -3985,5 +3985,76 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "postroute_progress_is_not_final_state_001",
+    "createdAt": "2026-06-27T03:00:00-04:00",
+    "updatedAt": "2026-06-27T03:00:00-04:00",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "postroute_daemon_progress_return",
+    "problemSignature": {
+      "invalidFinalState": "cleanup continued; board still not fully traced",
+      "nextInternalActionKnown": true,
+      "userActionRequired": false
+    },
+    "rootCause": "The daemon returned a progress/status summary while the board was not fully traced and an allowed internal next action was known.",
+    "fixSummary": "Treat progress-state phrases as invalid internal states. The daemon may only return for ready/export, exact user approval, fatal environment blocker, or true runtime checkpoint.",
+    "implementation": {
+      "filesChanged": [
+        "lib/jobs.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [],
+      "testsAdded": [
+        "test:postroute-progress-not-final-state",
+        "test:postroute-ratsnest-reduction-after-cleanup",
+        "test:solution-library-progress-not-final"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "dense-routed-board",
+        "post-freerouting-cleanup"
+      ],
+      "netRoles": [
+        "all"
+      ],
+      "conditions": [
+        "board is not fully traced",
+        "next internal action is allowed",
+        "no forbidden user decision is required"
+      ]
+    },
+    "recipe": [
+      "Suppress progress-only final states",
+      "If a productive stage remains, execute it",
+      "If a cleanup stage exhausts, select and execute the next stage",
+      "Return only on true final state or true runtime/environment checkpoint"
+    ],
+    "safetyRules": [
+      "Do not hide true runtime limits",
+      "Do not continue through forbidden board/spec/via changes",
+      "Do not count progress summaries as completion"
+    ],
+    "evidence": {
+      "before": {
+        "state": "cleanup continued; board still not fully traced",
+        "nextInternalAction": "continue repair_generated_copper_edge_clearance"
+      },
+      "after": {
+        "progressStateReturnsBlocked": true,
+        "productiveStageExecuted": "repair_generated_copper_edge_clearance"
+      },
+      "tests": [
+        "npm run test:postroute-progress-not-final-state",
+        "npm run test:postroute-continue-productive-copper-edge-until-exhausted"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]

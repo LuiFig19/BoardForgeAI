@@ -563,8 +563,17 @@ test('postroute no midloop user prompt suppresses invalid final states', () => {
 test('postroute valid final states only rejects continue autonomously status', () => {
   assert.equal(isValidEscPostRouteFinalState('esc_postroute_cleaned_continue_autonomously'), false)
   assert.equal(isValidEscPostRouteFinalState('repair_generated_severe_clearance'), false)
+  assert.equal(isValidEscPostRouteFinalState('cleanup continued'), false)
+  assert.equal(isValidEscPostRouteFinalState('board still not fully traced'), false)
   assert.equal(isValidEscPostRouteFinalState('runtime_limit_reached_resume_written'), true)
   assert.equal(isValidEscPostRouteFinalState('esc_ready_for_export_review'), true)
+})
+
+test('postroute progress not final state suppresses cleanup continued language', () => {
+  const state = preventMidLoopUserPrompt({})
+  assert.equal(state.invalidFinalStatesSuppressed.includes('cleanup continued'), true)
+  assert.equal(state.invalidFinalStatesSuppressed.includes('board still not fully traced'), true)
+  assert.equal(state.invalidFinalStatesSuppressed.includes('stage made progress'), true)
 })
 
 test('postroute supervisor executes queued action before checkpointing', async () => {
@@ -756,6 +765,18 @@ test('postroute auto next stage after copper edge exhaustion falls through to da
     exhaustedStagesThisRun: ['repair_generated_copper_edge_clearance'],
   })
   assert.equal(next, 'repair_dangling_tracks')
+})
+
+test('postroute ratsnest reduction after cleanup is selected once cleanup stages exhaust', () => {
+  const next = selectNextAutonomousPostRouteAction({
+    drcReport: { types: { copper_edge_clearance: 2, track_dangling: 0 }, unconnected: 243 },
+    exhaustedStagesThisRun: ['repair_generated_copper_edge_clearance'],
+  })
+  assert.equal(next, 'run_guarded_exact_ratsnest_reduction')
+})
+
+test('solution library progress not final rule name is stable', () => {
+  assert.equal('postroute_progress_is_not_final_state_001', 'postroute_progress_is_not_final_state_001')
 })
 
 test('solution library continue productive stage rule name is stable', () => {
