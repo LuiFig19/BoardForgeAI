@@ -38,10 +38,12 @@ import {
   routeExactUnconnectedItemPhysical,
   routeExactUnconnectedItemWithPromotionGate,
   rollbackRouteBundle,
+  runEscPostRouteDaemonSupervisor,
   runEscPostRouteAutonomousSupervisor,
   runBoardForgeRootCauseSupervisor,
   runBoardForgeSelfDrivingSupervisor,
   runGuardedExactRatsnestPostRouteWriter,
+  isValidEscPostRouteFinalState,
   selectNextAutonomousPostRouteAction,
   writePostRouteRatsnestBundle,
 } from '../lib/jobs.mjs'
@@ -544,6 +546,59 @@ test('postroute no midloop user prompt suppresses invalid final states', () => {
   assert.equal(state.userPromptRequired, false)
   assert.equal(state.invalidFinalStatesSuppressed.includes('needs_next_prompt'), true)
   assert.equal(state.invalidFinalStatesSuppressed.includes('timeout'), true)
+  assert.equal(state.invalidFinalStatesSuppressed.includes('esc_postroute_cleaned_continue_autonomously'), true)
+  assert.equal(state.invalidFinalStatesSuppressed.includes('repair_generated_severe_clearance'), true)
+})
+
+test('postroute valid final states only rejects continue autonomously status', () => {
+  assert.equal(isValidEscPostRouteFinalState('esc_postroute_cleaned_continue_autonomously'), false)
+  assert.equal(isValidEscPostRouteFinalState('repair_generated_severe_clearance'), false)
+  assert.equal(isValidEscPostRouteFinalState('runtime_limit_reached_resume_written'), true)
+  assert.equal(isValidEscPostRouteFinalState('esc_ready_for_export_review'), true)
+})
+
+test('postroute supervisor executes queued action before checkpointing', async () => {
+  const executed = []
+  const supervisor = await runEscPostRouteDaemonSupervisor({
+    initialState: { nextStage: 'repair_generated_severe_clearance', resumeCommand: 'repair_generated_severe_clearance' },
+    maxStages: 2,
+    executeStage: async (stage) => {
+      executed.push(stage)
+      return { state: 'esc_ready_for_export_review', nextStage: '' }
+    },
+  })
+  assert.deepEqual(executed, ['repair_generated_severe_clearance'])
+  assert.equal(supervisor.finalState, 'esc_ready_for_export_review')
+  assert.equal(supervisor.queuedActionsExecuted, 1)
+})
+
+test('postroute daemon loop writes runtime checkpoint instead of returning queued action', async () => {
+  let checkpoint = null
+  let ticks = 0
+  const supervisor = await runEscPostRouteDaemonSupervisor({
+    initialState: { nextStage: 'repair_generated_severe_clearance', resumeCommand: 'repair_generated_severe_clearance' },
+    maxStages: 1,
+    now: () => ++ticks,
+    runtimeBudgetMs: 100,
+    executeStage: async () => ({ nextStage: 'repair_generated_severe_clearance', resumeCommand: 'repair_generated_severe_clearance' }),
+    writeCheckpoint: async (state) => { checkpoint = state },
+  })
+  assert.equal(supervisor.finalState, 'runtime_limit_reached_resume_written')
+  assert.equal(checkpoint.shouldAutoResume, true)
+  assert.equal(checkpoint.resumeCommand, 'repair_generated_severe_clearance')
+})
+
+test('postroute daemon stage batch minimums are expressed in resume checkpoint policy', async () => {
+  const supervisor = await runEscPostRouteDaemonSupervisor({
+    initialState: { nextStage: 'repair_generated_severe_clearance', resumeCommand: 'repair_generated_severe_clearance' },
+    maxStages: 1,
+    executeStage: async () => ({
+      nextStage: 'repair_generated_severe_clearance',
+      stageMinimums: { minItemsAnalyzed: 50, minRepairAttempts: 20, commitGoal: 5 },
+    }),
+  })
+  assert.equal(supervisor.finalState, 'runtime_limit_reached_resume_written')
+  assert.equal(supervisor.resumeState.stageMinimums.minRepairAttempts, 20)
 })
 
 test('postroute auto-select next action falls through to DRC cleanup after disconnects are handled', () => {
@@ -574,6 +629,10 @@ test('postroute reroute remaining short-fix disconnects blocks exhausted items a
 
 test('solution library postroute no babysitting rule name is stable', () => {
   assert.equal('postroute_no_babysitting_supervisor_001', 'postroute_no_babysitting_supervisor_001')
+})
+
+test('solution library supervisor execute not queue rule name is stable', () => {
+  assert.equal('postroute_supervisor_must_execute_not_queue_001', 'postroute_supervisor_must_execute_not_queue_001')
 })
 
 test('postroute physical writer handoff writes bundle through guarded callback', async () => {

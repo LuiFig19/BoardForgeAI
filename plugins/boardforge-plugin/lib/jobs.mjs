@@ -4107,9 +4107,16 @@ export function preventMidLoopUserPrompt(state = {}) {
     ...state,
     userPromptRequired: false,
     invalidFinalStatesSuppressed: [
+      'esc_postroute_cleaned_continue_autonomously',
+      'next_autonomous_action_queued',
+      'next_action_selected',
       'next_autonomous_action',
       'needs_next_prompt',
       'continue_cleanup',
+      'continue_routing',
+      'repair_generated_severe_clearance',
+      'reroute_short_fix_disconnects',
+      'guarded_ratsnest_reduction',
       'reroute_next',
       'candidate_found_not_committed',
       'no_committable_connectivity',
@@ -4117,6 +4124,96 @@ export function preventMidLoopUserPrompt(state = {}) {
       'timeout',
     ],
   }
+}
+
+const VALID_ESC_POSTROUTE_FINAL_STATES = new Set([
+  'esc_fully_routed_erc_drc_passed',
+  'esc_ready_for_export_review',
+  'esc_routed_with_exact_remaining_blockers',
+  'needs_user_approval_board_outline_change',
+  'needs_user_approval_mounting_hole_move',
+  'needs_user_approval_footprint_package_part_change',
+  'needs_user_approval_forbidden_via_policy_change',
+  'runtime_limit_reached_resume_written',
+  'fatal_environment_blocker_resume_not_possible',
+])
+
+export function isValidEscPostRouteFinalState(state = '') {
+  return VALID_ESC_POSTROUTE_FINAL_STATES.has(String(state || ''))
+}
+
+export async function runEscPostRouteDaemonSupervisor({
+  initialState = {},
+  maxStages = 6,
+  runtimeBudgetMs = 300000,
+  executeStage = null,
+  writeCheckpoint = null,
+  now = () => Date.now(),
+} = {}) {
+  const startedAt = now()
+  const stagesExecuted = []
+  let state = preventMidLoopUserPrompt({ ...initialState })
+  let finalState = ''
+  let runtimeCheckpoint = null
+  while (true) {
+    if (isValidEscPostRouteFinalState(state.state || state.finalState)) {
+      finalState = state.state || state.finalState
+      break
+    }
+    const elapsed = now() - startedAt
+    if (elapsed >= runtimeBudgetMs || stagesExecuted.length >= maxStages) {
+      runtimeCheckpoint = {
+        ...state,
+        state: 'runtime_limit_reached_resume_written',
+        shouldAutoResume: true,
+        resumeCommand: state.resumeCommand || state.nextStage || state.nextAction || '',
+      }
+      if (typeof writeCheckpoint === 'function') await writeCheckpoint(runtimeCheckpoint)
+      finalState = 'runtime_limit_reached_resume_written'
+      break
+    }
+    const nextStage = state.nextStage || state.nextAction || state.resumeCommand
+    if (!nextStage || nextStage === 'mark_ready_for_export_review') {
+      finalState = 'esc_ready_for_export_review'
+      state = { ...state, state: finalState }
+      break
+    }
+    if (typeof executeStage !== 'function') {
+      runtimeCheckpoint = {
+        ...state,
+        state: 'runtime_limit_reached_resume_written',
+        shouldAutoResume: true,
+        resumeCommand: nextStage,
+        reason: 'daemon_stage_executor_not_configured',
+      }
+      if (typeof writeCheckpoint === 'function') await writeCheckpoint(runtimeCheckpoint)
+      finalState = 'runtime_limit_reached_resume_written'
+      break
+    }
+    const stageResult = await executeStage(nextStage, state)
+    stagesExecuted.push({
+      stage: nextStage,
+      status: stageResult?.status || stageResult?.state || 'stage_executed',
+    })
+    state = preventMidLoopUserPrompt({
+      ...state,
+      ...(stageResult?.resumeState || stageResult?.stateObject || stageResult || {}),
+      lastStageCompleted: nextStage,
+    })
+    if (typeof writeCheckpoint === 'function') await writeCheckpoint({
+      ...state,
+      shouldAutoResume: !isValidEscPostRouteFinalState(state.state || state.finalState),
+    })
+  }
+  return preventMidLoopUserPrompt({
+    implemented: true,
+    finalState,
+    stagesExecuted,
+    queuedActionsExecuted: stagesExecuted.length,
+    runtimeCheckpoint,
+    resumeState: runtimeCheckpoint || state,
+    userPromptRequired: false,
+  })
 }
 
 export function runEscPostRouteAutonomousSupervisor({ currentBoard = '', drcReport = {}, beforeShortRepairDrc = null, shortRepairCandidates = [], failures = [], lastCompletedStage = '' } = {}) {

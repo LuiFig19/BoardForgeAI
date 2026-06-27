@@ -3637,5 +3637,95 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "postroute_supervisor_must_execute_not_queue_001",
+    "createdAt": "2026-06-27T01:25:46.675Z",
+    "updatedAt": "2026-06-27T01:25:46.675Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "supervisor / workflow / DRC repair",
+    "problemSignature": {
+      "errorCode": "SUPERVISOR_QUEUED_ACTION_RETURNED_AS_FINAL",
+      "symptoms": [
+        "nextStage selected but not executed",
+        "esc_postroute_cleaned_continue_autonomously used as final state",
+        "user must provide another prompt for allowed internal cleanup stage"
+      ]
+    },
+    "rootCause": "The post-route supervisor treated selected internal stages as valid user-facing stopping points instead of executing them in a daemon loop.",
+    "fixSummary": "Add a daemon supervisor contract that executes queued stages, suppresses mid-loop final states, writes runtime checkpoints only at real execution boundaries, and rejects continue_autonomously as a valid final state.",
+    "implementation": {
+      "filesChanged": [
+        "lib/jobs.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [
+        "runEscPostRouteDaemonSupervisor",
+        "isValidEscPostRouteFinalState"
+      ],
+      "testsAdded": [
+        "test:postroute-supervisor-executes-queued-action",
+        "test:postroute-no-continue-autonomously-final-state",
+        "test:postroute-daemon-loop",
+        "test:postroute-runtime-checkpoint-resume",
+        "test:postroute-stage-batch-minimums",
+        "test:postroute-valid-final-states-only",
+        "test:solution-library-supervisor-execute-not-queue"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal",
+        "existing-board-trace"
+      ],
+      "netRoles": [
+        "all"
+      ],
+      "conditions": [
+        "post-route cleanup remaining",
+        "internal next action selected",
+        "no forbidden design decision required"
+      ]
+    },
+    "recipe": [
+      "Scan current board and choose the next internal stage",
+      "Execute the selected stage immediately",
+      "Write checkpoint after the stage",
+      "Re-scan DRC/ERC and select the next stage",
+      "Continue until ready, exact blockers, forbidden user decision, or runtime checkpoint"
+    ],
+    "safetyRules": [
+      "Do not expose queued internal actions as final state",
+      "Do not hide runtime limits",
+      "Rollback candidates that worsen weighted DRC or critical families",
+      "Never request user input for allowed internal repair work"
+    ],
+    "evidence": {
+      "before": {
+        "board": "FN-ESC1_boardforge_routed_postroute_cleanup14_continue_supervisor.kicad_pcb",
+        "nextStage": "repair_generated_severe_clearance",
+        "returnedToUser": true
+      },
+      "after": {
+        "board": "FN-ESC1_boardforge_routed_postroute_cleanup15_severe_clearance_repair.kicad_pcb",
+        "stageExecuted": "repair_generated_severe_clearance",
+        "state": "runtime_limit_reached_resume_written",
+        "shorts": 0,
+        "unconnected": 243,
+        "weightedDrc": 456149
+      },
+      "tests": [
+        "npm run test:postroute-supervisor-executes-queued-action",
+        "npm run test:postroute-daemon-loop",
+        "npm run test:postroute-valid-final-states-only"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]
