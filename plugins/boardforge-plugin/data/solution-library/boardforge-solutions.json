@@ -4138,5 +4138,90 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "exact_ratsnest_stage_real_batch_budget_001",
+    "createdAt": "2026-06-27T05:00:00-04:00",
+    "updatedAt": "2026-06-27T05:00:00-04:00",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "postroute_exact_ratsnest_smoke_test_budget",
+    "problemSignature": {
+      "badAttempts": 3,
+      "unconnectedRemaining": 243,
+      "badFinalState": "runtime_limit_reached_resume_written",
+      "runtimeActuallyExpired": false
+    },
+    "rootCause": "The post-route exact-ratsnest CLI stage inherited a tiny generic stage budget, allowing three route attempts to be reported as a runtime checkpoint even though the board still had hundreds of unconnected items.",
+    "fixSummary": "Separate exact-ratsnest batch controls from generic stage budget. Default ESC post-route ratsnest reduction now selects 100 items, requires a 50-attempt real batch unless fewer are routeable, and records measured runtime before using runtime checkpoint state.",
+    "implementation": {
+      "filesChanged": [
+        "bin/boardforge-postroute-supervisor.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [],
+      "testsAdded": [
+        "test:exact-ratsnest-real-batch-budget",
+        "test:exact-ratsnest-no-three-attempt-final",
+        "test:exact-ratsnest-runtime-checkpoint-requires-real-timeout",
+        "test:exact-ratsnest-attempts-50-or-proves-blocked",
+        "test:exact-ratsnest-cli-budget-args",
+        "test:postroute-supervisor-does-not-smoke-test-ratsnest"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "dense-routed-board",
+        "post-freerouting-cleanup"
+      ],
+      "netRoles": [
+        "signal/control",
+        "gate-drive",
+        "bootstrap",
+        "regulated rails",
+        "local power"
+      ],
+      "conditions": [
+        "unconnected items remain",
+        "exact ratsnest stage selected",
+        "no forbidden user approval required"
+      ]
+    },
+    "recipe": [
+      "Use --exact-ratsnest-items default 100",
+      "Use --min-ratsnest-attempts default 50",
+      "Do not derive ratsnest item count from a smoke-test stage budget",
+      "Only report runtime checkpoint when measured runtime budget is exhausted",
+      "If zero commits after a real batch, report blocker categories instead of claiming progress"
+    ],
+    "safetyRules": [
+      "Shorts must remain zero",
+      "Forbidden vias must remain zero",
+      "Original board outline, holes, parts, footprints, packages, nets, and pads must remain unchanged",
+      "Rollback unsafe candidates individually"
+    ],
+    "evidence": {
+      "before": {
+        "itemsAttempted": 3,
+        "itemsCommitted": 0,
+        "unconnectedBefore": 243,
+        "unconnectedAfter": 243,
+        "state": "runtime_limit_reached_resume_written"
+      },
+      "after": {
+        "defaultItemsToSelect": 100,
+        "minimumItemsAttempted": 50,
+        "runtimeCheckpointRequiresMeasuredTimeout": true
+      },
+      "tests": [
+        "npm run test:exact-ratsnest-real-batch-budget",
+        "npm run test:exact-ratsnest-no-three-attempt-final"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]

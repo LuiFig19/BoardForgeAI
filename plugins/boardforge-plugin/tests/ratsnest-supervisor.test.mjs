@@ -838,6 +838,7 @@ test('postroute CLI runtime checkpoint writes real resume command after executio
     const result = await runPostRouteSupervisorCli({
       board: pcbFile,
       maxStages: 1,
+      maxMinutes: -1,
       scanDrc: async () => drcWithUnconnected([['/NRST', 'U1', '1', 1, 1, 'J1', '1', 3, 1]]),
       stageExecutors: {
         ...createPostRouteStageExecutors(),
@@ -853,6 +854,67 @@ test('postroute CLI runtime checkpoint writes real resume command after executio
     assert.equal(result.finalState, 'runtime_limit_reached_resume_written')
     assert.match(result.resumeCommand, /boardforge:postroute-supervisor/)
     assert.match(result.resumeCommand, /--resume/)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('exact ratsnest real batch budget does not inherit stage smoke budget', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-ratsnest-budget-'))
+  try {
+    const pcbFile = path.join(workspace, 'cleanup22.kicad_pcb')
+    await writeFile(pcbFile, kicadPcbFile({ widthMm: 20, heightMm: 20 }, { nets: [{ name: '/NRST' }] }), 'utf8')
+    let seen = null
+    await runPostRouteSupervisorCli({
+      board: pcbFile,
+      maxStages: 1,
+      stageBudget: 3,
+      scanDrc: async () => drcWithUnconnected([['/NRST', 'U1', '1', 1, 1, 'J1', '1', 3, 1]]),
+      stageExecutors: {
+        ...createPostRouteStageExecutors(),
+        run_guarded_exact_ratsnest_reduction: async (args) => {
+          seen = args
+          return {
+            stage: 'run_guarded_exact_ratsnest_reduction',
+            status: 'TEMP_EXHAUSTED_NO_PROGRESS',
+            attempts: 50,
+            commits: 0,
+            outputBoardPath: args.boardPath,
+          }
+        },
+      },
+    })
+    assert.equal(seen.exactRatsnestItems, 100)
+    assert.equal(seen.minRatsnestAttempts, 50)
+    assert.equal(seen.stageBudget, 3)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('exact ratsnest no three-attempt final checkpoint while runtime remains', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-ratsnest-no-three-'))
+  try {
+    const pcbFile = path.join(workspace, 'cleanup22.kicad_pcb')
+    await writeFile(pcbFile, kicadPcbFile({ widthMm: 20, heightMm: 20 }, { nets: [{ name: '/NRST' }] }), 'utf8')
+    const result = await runPostRouteSupervisorCli({
+      board: pcbFile,
+      maxStages: 1,
+      maxMinutes: 30,
+      scanDrc: async () => drcWithUnconnected([['/NRST', 'U1', '1', 1, 1, 'J1', '1', 3, 1]]),
+      stageExecutors: {
+        ...createPostRouteStageExecutors(),
+        run_guarded_exact_ratsnest_reduction: async ({ boardPath }) => ({
+          stage: 'run_guarded_exact_ratsnest_reduction',
+          status: 'TEMP_EXHAUSTED_NO_PROGRESS',
+          attempts: 3,
+          commits: 0,
+          outputBoardPath: boardPath,
+        }),
+      },
+    })
+    assert.notEqual(result.finalState, 'runtime_limit_reached_resume_written')
+    assert.equal(result.state.runtime.whyStopped, 'configured_stage_batch_completed_without_final_runtime_exhaustion')
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

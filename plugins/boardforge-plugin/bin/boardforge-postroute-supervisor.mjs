@@ -125,10 +125,14 @@ export async function runExactRatsnestReductionStage({
   beforeDrc = null,
   kicadCliPath = DEFAULT_KICAD_CLI,
   outputPrefix = '',
-  stageBudget = 50,
-  maxItems = Math.min(50, Math.max(1, Number(stageBudget || 50))),
+  exactRatsnestItems = 100,
+  minRatsnestAttempts = 50,
+  maxCandidatesPerItem = 20,
+  maxStageMinutes = 20,
+  maxItems = Math.max(Number(minRatsnestAttempts || 50), Number(exactRatsnestItems || 100)),
   commitGoal = 10,
 } = {}) {
+  const stageStarted = Date.now()
   const workdir = dirname(boardPath)
   const reportsDir = join(workdir, 'reports')
   const reportBefore = beforeDrc || runKiCadDrc({
@@ -149,6 +153,7 @@ export async function runExactRatsnestReductionStage({
   let rollbacks = 0
   for (const item of ranked) {
     if (commits >= commitGoal) break
+    if ((Date.now() - stageStarted) > Number(maxStageMinutes || 20) * 60 * 1000) break
     const route = routeByExactUnconnectedItem(item)
     const candidatePath = outputBoardPath.replace(/\.kicad_pcb$/i, `.candidate-${attempts.length + 1}.kicad_pcb`)
     const drcOutputFile = join(reportsDir, `drc-postroute-ratsnest-candidate-${attempts.length + 1}-${nowStamp()}.json`)
@@ -203,8 +208,10 @@ export async function runExactRatsnestReductionStage({
     stage: 'run_guarded_exact_ratsnest_reduction',
     status: commits > 0 ? 'PRODUCTIVE_STAGE_COMMITTED' : 'TEMP_EXHAUSTED_NO_PROGRESS',
     attempts: attempts.length,
+    candidatesTried: attempts.length,
     commits,
     rollbacks,
+    exactItemsResolved: commits,
     outputBoardPath,
     backup,
     beforeDrc: reportBefore,
@@ -218,6 +225,21 @@ export async function runExactRatsnestReductionStage({
     forbiddenVias: Number(afterHealth.counts.types.forbidden_via || 0),
     copper: copperCounts(outputBoardPath),
     attemptsDetail: attempts,
+    batchBudget: {
+      itemsToSelect: Number(exactRatsnestItems || 100),
+      minimumItemsAttempted: Number(minRatsnestAttempts || 50),
+      maxCandidatesPerItem: Number(maxCandidatesPerItem || 20),
+      maxStageMinutes: Number(maxStageMinutes || 20),
+      actualRuntimeElapsedMs: Date.now() - stageStarted,
+      routeableItemsAvailable: ranked.length,
+    },
+    stoppedBecause: commits >= commitGoal
+      ? 'commit_goal_reached'
+      : ((Date.now() - stageStarted) > Number(maxStageMinutes || 20) * 60 * 1000)
+        ? 'stage_runtime_budget_exhausted'
+        : attempts.length >= ranked.length
+          ? 'all_selected_items_attempted'
+          : 'stage_loop_completed',
   }
   writeJson(join(workdir, `boardforge-postroute-ratsnest-reduction-${nowStamp()}-summary.json`), result)
   return result
@@ -241,6 +263,10 @@ export async function runPostRouteSupervisorCli({
   maxStages = 10,
   maxMinutes = 30,
   stageBudget = 300,
+  exactRatsnestItems = 100,
+  minRatsnestAttempts = 50,
+  maxCandidatesPerItem = 20,
+  maxStageMinutes = 20,
   outputPrefix = '',
   kicadCliPath = DEFAULT_KICAD_CLI,
   cwd = process.cwd(),
@@ -301,6 +327,10 @@ export async function runPostRouteSupervisorCli({
       kicadCliPath,
       outputPrefix,
       stageBudget,
+      exactRatsnestItems,
+      minRatsnestAttempts,
+      maxCandidatesPerItem,
+      maxStageMinutes,
       stage,
     })
     stages.push({
@@ -314,7 +344,13 @@ export async function runPostRouteSupervisorCli({
     if (stageResultIsNoProgress(result)) exhausted.add(stage)
   }
 
-  if (!finalState) finalState = 'runtime_limit_reached_resume_written'
+  const actualRuntimeElapsedMs = Date.now() - started
+  const configuredRuntimeBudgetMs = maxMinutes * 60 * 1000
+  if (!finalState) {
+    finalState = actualRuntimeElapsedMs >= configuredRuntimeBudgetMs
+      ? 'runtime_limit_reached_resume_written'
+      : 'esc_routed_with_exact_remaining_blockers'
+  }
   const finalReport = latestReport || (typeof scanDrc === 'function' ? await scanDrc({ boardPath, stageIndex: stages.length }) : runKiCadDrc({
     boardPath,
     reportPath: join(reportsDir, `drc-postroute-supervisor-final-${nowStamp()}.json`),
@@ -326,6 +362,14 @@ export async function runPostRouteSupervisorCli({
     latestBoard: boardPath,
     currentBoard: boardPath,
     finalState,
+    runtime: {
+      actualRuntimeElapsedMs,
+      configuredRuntimeBudgetMs,
+      remainingRuntimeMs: Math.max(0, configuredRuntimeBudgetMs - actualRuntimeElapsedMs),
+      whyStopped: finalState === 'runtime_limit_reached_resume_written'
+        ? 'actual_runtime_budget_exhausted'
+        : 'configured_stage_batch_completed_without_final_runtime_exhaustion',
+    },
     lastStageCompleted: stages.at(-1)?.stage || priorState.lastStageCompleted || '',
     exhaustedStagesThisRun: [...exhausted],
     nextStage: selectNextAutonomousPostRouteAction({ drcReport: finalReport, exhaustedStagesThisRun: [...exhausted] }),
@@ -360,6 +404,10 @@ async function main() {
       maxStages: argNumber('--max-stages', 10),
       maxMinutes: argNumber('--max-minutes', 30),
       stageBudget: argNumber('--stage-budget', 300),
+      exactRatsnestItems: argNumber('--exact-ratsnest-items', 100),
+      minRatsnestAttempts: argNumber('--min-ratsnest-attempts', 50),
+      maxCandidatesPerItem: argNumber('--max-candidates-per-item', 20),
+      maxStageMinutes: argNumber('--max-stage-minutes', 20),
       outputPrefix: argValue('--output-prefix', ''),
       kicadCliPath: argValue('--kicad-cli', DEFAULT_KICAD_CLI),
       cwd: process.cwd(),
