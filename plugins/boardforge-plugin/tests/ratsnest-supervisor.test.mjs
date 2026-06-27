@@ -34,17 +34,22 @@ import {
   identifyShortFixDisconnects,
   preventMidLoopUserPrompt,
   rankPostRouteUnconnectedItems,
+  buildPostRouteSupervisorResumeCommand,
   routeByExactUnconnectedItem,
   routeExactUnconnectedItemPhysical,
   routeExactUnconnectedItemWithPromotionGate,
   rollbackRouteBundle,
   runEscPostRouteDaemonSupervisor,
+  markStageTemporarilyExhausted,
+  selectNextStageAfterNoProgress,
   runEscPostRouteAutonomousSupervisor,
   runBoardForgeRootCauseSupervisor,
   runBoardForgeSelfDrivingSupervisor,
   runGuardedExactRatsnestPostRouteWriter,
+  isZeroCommitStageResult,
   isValidEscPostRouteFinalState,
   selectNextAutonomousPostRouteAction,
+  shouldSkipExhaustedStageThisRun,
   writePostRouteRatsnestBundle,
 } from '../lib/jobs.mjs'
 import { kicadPcbFile } from '../lib/kicad.mjs'
@@ -585,7 +590,7 @@ test('postroute daemon loop writes runtime checkpoint instead of returning queue
   })
   assert.equal(supervisor.finalState, 'runtime_limit_reached_resume_written')
   assert.equal(checkpoint.shouldAutoResume, true)
-  assert.equal(checkpoint.resumeCommand, 'repair_generated_severe_clearance')
+  assert.match(checkpoint.resumeCommand, /npm run boardforge:postroute-supervisor/)
 })
 
 test('postroute daemon stage batch minimums are expressed in resume checkpoint policy', async () => {
@@ -599,6 +604,75 @@ test('postroute daemon stage batch minimums are expressed in resume checkpoint p
   })
   assert.equal(supervisor.finalState, 'runtime_limit_reached_resume_written')
   assert.equal(supervisor.resumeState.stageMinimums.minRepairAttempts, 20)
+})
+
+test('postroute stage exhaustion skip marks zero-commit stage temporary exhausted', () => {
+  const state = markStageTemporarilyExhausted(
+    { exhaustedStagesThisRun: [] },
+    'repair_generated_severe_clearance',
+    { attempted: 21, committed: 0, weightedDrcBefore: 456149, weightedDrcAfter: 456149, unconnectedBefore: 243, unconnectedAfter: 243 },
+  )
+  assert.equal(state.lastStageResult, 'TEMP_EXHAUSTED_NO_PROGRESS')
+  assert.deepEqual(state.exhaustedStagesThisRun, ['repair_generated_severe_clearance'])
+  assert.equal(state.stageNoProgressReasons[0].attempted, 21)
+})
+
+test('postroute no repeat zero-commit stage selects next family', () => {
+  const state = markStageTemporarilyExhausted({}, 'repair_generated_severe_clearance', { attempted: 21, committed: 0 })
+  const next = selectNextStageAfterNoProgress({
+    state,
+    drcReport: { types: { shorting_items: 0, clearance: 499, hole_clearance: 63, copper_edge_clearance: 55 }, unconnected: 243 },
+  })
+  assert.equal(shouldSkipExhaustedStageThisRun('repair_generated_severe_clearance', state), true)
+  assert.equal(next, 'repair_generated_hole_clearance')
+})
+
+test('postroute real resume command is executable npm shape', () => {
+  const command = buildPostRouteSupervisorResumeCommand({ board: 'C:\\board\\cleanup15.kicad_pcb', cwd: 'C:\\repo\\plugins\\boardforge-plugin' })
+  assert.match(command, /npm run boardforge:postroute-supervisor/)
+  assert.match(command, /--board "C:\\board\\cleanup15\.kicad_pcb"/)
+  assert.match(command, /--resume/)
+})
+
+test('postroute daemon runs multiple stages after no progress', async () => {
+  const executed = []
+  const supervisor = await runEscPostRouteDaemonSupervisor({
+    initialState: {
+      nextStage: 'repair_generated_severe_clearance',
+      drcReport: { types: { clearance: 10, hole_clearance: 5 }, unconnected: 3 },
+      currentBoard: 'cleanup15.kicad_pcb',
+    },
+    maxStages: 2,
+    executeStage: async (stage) => {
+      executed.push(stage)
+      if (stage === 'repair_generated_severe_clearance') {
+        return {
+          attempted: 21,
+          committed: 0,
+          weightedDrcBefore: 456149,
+          weightedDrcAfter: 456149,
+          unconnectedBefore: 243,
+          unconnectedAfter: 243,
+        }
+      }
+      return { state: 'esc_ready_for_export_review' }
+    },
+  })
+  assert.deepEqual(executed, ['repair_generated_severe_clearance', 'repair_generated_hole_clearance'])
+  assert.equal(supervisor.resumeState.exhaustedStagesThisRun.includes('repair_generated_severe_clearance'), true)
+})
+
+test('postroute select next after no progress falls through exhausted severe clearance', () => {
+  const next = selectNextAutonomousPostRouteAction({
+    drcReport: { types: { clearance: 12, hole_clearance: 2 }, unconnected: 10 },
+    exhaustedStagesThisRun: ['repair_generated_severe_clearance'],
+  })
+  assert.equal(next, 'repair_generated_hole_clearance')
+})
+
+test('solution library stage exhaustion skip rule name is stable', () => {
+  assert.equal('postroute_stage_exhaustion_skip_001', 'postroute_stage_exhaustion_skip_001')
+  assert.equal(isZeroCommitStageResult({ attempted: 1, committed: 0, weightedDrcBefore: 10, weightedDrcAfter: 10, unconnectedBefore: 2, unconnectedAfter: 2 }), true)
 })
 
 test('postroute auto-select next action falls through to DRC cleanup after disconnects are handled', () => {

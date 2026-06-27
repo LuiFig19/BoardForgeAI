@@ -4072,32 +4072,119 @@ export function identifyShortFixDisconnects({ beforeDrc = {}, afterDrc = {}, sho
   })
 }
 
-export function selectNextAutonomousPostRouteAction({ drcReport = {}, shortFixDisconnects = [], failures = [] } = {}) {
+const POSTROUTE_STAGE_PRIORITY = [
+  'repair_postroute_shorts_first',
+  'reroute_short_fix_disconnects',
+  'repair_track_crossings',
+  'repair_generated_severe_clearance',
+  'repair_generated_hole_clearance',
+  'repair_generated_copper_edge_clearance',
+  'repair_generated_solder_mask_bridge',
+  'repair_dangling_tracks',
+  'run_guarded_exact_ratsnest_reduction',
+  'fix_responsible_module_and_resume',
+  'mark_ready_for_export_review',
+]
+
+function stageAllowed(stage, exhaustedStages = []) {
+  return !new Set(exhaustedStages || []).has(stage)
+}
+
+export function buildPostRouteSupervisorResumeCommand({ board = '', cwd = '' } = {}) {
+  const boardArg = board ? ` -- --board "${board}" --resume` : ' -- --resume'
+  const cwdPrefix = cwd ? `cd /d "${cwd}" && ` : ''
+  return `${cwdPrefix}npm run boardforge:postroute-supervisor${boardArg}`
+}
+
+export function recordStageNoProgressReason(stage = '', result = {}) {
+  return {
+    stage,
+    result: 'TEMP_EXHAUSTED_NO_PROGRESS',
+    reason: result.reason || result.exhaustionReason || 'stage_budget_consumed_without_committed_improvement',
+    attempted: Number(result.attempted ?? result.itemsAttempted ?? result.repairsAttempted ?? 0),
+    committed: Number(result.committed ?? result.repairsCommitted ?? result.routesCommitted ?? 0),
+    weightedDrcBefore: result.weightedDrcBefore ?? result.before?.weightedDrc ?? null,
+    weightedDrcAfter: result.weightedDrcAfter ?? result.after?.weightedDrc ?? null,
+    unconnectedBefore: result.unconnectedBefore ?? result.before?.unconnected ?? null,
+    unconnectedAfter: result.unconnectedAfter ?? result.after?.unconnected ?? null,
+    shortsBefore: result.shortsBefore ?? result.before?.shorts ?? null,
+    shortsAfter: result.shortsAfter ?? result.after?.shorts ?? null,
+  }
+}
+
+export function markStageTemporarilyExhausted(state = {}, stage = '', result = {}) {
+  const exhausted = Array.from(new Set([...(state.exhaustedStagesThisRun || []), stage].filter(Boolean)))
+  const noProgress = recordStageNoProgressReason(stage, result)
+  return {
+    ...state,
+    lastStageCompleted: stage,
+    lastStageResult: 'TEMP_EXHAUSTED_NO_PROGRESS',
+    exhaustedStagesThisRun: exhausted,
+    stageNoProgressReasons: [...(state.stageNoProgressReasons || []), noProgress],
+  }
+}
+
+export function shouldSkipExhaustedStageThisRun(stage = '', state = {}) {
+  return !stageAllowed(stage, state.exhaustedStagesThisRun || [])
+}
+
+export function selectNextStageAfterNoProgress({ state = {}, drcReport = {}, shortFixDisconnects = [], failures = [] } = {}) {
+  return selectNextAutonomousPostRouteAction({
+    drcReport,
+    shortFixDisconnects,
+    failures,
+    exhaustedStagesThisRun: state.exhaustedStagesThisRun || [],
+  })
+}
+
+export function isZeroCommitStageResult(result = {}) {
+  const attempted = Number(result.attempted ?? result.itemsAttempted ?? result.repairsAttempted ?? 0)
+  const committed = Number(result.committed ?? result.repairsCommitted ?? result.routesCommitted ?? 0)
+  const beforeScore = result.weightedDrcBefore ?? result.before?.weightedDrc
+  const afterScore = result.weightedDrcAfter ?? result.after?.weightedDrc
+  const beforeUnconnected = result.unconnectedBefore ?? result.before?.unconnected
+  const afterUnconnected = result.unconnectedAfter ?? result.after?.unconnected
+  const retained = Boolean(result.validRepairRetained || result.routeRetained || result.repairRetained)
+  const drcNotBetter = beforeScore == null || afterScore == null ? true : Number(afterScore) >= Number(beforeScore)
+  const unconnectedNotBetter = beforeUnconnected == null || afterUnconnected == null ? true : Number(afterUnconnected) >= Number(beforeUnconnected)
+  return attempted > 0 && committed === 0 && drcNotBetter && unconnectedNotBetter && !retained
+}
+
+export function selectNextAutonomousPostRouteAction({ drcReport = {}, shortFixDisconnects = [], failures = [], exhaustedStagesThisRun = [] } = {}) {
   const health = scoreDrcHealth(drcReport)
   const types = health.counts.types || {}
-  if (Number(types.shorting_items || 0) > 0) return 'repair_postroute_shorts_first'
-  if (shortFixDisconnects.some((item) => item.exactRerouteCandidate && item.resolved !== true && item.blocked !== true)) return 'reroute_short_fix_disconnects'
-  if (Number(types.tracks_crossing || 0) > 0) return 'repair_track_crossings'
-  if (Number(types.clearance || 0) > 0) return 'repair_generated_severe_clearance'
-  if (Number(types.track_dangling || 0) > 0) return 'repair_dangling_tracks'
-  if (Number(health.counts.unconnected || 0) > 0) return 'run_guarded_exact_ratsnest_reduction'
-  if (failures.length) return 'fix_responsible_module_and_resume'
+  const candidates = []
+  if (Number(types.shorting_items || 0) > 0) candidates.push('repair_postroute_shorts_first')
+  if (shortFixDisconnects.some((item) => item.exactRerouteCandidate && item.resolved !== true && item.blocked !== true)) candidates.push('reroute_short_fix_disconnects')
+  if (Number(types.tracks_crossing || 0) > 0) candidates.push('repair_track_crossings')
+  if (Number(types.clearance || 0) > 0) candidates.push('repair_generated_severe_clearance')
+  if (Number(types.hole_clearance || 0) > 0) candidates.push('repair_generated_hole_clearance')
+  if (Number(types.copper_edge_clearance || 0) > 0) candidates.push('repair_generated_copper_edge_clearance')
+  if (Number(types.solder_mask_bridge || 0) > 0) candidates.push('repair_generated_solder_mask_bridge')
+  if (Number(types.track_dangling || 0) > 0) candidates.push('repair_dangling_tracks')
+  if (Number(health.counts.unconnected || 0) > 0) candidates.push('run_guarded_exact_ratsnest_reduction')
+  if (failures.length) candidates.push('fix_responsible_module_and_resume')
+  const priority = new Map(POSTROUTE_STAGE_PRIORITY.map((stage, index) => [stage, index]))
+  candidates.sort((a, b) => (priority.get(a) ?? 999) - (priority.get(b) ?? 999))
+  const selected = candidates.find((stage) => stageAllowed(stage, exhaustedStagesThisRun))
+  if (selected) return selected
   return 'mark_ready_for_export_review'
 }
 
-export function continueAfterCleanupStage({ currentBoard = '', lastCompletedStage = '', drcReport = {}, shortFixDisconnects = [], pendingDrcFamilies = [] } = {}) {
+export function continueAfterCleanupStage({ currentBoard = '', lastCompletedStage = '', drcReport = {}, shortFixDisconnects = [], pendingDrcFamilies = [], exhaustedStagesThisRun = [], pluginCwd = '' } = {}) {
   const health = scoreDrcHealth(drcReport)
-  const nextStage = selectNextAutonomousPostRouteAction({ drcReport, shortFixDisconnects })
+  const nextStage = selectNextAutonomousPostRouteAction({ drcReport, shortFixDisconnects, exhaustedStagesThisRun })
   return {
     currentBoard,
     lastCompletedStage,
+    exhaustedStagesThisRun,
     nextStage,
     shorts: Number(health.counts.types.shorting_items || 0),
     unconnected: Number(health.counts.unconnected || 0),
     drcScore: health.score,
     pendingDisconnects: shortFixDisconnects.filter((item) => item.exactRerouteCandidate && item.resolved !== true && item.blocked !== true),
     pendingDrcFamilies,
-    resumeCommand: nextStage,
+    resumeCommand: buildPostRouteSupervisorResumeCommand({ board: currentBoard, cwd: pluginCwd }),
     userPromptRequired: false,
   }
 }
@@ -4166,7 +4253,7 @@ export async function runEscPostRouteDaemonSupervisor({
         ...state,
         state: 'runtime_limit_reached_resume_written',
         shouldAutoResume: true,
-        resumeCommand: state.resumeCommand || state.nextStage || state.nextAction || '',
+        resumeCommand: buildPostRouteSupervisorResumeCommand({ board: state.currentBoard || state.latestBoard || state.board || '', cwd: state.pluginCwd || '' }),
       }
       if (typeof writeCheckpoint === 'function') await writeCheckpoint(runtimeCheckpoint)
       finalState = 'runtime_limit_reached_resume_written'
@@ -4195,11 +4282,22 @@ export async function runEscPostRouteDaemonSupervisor({
       stage: nextStage,
       status: stageResult?.status || stageResult?.state || 'stage_executed',
     })
-    state = preventMidLoopUserPrompt({
+    let nextState = preventMidLoopUserPrompt({
       ...state,
       ...(stageResult?.resumeState || stageResult?.stateObject || stageResult || {}),
       lastStageCompleted: nextStage,
     })
+    if (isZeroCommitStageResult(stageResult || {})) {
+      nextState = markStageTemporarilyExhausted(nextState, nextStage, stageResult)
+      nextState.nextStage = selectNextStageAfterNoProgress({
+        state: nextState,
+        drcReport: nextState.drcReport || state.drcReport || {},
+        shortFixDisconnects: nextState.shortFixDisconnects || state.shortFixDisconnects || [],
+        failures: nextState.failures || state.failures || [],
+      })
+    }
+    nextState.resumeCommand = buildPostRouteSupervisorResumeCommand({ board: nextState.currentBoard || nextState.latestBoard || nextState.board || '', cwd: nextState.pluginCwd || '' })
+    state = nextState
     if (typeof writeCheckpoint === 'function') await writeCheckpoint({
       ...state,
       shouldAutoResume: !isValidEscPostRouteFinalState(state.state || state.finalState),

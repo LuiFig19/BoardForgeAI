@@ -3727,5 +3727,102 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "postroute_stage_exhaustion_skip_001",
+    "createdAt": "2026-06-27T01:45:00-04:00",
+    "updatedAt": "2026-06-27T01:45:00-04:00",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "postroute_supervisor_stall",
+    "problemSignature": {
+      "stage": "repair_generated_severe_clearance",
+      "attempted": 21,
+      "committed": 0,
+      "weightedDrcBefore": 456149,
+      "weightedDrcAfter": 456149,
+      "resumeCommandWasStageLabel": true
+    },
+    "rootCause": "The daemon supervisor marked runtime checkpoint after a zero-commit stage but pointed resume back to the same exhausted stage, allowing an infinite no-progress loop.",
+    "fixSummary": "Detect zero-commit/no-improvement stages, mark them TEMP_EXHAUSTED_NO_PROGRESS for the current run, skip them in the stage selector, select the next allowed family, and write an executable npm resume command instead of a stage label.",
+    "implementation": {
+      "filesChanged": [
+        "lib/jobs.mjs",
+        "bin/boardforge-postroute-supervisor.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [
+        "markStageTemporarilyExhausted",
+        "shouldSkipExhaustedStageThisRun",
+        "selectNextStageAfterNoProgress",
+        "recordStageNoProgressReason",
+        "isZeroCommitStageResult",
+        "buildPostRouteSupervisorResumeCommand"
+      ],
+      "testsAdded": [
+        "test:postroute-stage-exhaustion-skip",
+        "test:postroute-no-repeat-zero-commit-stage",
+        "test:postroute-real-resume-command",
+        "test:postroute-daemon-runs-multiple-stages",
+        "test:postroute-select-next-after-no-progress",
+        "test:solution-library-stage-exhaustion-skip"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-routed-board",
+        "post-freerouting-cleanup"
+      ],
+      "netRoles": [
+        "all"
+      ],
+      "conditions": [
+        "post-route daemon stage attempted candidates",
+        "stage committed no repairs",
+        "weighted DRC and unconnected did not improve",
+        "another allowed repair family remains"
+      ]
+    },
+    "recipe": [
+      "After every daemon stage, compare attempts, commits, weighted DRC, and unconnected deltas",
+      "If attempts > 0 and commits = 0 with no retained improvement, mark the stage TEMP_EXHAUSTED_NO_PROGRESS",
+      "Add the stage to exhaustedStagesThisRun",
+      "Re-run stage selection while skipping exhausted stages for this invocation",
+      "Write an executable npm resume command with the board path and --resume"
+    ],
+    "safetyRules": [
+      "Do not permanently disable the stage; other geometry changes may make it repairable later",
+      "Do not resume to a naked stage label",
+      "Do not accept a zero-commit stage as progress",
+      "Keep shorts, forbidden vias, outline, holes, parts, footprints, packages, pads, and nets protected"
+    ],
+    "evidence": {
+      "before": {
+        "stage": "repair_generated_severe_clearance",
+        "attempted": 21,
+        "committed": 0,
+        "resumeCommand": "repair_generated_severe_clearance"
+      },
+      "after": {
+        "lastStageResult": "TEMP_EXHAUSTED_NO_PROGRESS",
+        "exhaustedStagesThisRun": [
+          "repair_generated_severe_clearance"
+        ],
+        "nextStage": "repair_generated_hole_clearance",
+        "resumeCommandPattern": "npm run boardforge:postroute-supervisor -- --board <board> --resume"
+      },
+      "tests": [
+        "npm run test:postroute-stage-exhaustion-skip",
+        "npm run test:postroute-no-repeat-zero-commit-stage",
+        "npm run test:postroute-real-resume-command",
+        "npm run test:postroute-daemon-runs-multiple-stages"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]
