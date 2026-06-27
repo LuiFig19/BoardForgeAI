@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -60,6 +60,8 @@ import {
 import { kicadPcbFile } from '../lib/kicad.mjs'
 import { scanKicadCopperAfterWrite } from '../lib/copper-writer.mjs'
 import {
+  buildRemainingBlockerManifest,
+  categorizeExactRatsnestFailures,
   createPostRouteStageExecutors,
   runPostRouteSupervisorCli,
 } from '../bin/boardforge-postroute-supervisor.mjs'
@@ -1002,6 +1004,86 @@ test('solution library continue productive stage rule name is stable', () => {
 
 test('solution library ratsnest auto resume rule name is stable', () => {
   assert.equal('exact_ratsnest_auto_resume_until_exhausted_001', 'exact_ratsnest_auto_resume_until_exhausted_001')
+})
+
+test('solution library remaining blocker manifest rule name is stable', () => {
+  assert.equal('remaining_blockers_require_manifest_and_strategy_001', 'remaining_blockers_require_manifest_and_strategy_001')
+})
+
+test('remaining blocker manifest is required for exact blocker final state', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-blocker-manifest-'))
+  try {
+    const pcbFile = path.join(workspace, 'cleanup25.kicad_pcb')
+    await writeFile(pcbFile, kicadPcbFile({ widthMm: 20, heightMm: 20 }, { nets: [{ name: '/SS_U2' }] }), 'utf8')
+    const report = drcWithUnconnected([['/SS_U2', 'C18', '1', 1, 1, 'U2', '7', 2, 1]])
+    const summary = {
+      attempts: 1,
+      commits: 0,
+      attemptsDetail: [{
+        unconnectedId: report.unconnected_items[0].id,
+        net: '/SS_U2',
+        status: 'ROLLBACK_REQUIRED',
+        gate: { scoreDidNotWorsen: false, weightedScoreDelta: 100, worsenedCriticalFamilies: ['shorting_items'] },
+      }],
+    }
+    const built = buildRemainingBlockerManifest({ drcReport: report, ratsnestSummary: summary, boardPath: pcbFile, workdir: workspace })
+    assert.equal(built.manifest.remainingUnconnected, 1)
+    assert.equal(built.manifest.blockers.length, 1)
+    assert.equal(built.manifest.failedRatsnestAttemptAnalysis.failuresByReason.shortRisk, 1)
+    assert.match(await readFile(built.mdPath, 'utf8'), /BoardForge ESC Remaining Blocker Manifest/)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
+
+test('exact ratsnest failure categorization drives next strategy evidence', () => {
+  const analysis = categorizeExactRatsnestFailures({
+    attempts: 2,
+    commits: 0,
+    attemptsDetail: [
+      { net: '/SS_U2', gate: { weightedScoreDelta: 10, scoreDidNotWorsen: false } },
+      { net: '/NRST', gate: { worsenedCriticalFamilies: ['tracks_crossing'] } },
+    ],
+  })
+  assert.equal(analysis.attempts, 2)
+  assert.equal(analysis.commits, 0)
+  assert.equal(analysis.failuresByReason.drcRegression, 1)
+  assert.equal(analysis.failuresByReason.shortRisk, 1)
+})
+
+test('exact blockers state writes manifest in supervisor state', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'boardforge-blocker-state-'))
+  try {
+    const pcbFile = path.join(workspace, 'cleanup25.kicad_pcb')
+    await writeFile(pcbFile, kicadPcbFile({ widthMm: 20, heightMm: 20 }, { nets: [{ name: '/SS_U2' }] }), 'utf8')
+    const report = drcWithUnconnected([['/SS_U2', 'C18', '1', 1, 1, 'U2', '7', 2, 1]])
+    await writeFile(path.join(workspace, 'boardforge-postroute-ratsnest-reduction-20260627202140-summary.json'), JSON.stringify({
+      attempts: 1,
+      commits: 0,
+      attemptsDetail: [{ unconnectedId: report.unconnected_items[0].id, net: '/SS_U2', gate: { scoreDidNotWorsen: false } }],
+    }), 'utf8')
+    const result = await runPostRouteSupervisorCli({
+      board: pcbFile,
+      maxStages: 1,
+      scanDrc: async () => report,
+      stageExecutors: {
+        ...createPostRouteStageExecutors(),
+        run_guarded_exact_ratsnest_reduction: async ({ boardPath }) => ({
+          stage: 'run_guarded_exact_ratsnest_reduction',
+          status: 'TEMP_EXHAUSTED_NO_PROGRESS',
+          attempts: 50,
+          commits: 0,
+          rollbacks: 50,
+          outputBoardPath: boardPath,
+        }),
+      },
+    })
+    assert.equal(result.finalState, 'esc_routed_with_exact_remaining_blockers_AND_manifest_written')
+    assert.equal(result.state.remainingBlockerManifest.blockersCategorized, 1)
+    assert.equal(await stat(result.state.remainingBlockerManifest.json).then(() => true), true)
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
 })
 
 test('solution library resume execute if budget rule name is stable', () => {

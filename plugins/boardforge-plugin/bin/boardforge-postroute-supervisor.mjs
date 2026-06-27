@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -257,6 +257,163 @@ function finalStateFromReport(report = {}) {
   return ''
 }
 
+function latestRatsnestSummary(workdir) {
+  const files = readdirSync(workdir)
+    .filter((name) => /^boardforge-postroute-ratsnest-reduction-.*-summary\.json$/.test(name))
+    .map((name) => join(workdir, name))
+    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+  return files[0] ? readJsonIfExists(files[0], {}) : {}
+}
+
+function categorizeFailedAttempt(attempt = {}) {
+  const gate = attempt.gate || {}
+  const critical = gate.worsenedCriticalFamilies || []
+  const reasonText = `${attempt.reason || ''} ${gate.reason || ''} ${critical.join(' ')}`.toLowerCase()
+  if (/forbidden/.test(reasonText) || Number(gate.forbiddenVias || 0) > 0) return 'forbiddenViaPolicy'
+  if (/short|crossing/.test(reasonText) || critical.some((item) => /short|crossing/.test(String(item)))) return 'shortRisk'
+  if (/edge/.test(reasonText)) return 'edgeClearance'
+  if (/hole/.test(reasonText)) return 'holeClearance'
+  if (/keepout/.test(reasonText)) return 'keepout'
+  if (/pad|binding/.test(reasonText)) return 'padBinding'
+  if (/clearance/.test(reasonText)) return 'clearance'
+  if (gate.scoreDidNotWorsen === false || Number(gate.weightedScoreDelta || 0) > 0) return 'drcRegression'
+  if (/no legal path|no route|blocked/.test(reasonText)) return 'noLegalPath'
+  return 'other'
+}
+
+function blockerFixesFor(category, item = {}) {
+  const fixes = []
+  if (['clearance', 'drcRegression', 'shortRisk'].includes(category)) fixes.push('reroute generated copper', 'change layer', 'use dogleg')
+  if (category === 'edgeClearance') fixes.push('move route inward from Edge.Cuts', 'change layer', 'reroute generated copper')
+  if (category === 'holeClearance') fixes.push('move via to legal through-via site', 'dogleg around hole clearance')
+  if (category === 'noLegalPath') fixes.push('run second FreeRouting pass', 'reroute generated copper', 'move existing component inside outline')
+  if (category === 'padBinding') fixes.push('repair pad contact geometry', 'use dogleg from pad escape')
+  if (!fixes.length) fixes.push('run second FreeRouting pass', 'targeted reroute after DRC cleanup')
+  if (/^\/M\d+_.*SW|VBAT|PGND|GND/i.test(String(item.net || ''))) fixes.push('route hard power/switching nets after cleanup')
+  return [...new Set(fixes)]
+}
+
+export function categorizeExactRatsnestFailures(summary = {}) {
+  const categories = {
+    shortRisk: 0,
+    clearance: 0,
+    edgeClearance: 0,
+    keepout: 0,
+    holeClearance: 0,
+    padBinding: 0,
+    noLegalPath: 0,
+    forbiddenViaPolicy: 0,
+    drcRegression: 0,
+    other: 0,
+  }
+  const attempts = summary.attemptsDetail || []
+  for (const attempt of attempts) categories[categorizeFailedAttempt(attempt)] += 1
+  return {
+    attempts: Number(summary.attempts || attempts.length || 0),
+    commits: Number(summary.commits || 0),
+    failuresByReason: categories,
+    topFailedItems: attempts.slice(0, 20).map((attempt) => ({
+      unconnectedId: attempt.unconnectedId || '',
+      net: attempt.net || '',
+      status: attempt.status || '',
+      reason: categorizeFailedAttempt(attempt),
+      weightedScoreDelta: attempt.gate?.weightedScoreDelta ?? null,
+      worsenedCriticalFamilies: attempt.gate?.worsenedCriticalFamilies || [],
+    })),
+  }
+}
+
+function selectStrategyFromBlockers({ failureAnalysis = {}, blockers = [] } = {}) {
+  const reasons = failureAnalysis.failuresByReason || {}
+  const dominant = Object.entries(reasons).sort((a, b) => b[1] - a[1])[0] || ['other', 0]
+  if (dominant[0] === 'clearance' || dominant[0] === 'drcRegression' || dominant[0] === 'shortRisk') {
+    return { selected: 'transactional_reroute_of_blocking_generated_copper', reason: `${dominant[1]} failed attempts were blocked by ${dominant[0]} risk`, executed: false }
+  }
+  if (dominant[0] === 'edgeClearance') return { selected: 'generated_copper_edge_clearance_repair', reason: 'edge clearance dominated failed candidates', executed: false }
+  if (dominant[0] === 'holeClearance') return { selected: 'generated_hole_clearance_repair', reason: 'hole clearance dominated failed candidates', executed: false }
+  if (dominant[0] === 'noLegalPath' || blockers.some((item) => item.possibleFixes?.includes('run second FreeRouting pass'))) {
+    return { selected: 'second_freerouting_pass_on_current_cleaned_board', reason: 'remaining items appear globally congested or no-legal-path constrained', executed: false }
+  }
+  return { selected: 'remaining_drc_classification_export_review', reason: 'exact ratsnest and generated cleanup stages are exhausted under current rules', executed: true }
+}
+
+export function buildRemainingBlockerManifest({ drcReport = {}, ratsnestSummary = {}, boardPath = '', workdir = dirname(boardPath) } = {}) {
+  const ranked = rankPostRouteUnconnectedItems(drcReport, { maxItems: 50, deferHardPower: false })
+  const attempts = ratsnestSummary.attemptsDetail || []
+  const attemptsById = new Map()
+  for (const attempt of attempts) {
+    const key = attempt.unconnectedId || `${attempt.net || ''}:${attempt.sourceRef || ''}:${attempt.targetRef || ''}`
+    attemptsById.set(key, [...(attemptsById.get(key) || []), attempt])
+  }
+  const blockers = ranked.map((item, index) => {
+    const key = item.unconnectedId || `${item.net || ''}:${item.sourceRef || ''}:${item.targetRef || ''}`
+    const itemAttempts = attemptsById.get(key) || attempts.filter((attempt) => attempt.net === item.net).slice(0, 1)
+    const category = itemAttempts.length ? categorizeFailedAttempt(itemAttempts.at(-1)) : 'noLegalPath'
+    return {
+      blockerId: `BLOCKER_${String(index + 1).padStart(3, '0')}`,
+      net: item.net || '',
+      sourceRef: item.sourceRef || '',
+      sourcePad: item.sourcePad || '',
+      targetRef: item.targetRef || '',
+      targetPad: item.targetPad || '',
+      sourceCoord: item.sourceCoord || {},
+      targetCoord: item.targetCoord || {},
+      netRole: item.netRole || item.routeRole || 'signal',
+      distanceMm: item.distanceMm ?? null,
+      routeAttempts: itemAttempts.length,
+      lastFailureReason: category,
+      drcFailureFamily: category,
+      blockedBy: [category],
+      possibleFixes: blockerFixesFor(category, item),
+      requiresUserApproval: category === 'forbiddenViaPolicy',
+    }
+  })
+  const failureAnalysis = categorizeExactRatsnestFailures(ratsnestSummary)
+  const strategy = selectStrategyFromBlockers({ failureAnalysis, blockers })
+  const manifest = {
+    schemaVersion: 1,
+    createdAt: new Date().toISOString(),
+    boardPath,
+    remainingUnconnected: unconnectedCount(drcReport),
+    blockersCategorized: blockers.length,
+    topBlockerFamilies: failureAnalysis.failuresByReason,
+    failedRatsnestAttemptAnalysis: failureAnalysis,
+    nextStrategy: strategy,
+    blockers,
+  }
+  const jsonPath = join(workdir, 'boardforge-esc-remaining-blocker-manifest.json')
+  const mdPath = join(workdir, 'BoardForge_ESC_Remaining_Blocker_Manifest.md')
+  writeJson(jsonPath, manifest)
+  writeFileSync(mdPath, renderBlockerManifestMarkdown(manifest))
+  return { manifest, jsonPath, mdPath }
+}
+
+function renderBlockerManifestMarkdown(manifest = {}) {
+  const rows = (manifest.blockers || []).slice(0, 50).map((item) => (
+    `| ${item.blockerId} | ${item.net} | ${item.sourceRef || '?'}:${item.sourcePad || '?'} | ${item.targetRef || '?'}:${item.targetPad || '?'} | ${item.drcFailureFamily} | ${item.possibleFixes.join('; ')} |`
+  ))
+  return `# BoardForge ESC Remaining Blocker Manifest
+
+- Board: ${manifest.boardPath}
+- Remaining unconnected: ${manifest.remainingUnconnected}
+- Blockers categorized: ${manifest.blockersCategorized}
+- Next strategy: ${manifest.nextStrategy?.selected}
+- Strategy reason: ${manifest.nextStrategy?.reason}
+
+## Failed Ratsnest Attempt Analysis
+
+\`\`\`json
+${JSON.stringify(manifest.failedRatsnestAttemptAnalysis, null, 2)}
+\`\`\`
+
+## Top Blockers
+
+| ID | Net | Source | Target | Failure | Possible fixes |
+| --- | --- | --- | --- | --- | --- |
+${rows.join('\n')}
+`
+}
+
 export async function runPostRouteSupervisorCli({
   board,
   resume = false,
@@ -374,6 +531,16 @@ export async function runPostRouteSupervisorCli({
     kicadCliPath,
   }))
   const health = scoreDrcHealth(finalReport)
+  let blockerManifest = null
+  if (finalState === 'esc_routed_with_exact_remaining_blockers') {
+    blockerManifest = buildRemainingBlockerManifest({
+      drcReport: finalReport,
+      ratsnestSummary: latestRatsnestSummary(workdir),
+      boardPath,
+      workdir,
+    })
+    finalState = 'esc_routed_with_exact_remaining_blockers_AND_manifest_written'
+  }
   const resumeCommand = buildPostRouteSupervisorResumeCommand({ board: boardPath, cwd })
   const state = preventMidLoopUserPrompt({
     latestBoard: boardPath,
@@ -390,6 +557,12 @@ export async function runPostRouteSupervisorCli({
     lastStageCompleted: stages.at(-1)?.stage || priorState.lastStageCompleted || '',
     exhaustedStagesThisRun: [...exhausted],
     nextStage: selectNextAutonomousPostRouteAction({ drcReport: finalReport, exhaustedStagesThisRun: [...exhausted] }),
+    remainingBlockerManifest: blockerManifest ? {
+      json: blockerManifest.jsonPath,
+      markdown: blockerManifest.mdPath,
+      blockersCategorized: blockerManifest.manifest.blockersCategorized,
+      nextStrategy: blockerManifest.manifest.nextStrategy,
+    } : priorState.remainingBlockerManifest || null,
     resumeCommand,
     resumeCommandValidated: true,
     shouldAutoResume: finalState === 'runtime_limit_reached_resume_written',

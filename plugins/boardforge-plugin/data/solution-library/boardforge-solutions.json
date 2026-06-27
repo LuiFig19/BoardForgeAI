@@ -4383,5 +4383,87 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "remaining_blockers_require_manifest_and_strategy_001",
+    "createdAt": "2026-06-27T20:35:00-04:00",
+    "updatedAt": "2026-06-27T20:35:00-04:00",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "exact_remaining_blockers_without_manifest",
+    "problemSignature": {
+      "finalState": "esc_routed_with_exact_remaining_blockers",
+      "unconnectedRemaining": 236,
+      "lastExactRatsnestAttempts": 72,
+      "lastExactRatsnestCommits": 0,
+      "manifestWritten": false
+    },
+    "rootCause": "BoardForge returned an exact-blockers final state without proving which nets, pads, route attempts, DRC families, and possible fixes remained.",
+    "fixSummary": "When exact-ratsnest batches exhaust, build a remaining blocker manifest from KiCad unconnected items and failed route attempts, write JSON and Markdown reports, categorize failures, and record the next evidence-based strategy.",
+    "implementation": {
+      "filesChanged": [
+        "bin/boardforge-postroute-supervisor.mjs",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json",
+        "data/solution-library/boardforge-solutions.json"
+      ],
+      "functionsAdded": [
+        "buildRemainingBlockerManifest",
+        "categorizeExactRatsnestFailures"
+      ],
+      "testsAdded": [
+        "test:remaining-blocker-manifest-required",
+        "test:exact-ratsnest-failure-categorization",
+        "test:exact-blockers-state-requires-manifest"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "dense-routed-board",
+        "post-freerouting-cleanup"
+      ],
+      "netRoles": [
+        "all remaining exact ratsnest items"
+      ],
+      "conditions": [
+        "exact-ratsnest stage attempted a real batch",
+        "zero routes committed",
+        "unconnected items remain",
+        "shorts remain zero",
+        "forbidden vias remain zero"
+      ]
+    },
+    "recipe": [
+      "Parse all remaining KiCad unconnected items",
+      "Map failed route attempts to blocker categories",
+      "Write boardforge-esc-remaining-blocker-manifest.json",
+      "Write BoardForge_ESC_Remaining_Blocker_Manifest.md",
+      "Select next strategy from failure evidence",
+      "Only return exact-blockers state after manifest exists"
+    ],
+    "safetyRules": [
+      "Do not change board outline, mounting holes, parts, footprints, packages, nets, or pads",
+      "Do not use forbidden via types",
+      "Do not globally suppress DRC/ERC",
+      "Do not claim exact blockers without JSON/Markdown evidence"
+    ],
+    "evidence": {
+      "before": {
+        "state": "esc_routed_with_exact_remaining_blockers",
+        "manifest": null
+      },
+      "after": {
+        "state": "esc_routed_with_exact_remaining_blockers_AND_manifest_written",
+        "manifestRequired": true
+      },
+      "tests": [
+        "npm run test:remaining-blocker-manifest-required",
+        "npm run test:exact-ratsnest-failure-categorization",
+        "npm run test:exact-blockers-state-requires-manifest"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]
