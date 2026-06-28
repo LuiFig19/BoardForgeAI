@@ -1019,6 +1019,10 @@ test('solution library freerouting bulk BoardForge finish workflow rule name is 
   assert.equal('freerouting_bulk_boardforge_finish_workflow_001', 'freerouting_bulk_boardforge_finish_workflow_001')
 })
 
+test('solution library control region cherrypick rule name is stable', () => {
+  assert.equal('control_region_cherrypick_from_diagnostic_branch_001', 'control_region_cherrypick_from_diagnostic_branch_001')
+})
+
 test('blocking generated copper identification finds nearby non-target routed segment', () => {
   const boardText = `
   (net 1 "/SS_U2")

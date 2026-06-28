@@ -4645,5 +4645,89 @@
     },
     "status": "active",
     "confidence": "high"
+  },
+  {
+    "id": "control_region_cherrypick_from_diagnostic_branch_001",
+    "createdAt": "2026-06-27T00:00:00.000Z",
+    "updatedAt": "2026-06-27T00:00:00.000Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "postroute_control_region_finish",
+    "problemSignature": {
+      "symptoms": [
+        "broad control-region rip-up resolves some exact items",
+        "diagnostic rip-up branch increases total unconnected count",
+        "remaining control-region route candidates often reintroduce shorts"
+      ],
+      "safeBaseline": "FN-ESC1_boardforge_routed_postroute_cleanup26_transactional_generated_copper_reroute.kicad_pcb",
+      "diagnosticBranch": "FN-ESC1_boardforge_routed_postroute_cleanup28_exact_ratsnest_reduction.kicad_pcb"
+    },
+    "rootCause": "A broad control-region rip-up branch proved some exact routes were possible, but it increased total unconnected too much to promote. Successful diagnostic geometry must be cherry-picked into the safe baseline one net at a time.",
+    "fixSummary": "Use the safe post-FreeRouting baseline, diff against the diagnostic rip-up branch, cherry-pick only successful control routes, then apply manual route-plan rows one net at a time with transaction rollback.",
+    "implementation": {
+      "filesChanged": [
+        "data/solution-library/boardforge-solutions.json",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json"
+      ],
+      "functionsAdded": [],
+      "testsAdded": [
+        "test:solution-library-control-region-cherrypick"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal"
+      ],
+      "netRoles": [
+        "signal",
+        "control",
+        "regulated-rail",
+        "clock",
+        "telemetry",
+        "debug"
+      ],
+      "conditions": [
+        "diagnostic regional rip-up is useful but destructive",
+        "safe baseline has fewer unconnected items",
+        "manual route plan exists for control-region blockers"
+      ]
+    },
+    "recipe": [
+      "Keep the safe baseline as the promotion source",
+      "Diff diagnostic branch against safe baseline",
+      "Identify added route geometry and removed destructive route geometry",
+      "Apply candidate routes one net at a time to the safe baseline",
+      "Run KiCad DRC after each candidate",
+      "Commit only if exact connectivity improves and shorts remain zero",
+      "Rollback candidates that reintroduce shorts or do not reduce exact unconnected items",
+      "Write a human KiCad work order for remaining blockers"
+    ],
+    "safetyRules": [
+      "Do not promote a diagnostic branch whose unconnected count regresses",
+      "Do not apply broad regional rip-up as a production board change",
+      "Shorts must remain zero",
+      "Forbidden vias must remain zero",
+      "No board outline, mounting hole, part, footprint, package, pad, or net changes"
+    ],
+    "evidence": {
+      "before": {
+        "cleanup26Unconnected": 236,
+        "cleanup28Unconnected": 279,
+        "cleanup28ExactItemsResolvedAfterRipup": 10
+      },
+      "after": {
+        "cleanup28PromotionBlocked": true,
+        "safeBaselinePreserved": true,
+        "humanWorkOrderWritten": true
+      },
+      "tests": [
+        "npm run test:solution-library-control-region-cherrypick"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]
