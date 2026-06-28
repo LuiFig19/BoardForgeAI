@@ -4552,5 +4552,98 @@
     },
     "status": "active",
     "confidence": "medium"
+  },
+  {
+    "id": "freerouting_bulk_boardforge_finish_workflow_001",
+    "createdAt": "2026-06-27T00:00:00.000Z",
+    "updatedAt": "2026-06-27T00:00:00.000Z",
+    "sourceBoard": "FN-ESC1",
+    "boardType": "ESC",
+    "problemType": "routing_workflow",
+    "problemSignature": {
+      "symptoms": [
+        "dense board routing is inefficient when BoardForge attempts full-board routing alone",
+        "FreeRouting completes bulk routing but leaves DRC and regional blockers",
+        "remaining blockers require intelligent post-route finishing"
+      ]
+    },
+    "rootCause": "BoardForge should not attempt to replace a mature full-board autorouter for dense boards. FreeRouting can route the bulk, while BoardForge should supervise, validate, repair, and finish the difficult remaining regions.",
+    "fixSummary": "Use FreeRouting as the bulk router, then use BoardForge/Codex for post-route cleanup, exact ratsnest completion, regional rip-up, blocker manifests, and final manufacturing validation.",
+    "implementation": {
+      "filesChanged": [
+        "data/solution-library/boardforge-solutions.json",
+        "tests/ratsnest-supervisor.test.mjs",
+        "package.json"
+      ],
+      "functionsAdded": [],
+      "testsAdded": [
+        "test:solution-library-freerouting-bulk-boardforge-finish"
+      ]
+    },
+    "applicability": {
+      "boardTypes": [
+        "ESC",
+        "motor-controller",
+        "dense-mixed-signal",
+        "dense-routed-board"
+      ],
+      "netRoles": [
+        "signal",
+        "control",
+        "gate-drive",
+        "bootstrap",
+        "current-sense",
+        "regulated-rail",
+        "power"
+      ],
+      "conditions": [
+        "KiCad board has dense routing constraints",
+        "external router backend is available",
+        "original board spec must be preserved",
+        "post-route DRC and exact ratsnest leftovers remain"
+      ]
+    },
+    "recipe": [
+      "preflight_board_rules",
+      "classify_nets_and_constraints",
+      "export_dsn_for_freerouting",
+      "run_freerouting_bulk_route",
+      "import_ses_result",
+      "validate_kicad_drc_erc_connectivity",
+      "repair_shorts_first",
+      "repair_generated_clearance_edge_hole_dangling",
+      "exact_ratsnest_reduction",
+      "blocker_manifest_if_exhausted",
+      "regional_ripup_reroute",
+      "control_region_finish",
+      "manual_route_plan_for_remaining_blockers",
+      "manufacturing_export_review"
+    ],
+    "safetyRules": [
+      "Work only on derivative copies",
+      "Do not change board outline or mounting holes without approval",
+      "Do not change parts, footprints, packages, symbols, MPNs, pads, or required nets without approval",
+      "Do not use blind, buried, micro, or via-in-pad routing unless explicitly approved",
+      "Do not globally wipe routed copper after a successful FreeRouting import",
+      "Commit finishing repairs only when DRC/connectivity safety gates pass"
+    ],
+    "evidence": {
+      "before": {
+        "bulkRouter": "BoardForge-only attempts stalled on dense full-board routing",
+        "unconnectedBeforeFreeRouting": 499
+      },
+      "after": {
+        "bulkRouter": "FreeRouting",
+        "postRouteFinisher": "BoardForge/Codex",
+        "freeRoutingImportedSegments": 1847,
+        "freeRoutingImportedVias": 63,
+        "unconnectedAfterFreeRoutingImport": 239
+      },
+      "tests": [
+        "npm run test:solution-library-freerouting-bulk-boardforge-finish"
+      ]
+    },
+    "status": "active",
+    "confidence": "high"
   }
 ]

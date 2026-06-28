@@ -1015,6 +1015,10 @@ test('solution library transactional generated copper rule name is stable', () =
   assert.equal('transactional_reroute_blocking_generated_copper_001', 'transactional_reroute_blocking_generated_copper_001')
 })
 
+test('solution library freerouting bulk BoardForge finish workflow rule name is stable', () => {
+  assert.equal('freerouting_bulk_boardforge_finish_workflow_001', 'freerouting_bulk_boardforge_finish_workflow_001')
+})
+
 test('blocking generated copper identification finds nearby non-target routed segment', () => {
   const boardText = `
   (net 1 "/SS_U2")
